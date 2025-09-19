@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>陀螺儀控制3D立方體</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .container {
+            text-align: center;
+            z-index: 10;
+            position: relative;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            background: linear-gradient(45deg, #FFD700, #FFA500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .status {
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .status.supported {
+            background: rgba(76, 175, 80, 0.3);
+            border-color: #4CAF50;
+        }
+
+        .status.not-supported {
+            background: rgba(244, 67, 54, 0.3);
+            border-color: #f44336;
+        }
+
+        .status.pending {
+            background: rgba(255, 193, 7, 0.3);
+            border-color: #FFC107;
+        }
+
+        /* 3D 場景容器 */
+        .scene {
+            perspective: 1000px;
+            perspective-origin: center center;
+            width: 300px;
+            height: 300px;
+            margin: 20px auto;
+            position: relative;
+        }
+
+        /* 立方體容器 */
+        .cube-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out;
+        }
+
+        /* 立方體 */
+        .cube {
+            width: 200px;
+            height: 200px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transform-style: preserve-3d;
+            animation: rotate 20s infinite linear;
+        }
+
+        /* 立方體面 */
+        .face {
+            position: absolute;
+            width: 200px;
+            height: 200px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2em;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2);
+        }
+
+        /* 前面 */
+        .face.front {
+            background: linear-gradient(135deg, #FF6B6B, #FF8E8E);
+            transform: translateZ(100px);
+        }
+
+        /* 後面 */
+        .face.back {
+            background: linear-gradient(135deg, #4ECDC4, #7EDDDD);
+            transform: translateZ(-100px) rotateY(180deg);
+        }
+
+        /* 右面 */
+        .face.right {
+            background: linear-gradient(135deg, #45B7D1, #6BC5D8);
+            transform: rotateY(90deg) translateZ(100px);
+        }
+
+        /* 左面 */
+        .face.left {
+            background: linear-gradient(135deg, #96CEB4, #B8E6B8);
+            transform: rotateY(-90deg) translateZ(100px);
+        }
+
+        /* 上面 */
+        .face.top {
+            background: linear-gradient(135deg, #FFEAA7, #FFF2CC);
+            transform: rotateX(90deg) translateZ(100px);
+        }
+
+        /* 下面 */
+        .face.bottom {
+            background: linear-gradient(135deg, #DDA0DD, #E6B8E6);
+            transform: rotateX(-90deg) translateZ(100px);
+        }
+
+        /* 控制面板 */
+        .controls {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 20px;
+            margin-top: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 400px;
+        }
+
+        .control-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+
+        .control-label {
+            font-weight: bold;
+            color: #FFD700;
+        }
+
+        .control-value {
+            font-family: monospace;
+            font-size: 1.1em;
+            color: #4ECDC4;
+        }
+
+        /* 說明文字 */
+        .instructions {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            border-left: 4px solid #FFD700;
+            max-width: 500px;
+        }
+
+        .instructions h3 {
+            margin-top: 0;
+            color: #FFD700;
+            margin-bottom: 15px;
+        }
+
+        .instructions ul {
+            text-align: left;
+            line-height: 1.6;
+        }
+
+        .instructions li {
+            margin: 8px 0;
+        }
+
+        /* 響應式設計 */
+        @media (max-width: 600px) {
+            .scene {
+                width: 250px;
+                height: 250px;
+            }
+
+            .cube {
+                width: 150px;
+                height: 150px;
+            }
+
+            .face {
+                width: 150px;
+                height: 150px;
+                font-size: 1.5em;
+            }
+
+            .face.front {
+                transform: translateZ(75px);
+            }
+
+            .face.back {
+                transform: translateZ(-75px) rotateY(180deg);
+            }
+
+            .face.right {
+                transform: rotateY(90deg) translateZ(75px);
+            }
+
+            .face.left {
+                transform: rotateY(-90deg) translateZ(75px);
+            }
+
+            .face.top {
+                transform: rotateX(90deg) translateZ(75px);
+            }
+
+            .face.bottom {
+                transform: rotateX(-90deg) translateZ(75px);
+            }
+
+            h1 {
+                font-size: 2em;
+            }
+        }
+
+        /* 動畫效果 */
+        @keyframes rotate {
+            from {
+                transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg);
+            }
+            to {
+                transform: rotateX(360deg) rotateY(360deg) rotateZ(360deg);
+            }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        /* 載入動畫 */
+        .loading {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #FFD700;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎲 陀螺儀控制3D立方體</h1>
+        
+        <div id="status" class="status pending">
+            <div class="loading"></div>
+            正在檢查陀螺儀支援...
+        </div>
+
+        <div class="scene">
+            <div class="cube-container" id="cubeContainer">
+                <div class="cube" id="cube">
+                    <div class="face front">前</div>
+                    <div class="face back">後</div>
+                    <div class="face right">右</div>
+                    <div class="face left">左</div>
+                    <div class="face top">上</div>
+                    <div class="face bottom">下</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-item">
+                <span class="control-label">X 軸旋轉:</span>
+                <span class="control-value" id="rotationX">0°</span>
+            </div>
+            <div class="control-item">
+                <span class="control-label">Y 軸旋轉:</span>
+                <span class="control-value" id="rotationY">0°</span>
+            </div>
+            <div class="control-item">
+                <span class="control-label">Z 軸旋轉:</span>
+                <span class="control-value" id="rotationZ">0°</span>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h3>📱 使用說明</h3>
+            <ul>
+                <li>請在手機上開啟此網頁</li>
+                <li>允許瀏覽器存取裝置方向感應器</li>
+                <li>旋轉手機來控制立方體的方向</li>
+                <li>每個面都有不同的顏色和文字</li>
+                <li>立方體會即時跟隨手機的旋轉</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let isGyroscopeSupported = false;
+        let isPermissionGranted = false;
+
+        // 檢查陀螺儀支援
+        function checkGyroscopeSupport() {
+            const statusElement = document.getElementById('status');
+            
+            if (typeof DeviceOrientationEvent !== 'undefined') {
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    // iOS 13+ 需要請求權限
+                    statusElement.innerHTML = '點擊任意處以請求陀螺儀權限...';
+                    statusElement.className = 'status not-supported';
+                    
+                    document.addEventListener('click', requestPermission, { once: true });
+                } else {
+                    // 其他瀏覽器直接支援
+                    isGyroscopeSupported = true;
+                    statusElement.innerHTML = '✅ 陀螺儀支援已啟用';
+                    statusElement.className = 'status supported';
+                    startGyroscope();
+                }
+            } else {
+                statusElement.innerHTML = '❌ 此瀏覽器不支援陀螺儀功能';
+                statusElement.className = 'status not-supported';
+            }
+        }
+
+        // 請求權限 (iOS)
+        async function requestPermission() {
+            try {
+                const permission = await DeviceOrientationEvent.requestPermission();
+                const statusElement = document.getElementById('status');
+                
+                if (permission === 'granted') {
+                    isGyroscopeSupported = true;
+                    isPermissionGranted = true;
+                    statusElement.innerHTML = '✅ 陀螺儀權限已授予';
+                    statusElement.className = 'status supported';
+                    startGyroscope();
+                } else {
+                    statusElement.innerHTML = '❌ 陀螺儀權限被拒絕';
+                    statusElement.className = 'status not-supported';
+                }
+            } catch (error) {
+                console.error('權限請求失敗:', error);
+                document.getElementById('status').innerHTML = '❌ 權限請求失敗';
+                document.getElementById('status').className = 'status not-supported';
+            }
+        }
+
+        // 開始陀螺儀監聽
+        function startGyroscope() {
+            const cube = document.getElementById('cube');
+            const cubeContainer = document.getElementById('cubeContainer');
+            
+            // 停止自動旋轉動畫
+            cube.style.animation = 'none';
+            
+            // 添加脈衝效果
+            cube.classList.add('pulse');
+            
+            window.addEventListener('deviceorientation', function(event) {
+                if (!isGyroscopeSupported) return;
+                
+                // 獲取陀螺儀數據
+                const alpha = event.alpha || 0; // Z軸旋轉 (0-360)
+                const beta = event.beta || 0;   // X軸旋轉 (-180到180)
+                const gamma = event.gamma || 0; // Y軸旋轉 (-90到90)
+                
+                // 更新控制面板顯示
+                updateControlDisplay(alpha, beta, gamma);
+                
+                // 計算立方體旋轉
+                // 將陀螺儀角度轉換為CSS旋轉角度
+                const rotationX = beta;  // 前後傾斜控制X軸旋轉
+                const rotationY = gamma; // 左右傾斜控制Y軸旋轉
+                const rotationZ = alpha; // 繞Z軸旋轉
+                
+                // 應用旋轉到立方體
+                cube.style.transform = `translate(-50%, -50%) rotateX(${rotationX}deg) rotateY(${rotationY}deg) rotateZ(${rotationZ}deg)`;
+                
+                // 也可以應用到容器來增加額外的3D效果
+                cubeContainer.style.transform = `rotateX(${rotationX * 0.1}deg) rotateY(${rotationY * 0.1}deg)`;
+            });
+        }
+
+        // 更新控制面板顯示
+        function updateControlDisplay(alpha, beta, gamma) {
+            document.getElementById('rotationX').textContent = `${beta.toFixed(1)}°`;
+            document.getElementById('rotationY').textContent = `${gamma.toFixed(1)}°`;
+            document.getElementById('rotationZ').textContent = `${alpha.toFixed(1)}°`;
+        }
+
+        // 頁面載入時檢查支援
+        window.addEventListener('load', function() {
+            setTimeout(checkGyroscopeSupport, 1000); // 延遲1秒顯示載入動畫
+        });
+
+        // 處理視窗大小改變
+        window.addEventListener('resize', function() {
+            // 重新計算立方體位置
+            const cube = document.getElementById('cube');
+            if (cube.style.transform) {
+                // 保持當前旋轉狀態
+                console.log('視窗大小已改變，保持立方體旋轉狀態');
+            }
+        });
+
+        // 添加觸控支援（備用方案）
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let currentRotationX = 0;
+        let currentRotationY = 0;
+
+        document.addEventListener('touchstart', function(e) {
+            if (!isGyroscopeSupported) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            }
+        });
+
+        document.addEventListener('touchmove', function(e) {
+            if (!isGyroscopeSupported) {
+                e.preventDefault();
+                const touchX = e.touches[0].clientX;
+                const touchY = e.touches[0].clientY;
+                
+                const deltaX = touchX - touchStartX;
+                const deltaY = touchY - touchStartY;
+                
+                currentRotationY += deltaX * 0.5;
+                currentRotationX -= deltaY * 0.5;
+                
+                const cube = document.getElementById('cube');
+                cube.style.transform = `translate(-50%, -50%) rotateX(${currentRotationX}deg) rotateY(${currentRotationY}deg)`;
+                
+                touchStartX = touchX;
+                touchStartY = touchY;
+            }
+        });
+    </script>
+</body>
+</html>
