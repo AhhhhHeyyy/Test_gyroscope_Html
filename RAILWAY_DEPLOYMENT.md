@@ -1,4 +1,4 @@
-# 🚀 陀螺儀WebSocket部署指南
+# 🚀 Railway部署指南
 
 ## 📋 專案結構
 
@@ -7,46 +7,24 @@ Project1141/
 ├── package.json              # Node.js依賴配置
 ├── server.js                # WebSocket伺服器
 ├── railway.json             # Railway部署配置
-├── DEPLOYMENT_GUIDE.md      # 本部署指南
+├── Procfile                 # 進程配置
+├── .gitignore               # Git忽略文件
+├── README.md                # 專案說明
+├── RAILWAY_DEPLOYMENT.md     # 本部署指南
 └── Test_gyroscope_Html/
     └── TestHtml/
-        ├── gyroscope.html    # 已更新WebSocket功能
-        ├── index.html
+        ├── gyroscope.html    # 陀螺儀測試頁面
+        ├── index.html        # 主頁
         └── ...
 ```
 
-## 🔧 本地測試
-
-### 1. 安裝依賴
-```bash
-npm install
-```
-
-### 2. 啟動伺服器
-```bash
-npm start
-```
-
-### 3. 測試網址
-- 主頁: http://localhost:3000
-- 陀螺儀頁面: http://localhost:3000/gyroscope.html
-- 健康檢查: http://localhost:3000/health
-- API狀態: http://localhost:3000/api/status
-
-## 🚀 Railway部署步驟
+## 🔧 Railway部署步驟
 
 ### 1. 準備GitHub儲存庫
 ```bash
-# 初始化Git（如果還沒有）
-git init
-
-# 添加所有文件
+# 確保所有文件都在根目錄
 git add .
-
-# 提交變更
-git commit -m "Add WebSocket support for gyroscope data transmission"
-
-# 推送到GitHub
+git commit -m "Prepare for Railway deployment"
 git push origin main
 ```
 
@@ -55,7 +33,7 @@ git push origin main
 2. 用GitHub帳戶登入
 3. 點擊 **"New Project"**
 4. 選擇 **"Deploy from GitHub repo"**
-5. 選擇您的專案儲存庫
+5. 選擇您的儲存庫：`AhhhhHeyyy/Test_gyroscope_Html`
 6. Railway會自動偵測並部署
 
 ### 3. 配置環境變數（可選）
@@ -122,7 +100,7 @@ public class GyroscopeReceiver : MonoBehaviour
 ## 📱 測試流程
 
 ### 1. 手機端測試
-1. 在手機上開啟部署的網址
+1. 在手機上開啟Railway部署的網址
 2. 允許瀏覽器存取陀螺儀權限
 3. 旋轉手機查看即時數據
 4. 檢查WebSocket連接狀態
@@ -163,12 +141,14 @@ public class GyroscopeReceiver : MonoBehaviour
 ### 健康檢查端點
 - `/health`: 基本健康狀態
 - `/api/status`: 詳細狀態資訊
+- `/api/ping`: 保持活躍檢查
 
 ### 日誌監控
 Railway提供即時日誌查看，可以監控：
 - WebSocket連接數
 - 數據傳輸頻率
 - 錯誤訊息
+- 記憶體使用量
 
 ## 🔄 更新部署
 
