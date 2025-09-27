@@ -347,6 +347,22 @@
         let isGyroscopeSupported = false;
         let isPermissionGranted = false;
 
+        // 保守方案平滑處理變數
+        let smoothedAlpha = 0;
+        let smoothedBeta = 0;
+        let smoothedGamma = 0;
+        let isFirstFrame = true;
+        let lastAlpha = 0;
+        let lastBeta = 0;
+        let lastGamma = 0;
+        let frameCount = 0;
+        
+        // 保守方案參數
+        const baseSmoothingFactor = 0.5;        // 較高的平滑係數 (50%響應速度)
+        const maxChangeSpeed = 8;                // 最大變化速度 (度/幀)
+        const errorCorrectionThreshold = 15;     // 誤差校正閾值 (度)
+        const resetInterval = 2000;              // 重置間隔 (幀數)
+
         // 檢查陀螺儀支援
         function checkGyroscopeSupport() {
             const statusElement = document.getElementById('status');
@@ -394,7 +410,61 @@
             }
         }
 
-        // 開始陀螺儀監聽
+        // 保守方案360度跳躍處理
+        function handle360DegreeJump(current, previous) {
+            let diff = current - previous;
+            
+            // 更嚴格的360度處理 - 只有在合理範圍內才處理
+            if (Math.abs(diff) > 90 && Math.abs(diff) < 270) {
+                if (diff > 180) {
+                    return previous + (diff - 360);
+                } else if (diff < -180) {
+                    return previous + (diff + 360);
+                }
+            }
+            
+            return current;
+        }
+
+        // 保守方案平滑處理函數
+        function conservativeSmoothValue(current, previous, rawCurrent) {
+            if (isFirstFrame) {
+                isFirstFrame = false;
+                return current;
+            }
+            
+            // 誤差校正 - 防止累積誤差
+            if (Math.abs(smoothedAlpha - rawCurrent) > errorCorrectionThreshold) {
+                return rawCurrent; // 強制校正
+            }
+            
+            // 處理360度跳躍
+            let adjustedCurrent = handle360DegreeJump(current, previous);
+            
+            // 計算變化量
+            let diff = adjustedCurrent - previous;
+            
+            // 限制最大變化速度
+            diff = Math.max(-maxChangeSpeed, Math.min(maxChangeSpeed, diff));
+            
+            // 動態平滑係數 - 根據變化速度調整
+            const speed = Math.abs(diff);
+            const dynamicSmoothing = speed > 5 ? 0.6 : baseSmoothingFactor;
+            
+            return previous + diff * dynamicSmoothing;
+        }
+
+        // 定期重置機制
+        function checkReset() {
+            frameCount++;
+            if (frameCount % resetInterval === 0) {
+                isFirstFrame = true;
+                console.log('定期重置平滑處理');
+            }
+        }
+        
+
+        // 開始陀螺儀監聽 - 保守方案
         function startGyroscope() {
             const cube = document.getElementById('cube');
             const cubeContainer = document.getElementById('cubeContainer');
@@ -405,25 +475,41 @@
             // 添加脈衝效果
             cube.classList.add('pulse');
             
+            // 重置變數
+            isFirstFrame = true;
+            frameCount = 0;
+            
             window.addEventListener('deviceorientation', function(event) {
                 if (!isGyroscopeSupported) return;
                 
-                // 獲取陀螺儀數據
-                const alpha = event.alpha || 0; // Z軸旋轉 (0-360)
-                const beta = event.beta || 0;   // X軸旋轉 (-180到180)
-                const gamma = event.gamma || 0; // Y軸旋轉 (-90到90)
+                // 獲取原始陀螺儀數據
+                const rawAlpha = event.alpha || 0;
+                const rawBeta = event.beta || 0;
+                const rawGamma = event.gamma || 0;
+                
+                // 應用保守方案平滑處理
+                smoothedAlpha = conservativeSmoothValue(rawAlpha, lastAlpha, rawAlpha);
+                smoothedBeta = conservativeSmoothValue(rawBeta, lastBeta, rawBeta);
+                smoothedGamma = conservativeSmoothValue(rawGamma, lastGamma, rawGamma);
+                
+                // 更新上次值
+                lastAlpha = rawAlpha;
+                lastBeta = rawBeta;
+                lastGamma = rawGamma;
+                
+                // 定期重置檢查
+                checkReset();
                 
                 // 更新控制面板顯示
-                updateControlDisplay(alpha, beta, gamma);
+                updateControlDisplay(smoothedAlpha, smoothedBeta, smoothedGamma);
                 
-                // 計算立方體旋轉
-                // 將陀螺儀角度轉換為CSS旋轉角度
-                const rotationX = beta;  // 前後傾斜控制X軸旋轉
-                const rotationY = gamma; // 左右傾斜控制Y軸旋轉
-                const rotationZ = alpha; // 繞Z軸旋轉
+                // 計算立方體旋轉 - 修正座標軸對應讓方塊移動與手機完全一致
+                const rotationX = -smoothedBeta;  // 手機前後傾斜 → 方塊X軸旋轉
+                const rotationY = smoothedGamma;  // 手機左右傾斜 → 方塊Y軸旋轉
+                const rotationZ = -smoothedAlpha; // 手機羅盤旋轉 → 方塊Z軸旋轉
                 
-                // 應用旋轉到立方體
-                cube.style.transform = `translate(-50%, -50%) rotateX(${rotationX}deg) rotateY(${rotationY}deg) rotateZ(${rotationZ}deg)`;
+                // 應用旋轉到立方體 - 使用正確的旋轉順序
+                cube.style.transform = `translate(-50%, -50%) rotateZ(${rotationZ}deg) rotateY(${rotationY}deg) rotateX(${rotationX}deg)`;
                 
                 // 也可以應用到容器來增加額外的3D效果
                 cubeContainer.style.transform = `rotateX(${rotationX * 0.1}deg) rotateY(${rotationY * 0.1}deg)`;
