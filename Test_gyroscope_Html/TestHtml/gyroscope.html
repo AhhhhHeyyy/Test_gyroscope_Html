@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手機陀螺儀偵測器</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .status {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .status.supported {
+            background: rgba(76, 175, 80, 0.3);
+            border: 2px solid #4CAF50;
+        }
+        
+        .status.not-supported {
+            background: rgba(244, 67, 54, 0.3);
+            border: 2px solid #f44336;
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .data-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .data-card h3 {
+            margin: 0 0 15px 0;
+            font-size: 1.3em;
+            color: #FFD700;
+        }
+        
+        .data-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 10px 0;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        
+        .unit {
+            font-size: 0.8em;
+            opacity: 0.8;
+        }
+        
+        .chart-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .chart {
+            width: 100%;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .chart-line {
+            position: absolute;
+            height: 2px;
+            background: linear-gradient(90deg, #FF6B6B, #4ECDC4, #45B7D1);
+            transition: all 0.1s ease;
+        }
+        
+        .instructions {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            border-left: 4px solid #FFD700;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #FFD700;
+        }
+        
+        .instructions ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            margin: 8px 0;
+            line-height: 1.5;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            .data-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 手機陀螺儀偵測器</h1>
+        
+        <div id="status" class="status">
+            正在檢查陀螺儀支援...
+        </div>
+        
+        <div class="data-grid">
+            <div class="data-card">
+                <h3>X 軸 (Alpha)</h3>
+                <div id="alpha" class="data-value">0.00</div>
+                <div class="unit">度 (0-360)</div>
+            </div>
+            
+            <div class="data-card">
+                <h3>Y 軸 (Beta)</h3>
+                <div id="beta" class="data-value">0.00</div>
+                <div class="unit">度 (-180 到 180)</div>
+            </div>
+            
+            <div class="data-card">
+                <h3>Z 軸 (Gamma)</h3>
+                <div id="gamma" class="data-value">0.00</div>
+                <div class="unit">度 (-90 到 90)</div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <h3 style="text-align: center; margin-top: 0; color: #FFD700;">即時數據圖表</h3>
+            <div class="chart" id="chart">
+                <div class="chart-line" id="alpha-line" style="top: 33%; background: #FF6B6B;"></div>
+                <div class="chart-line" id="beta-line" style="top: 50%; background: #4ECDC4;"></div>
+                <div class="chart-line" id="gamma-line" style="top: 66%; background: #45B7D1;"></div>
+            </div>
+        </div>
+        
+        <div class="status" id="websocket-status" style="margin-top: 10px;">
+            WebSocket: 準備連接...
+        </div>
+        
+        <div class="instructions">
+            <h3>📋 使用說明</h3>
+            <ul>
+                <li>請在手機上開啟此網頁</li>
+                <li>允許瀏覽器存取裝置方向感應器</li>
+                <li>旋轉手機以查看即時陀螺儀數據</li>
+                <li>X軸 (Alpha): 手機繞Z軸旋轉 (0-360度)</li>
+                <li>Y軸 (Beta): 手機前後傾斜 (-180到180度)</li>
+                <li>Z軸 (Gamma): 手機左右傾斜 (-90到90度)</li>
+                <li>🔌 數據會透過WebSocket即時傳送到Unity</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // 檢查陀螺儀支援
+        function checkGyroscopeSupport() {
+            const statusElement = document.getElementById('status');
+            
+            if (typeof DeviceOrientationEvent !== 'undefined') {
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    // iOS 13+ 需要請求權限
+                    statusElement.innerHTML = '點擊任意處以請求陀螺儀權限...';
+                    statusElement.className = 'status not-supported';
+                    
+                    document.addEventListener('click', requestPermission, { once: true });
+                } else {
+                    // 其他瀏覽器直接支援
+                    statusElement.innerHTML = '✅ 陀螺儀支援已啟用';
+                    statusElement.className = 'status supported';
+                    startGyroscope();
+                }
+            } else {
+                statusElement.innerHTML = '❌ 此瀏覽器不支援陀螺儀功能';
+                statusElement.className = 'status not-supported';
+            }
+        }
+        
+        // 請求權限 (iOS)
+        async function requestPermission() {
+            try {
+                const permission = await DeviceOrientationEvent.requestPermission();
+                const statusElement = document.getElementById('status');
+                
+                if (permission === 'granted') {
+                    statusElement.innerHTML = '✅ 陀螺儀權限已授予';
+                    statusElement.className = 'status supported';
+                    startGyroscope();
+                } else {
+                    statusElement.innerHTML = '❌ 陀螺儀權限被拒絕';
+                    statusElement.className = 'status not-supported';
+                }
+            } catch (error) {
+                console.error('權限請求失敗:', error);
+                document.getElementById('status').innerHTML = '❌ 權限請求失敗';
+                document.getElementById('status').className = 'status not-supported';
+            }
+        }
+        
+        // WebSocket連接管理
+        class GyroscopeWebSocket {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 1000;
+            }
+            
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}`;
+                
+                console.log('嘗試連接WebSocket:', wsUrl);
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    console.log('✅ WebSocket連接已建立');
+                    this.isConnected = true;
+                    this.reconnectAttempts = 0;
+                    this.updateConnectionStatus('已連接', 'connected');
+                };
+                
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log('收到WebSocket訊息:', data);
+                        
+                        if (data.type === 'ack') {
+                            console.log('✅ 數據已成功發送');
+                        }
+                    } catch (error) {
+                        console.error('解析WebSocket訊息錯誤:', error);
+                    }
+                };
+                
+                this.ws.onclose = (event) => {
+                    console.log('❌ WebSocket連接已關閉:', event.code, event.reason);
+                    this.isConnected = false;
+                    this.updateConnectionStatus('連接已斷開', 'disconnected');
+                    
+                    // 自動重連
+                    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                        this.reconnectAttempts++;
+                        console.log(`嘗試重新連接 (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+                        setTimeout(() => this.connect(), this.reconnectDelay * this.reconnectAttempts);
+                    }
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('❌ WebSocket錯誤:', error);
+                    this.updateConnectionStatus('連接錯誤', 'error');
+                };
+            }
+            
+            sendGyroscopeData(alpha, beta, gamma) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        alpha: alpha,
+                        beta: beta,
+                        gamma: gamma,
+                        timestamp: Date.now()
+                    };
+                    
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+            
+            updateConnectionStatus(message, status) {
+                // 可以在UI上顯示連接狀態
+                const statusElement = document.getElementById('websocket-status');
+                if (statusElement) {
+                    statusElement.textContent = `WebSocket: ${message}`;
+                    statusElement.className = `websocket-status ${status}`;
+                }
+            }
+        }
+        
+        // 建立WebSocket實例
+        const gyroWS = new GyroscopeWebSocket();
+        
+        // 開始陀螺儀監聽
+        function startGyroscope() {
+            // 連接WebSocket
+            gyroWS.connect();
+            
+            let dataHistory = [];
+            const maxHistory = 100;
+            
+            window.addEventListener('deviceorientation', function(event) {
+                // 更新數值顯示
+                updateDisplay(event.alpha, event.beta, event.gamma);
+                
+                // 更新圖表
+                updateChart(event.alpha, event.beta, event.gamma);
+                
+                // 透過WebSocket發送數據
+                gyroWS.sendGyroscopeData(event.alpha, event.beta, event.gamma);
+                
+                // 儲存歷史數據
+                dataHistory.push({
+                    alpha: event.alpha,
+                    beta: event.beta,
+                    gamma: event.gamma,
+                    timestamp: Date.now()
+                });
+                
+                // 限制歷史數據長度
+                if (dataHistory.length > maxHistory) {
+                    dataHistory.shift();
+                }
+            });
+        }
+        
+        // 更新顯示數值
+        function updateDisplay(alpha, beta, gamma) {
+            document.getElementById('alpha').textContent = formatValue(alpha);
+            document.getElementById('beta').textContent = formatValue(beta);
+            document.getElementById('gamma').textContent = formatValue(gamma);
+        }
+        
+        // 格式化數值
+        function formatValue(value) {
+            if (value === null) return 'N/A';
+            return value.toFixed(2);
+        }
+        
+        // 更新圖表
+        function updateChart(alpha, beta, gamma) {
+            const chartWidth = document.getElementById('chart').offsetWidth;
+            
+            // 將角度轉換為圖表位置 (0-100%)
+            const alphaPos = ((alpha || 0) / 360) * 100;
+            const betaPos = (((beta || 0) + 180) / 360) * 100;
+            const gammaPos = (((gamma || 0) + 90) / 180) * 100;
+            
+            // 更新線條位置
+            document.getElementById('alpha-line').style.left = Math.max(0, Math.min(100, alphaPos)) + '%';
+            document.getElementById('beta-line').style.left = Math.max(0, Math.min(100, betaPos)) + '%';
+            document.getElementById('gamma-line').style.left = Math.max(0, Math.min(100, gammaPos)) + '%';
+        }
+        
+        // 頁面載入時檢查支援
+        window.addEventListener('load', checkGyroscopeSupport);
+        
+        // 處理視窗大小改變
+        window.addEventListener('resize', function() {
+            // 重新計算圖表位置
+            const alpha = parseFloat(document.getElementById('alpha').textContent);
+            const beta = parseFloat(document.getElementById('beta').textContent);
+            const gamma = parseFloat(document.getElementById('gamma').textContent);
+            
+            if (!isNaN(alpha) && !isNaN(beta) && !isNaN(gamma)) {
+                updateChart(alpha, beta, gamma);
+            }
+        });
+    </script>
+</body>
+</html>
