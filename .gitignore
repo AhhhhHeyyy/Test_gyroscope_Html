@@ -1,16 +1,5 @@
-# Unity專案檔案
+# Unity專案檔案 (完全排除)
 UnityWebsocket0927/
-*.csproj
-*.sln
-*.user
-*.userprefs
-*.pidb
-*.booproj
-*.svd
-*.pdb
-*.mdb
-*.opendb
-*.VC.db
 
 # Unity生成的檔案
 Library/
@@ -32,6 +21,19 @@ Assets/AssetStoreTools*
 Packages/
 manifest.json
 packages-lock.json
+
+# Visual Studio 專案檔案
+*.csproj
+*.sln
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
 
 # Visual Studio
 .vs/
