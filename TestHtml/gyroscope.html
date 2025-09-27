@@ -181,6 +181,10 @@
             </div>
         </div>
         
+        <div class="status" id="websocket-status" style="margin-top: 10px;">
+            WebSocket: 準備連接...
+        </div>
+        
         <div class="instructions">
             <h3>📋 使用說明</h3>
             <ul>
@@ -190,6 +194,7 @@
                 <li>X軸 (Alpha): 手機繞Z軸旋轉 (0-360度)</li>
                 <li>Y軸 (Beta): 手機前後傾斜 (-180到180度)</li>
                 <li>Z軸 (Gamma): 手機左右傾斜 (-90到90度)</li>
+                <li>🔌 數據會透過WebSocket即時傳送到Unity</li>
             </ul>
         </div>
     </div>
@@ -239,8 +244,93 @@
             }
         }
         
+        // WebSocket連接管理
+        class GyroscopeWebSocket {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 1000;
+            }
+            
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}`;
+                
+                console.log('嘗試連接WebSocket:', wsUrl);
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    console.log('✅ WebSocket連接已建立');
+                    this.isConnected = true;
+                    this.reconnectAttempts = 0;
+                    this.updateConnectionStatus('已連接', 'connected');
+                };
+                
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log('收到WebSocket訊息:', data);
+                        
+                        if (data.type === 'ack') {
+                            console.log('✅ 數據已成功發送');
+                        }
+                    } catch (error) {
+                        console.error('解析WebSocket訊息錯誤:', error);
+                    }
+                };
+                
+                this.ws.onclose = (event) => {
+                    console.log('❌ WebSocket連接已關閉:', event.code, event.reason);
+                    this.isConnected = false;
+                    this.updateConnectionStatus('連接已斷開', 'disconnected');
+                    
+                    // 自動重連
+                    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                        this.reconnectAttempts++;
+                        console.log(`嘗試重新連接 (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+                        setTimeout(() => this.connect(), this.reconnectDelay * this.reconnectAttempts);
+                    }
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('❌ WebSocket錯誤:', error);
+                    this.updateConnectionStatus('連接錯誤', 'error');
+                };
+            }
+            
+            sendGyroscopeData(alpha, beta, gamma) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        alpha: alpha,
+                        beta: beta,
+                        gamma: gamma,
+                        timestamp: Date.now()
+                    };
+                    
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+            
+            updateConnectionStatus(message, status) {
+                // 可以在UI上顯示連接狀態
+                const statusElement = document.getElementById('websocket-status');
+                if (statusElement) {
+                    statusElement.textContent = `WebSocket: ${message}`;
+                    statusElement.className = `websocket-status ${status}`;
+                }
+            }
+        }
+        
+        // 建立WebSocket實例
+        const gyroWS = new GyroscopeWebSocket();
+        
         // 開始陀螺儀監聽
         function startGyroscope() {
+            // 連接WebSocket
+            gyroWS.connect();
+            
             let dataHistory = [];
             const maxHistory = 100;
             
@@ -250,6 +340,9 @@
                 
                 // 更新圖表
                 updateChart(event.alpha, event.beta, event.gamma);
+                
+                // 透過WebSocket發送數據
+                gyroWS.sendGyroscopeData(event.alpha, event.beta, event.gamma);
                 
                 // 儲存歷史數據
                 dataHistory.push({
