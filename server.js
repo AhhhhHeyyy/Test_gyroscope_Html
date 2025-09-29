@@ -57,9 +57,18 @@ wss.on('connection', (ws, req) => {
             // 廣播給所有其他客戶端（包括Unity）
             clients.forEach(client => {
                 if (client !== ws && client.readyState === WebSocket.OPEN) {
+                    // 重新格式化數據以符合Unity的GyroscopeData結構
+                    const gyroData = {
+                        alpha: data.alpha,
+                        beta: data.beta,
+                        gamma: data.gamma,
+                        timestamp: data.timestamp,
+                        clientId: stats.totalConnections
+                    };
+                    
                     client.send(JSON.stringify({
                         type: 'gyroscope',
-                        data: data,
+                        data: gyroData,
                         timestamp: Date.now(),
                         clientId: stats.totalConnections
                     }));
