@@ -680,19 +680,31 @@
                 accelerationHistory.shift();
             }
             
+            // 調試輸出
+            console.log(`🔍 加速度偵測: 強度=${currentMagnitude.toFixed(2)}, 變化量=${totalDelta.toFixed(2)}, 閾值=${SHAKE_THRESHOLD}`);
+            
             // 檢查是否超過搖晃閾值且不在冷卻期
-            if (totalDelta > SHAKE_THRESHOLD && (currentTime - lastShakeTime) > SHAKE_COOLDOWN) {
+            // 使用加速度強度或變化量中較大的值來判斷
+            const shakeIntensity = Math.max(totalDelta, currentMagnitude - 9.8); // 減去重力加速度
+            
+            if (shakeIntensity > SHAKE_THRESHOLD && (currentTime - lastShakeTime) > SHAKE_COOLDOWN) {
                 shakeCount++;
                 lastShakeTime = currentTime;
                 
-                // 判斷搖晃強度
+                // 判斷搖晃強度 - 基於加速度強度
                 let shakeType = 'normal';
                 let shakeMessage = '搖晃中！';
                 
-                if (totalDelta >= INTENSE_SHAKE_THRESHOLD) {
+                if (currentMagnitude >= 20) {
                     shakeType = 'intense';
                     shakeMessage = '劇烈搖晃！';
-                } else if (totalDelta >= 15) {
+                } else if (currentMagnitude >= 15) {
+                    shakeType = 'strong';
+                    shakeMessage = '強烈搖晃！';
+                } else if (shakeIntensity >= INTENSE_SHAKE_THRESHOLD) {
+                    shakeType = 'intense';
+                    shakeMessage = '劇烈搖晃！';
+                } else if (shakeIntensity >= 15) {
                     shakeType = 'strong';
                     shakeMessage = '強烈搖晃！';
                 }
@@ -701,12 +713,12 @@
                 updateShakeStatus(shakeMessage, true, shakeType);
                 
                 // 透過WebSocket發送搖晃事件
-                gyroWS.sendShakeEvent(shakeCount, totalDelta, acceleration, shakeType);
+                gyroWS.sendShakeEvent(shakeCount, shakeIntensity, acceleration, shakeType);
                 
                 // 觸發視覺效果
                 triggerShakeEffect(shakeType);
                 
-                console.log(`📳 偵測到${shakeMessage}第 ${shakeCount} 次，強度: ${totalDelta.toFixed(2)} m/s²，類型: ${shakeType}`);
+                console.log(`📳 偵測到${shakeMessage}第 ${shakeCount} 次，強度: ${currentMagnitude.toFixed(2)} m/s²，變化量: ${totalDelta.toFixed(2)} m/s²，類型: ${shakeType}`);
                 
                 // 根據搖晃強度調整恢復時間
                 const recoveryTime = shakeType === 'intense' ? 1500 : 1000;
