@@ -71,6 +71,17 @@
             color: #FFD700;
         }
         
+        .shake-detected {
+            background: linear-gradient(45deg, #FF6B6B, #FF8E8E) !important;
+            animation: shakePulse 0.5s ease-in-out;
+        }
+        
+        @keyframes shakePulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
         .data-value {
             font-size: 2em;
             font-weight: bold;
@@ -336,6 +347,24 @@
                 <div id="gamma" class="data-value">0.00</div>
                 <div class="unit">度 (-90 到 90)</div>
             </div>
+            
+            <div class="data-card">
+                <h3>搖晃偵測</h3>
+                <div id="shake-status" class="data-value">靜止</div>
+                <div class="unit">狀態</div>
+            </div>
+            
+            <div class="data-card">
+                <h3>搖晃次數</h3>
+                <div id="shake-count" class="data-value">0</div>
+                <div class="unit">次</div>
+            </div>
+            
+            <div class="data-card">
+                <h3>加速度強度</h3>
+                <div id="acceleration-magnitude" class="data-value">0.00</div>
+                <div class="unit">m/s²</div>
+            </div>
         </div>
         
         <div class="chart-container">
@@ -434,41 +463,77 @@
     </div>
 
     <script>
-        // 檢查陀螺儀支援
-        function checkGyroscopeSupport() {
+        // 搖晃偵測相關變數
+        let shakeCount = 0;
+        let lastShakeTime = 0;
+        let lastAcceleration = { x: 0, y: 0, z: 0 };
+        let accelerationHistory = [];
+        const SHAKE_THRESHOLD = 15; // 搖晃閾值 (m/s²)
+        const SHAKE_COOLDOWN = 1000; // 搖晃冷卻時間 (毫秒)
+        const HISTORY_LENGTH = 10; // 加速度歷史記錄長度
+        
+        // 檢查感測器支援
+        function checkSensorSupport() {
             const statusElement = document.getElementById('status');
+            let hasOrientation = false;
+            let hasAcceleration = false;
             
+            // 檢查陀螺儀支援
             if (typeof DeviceOrientationEvent !== 'undefined') {
-                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                hasOrientation = true;
+            }
+            
+            // 檢查加速度感測器支援
+            if (typeof DeviceMotionEvent !== 'undefined') {
+                hasAcceleration = true;
+            }
+            
+            if (hasOrientation && hasAcceleration) {
+                if (typeof DeviceOrientationEvent.requestPermission === 'function' || 
+                    typeof DeviceMotionEvent.requestPermission === 'function') {
                     // iOS 13+ 需要請求權限
-                    statusElement.innerHTML = '點擊任意處以請求陀螺儀權限...';
+                    statusElement.innerHTML = '點擊任意處以請求感測器權限...';
                     statusElement.className = 'status not-supported';
                     
-                    document.addEventListener('click', requestPermission, { once: true });
+                    document.addEventListener('click', requestPermissions, { once: true });
                 } else {
                     // 其他瀏覽器直接支援
-                    statusElement.innerHTML = '✅ 陀螺儀支援已啟用';
+                    statusElement.innerHTML = '✅ 陀螺儀與加速度感測器支援已啟用';
                     statusElement.className = 'status supported';
-                    startGyroscope();
+                    startSensors();
                 }
+            } else if (hasOrientation) {
+                statusElement.innerHTML = '⚠️ 僅支援陀螺儀，無加速度感測器';
+                statusElement.className = 'status not-supported';
             } else {
-                statusElement.innerHTML = '❌ 此瀏覽器不支援陀螺儀功能';
+                statusElement.innerHTML = '❌ 此瀏覽器不支援感測器功能';
                 statusElement.className = 'status not-supported';
             }
         }
         
         // 請求權限 (iOS)
-        async function requestPermission() {
+        async function requestPermissions() {
             try {
-                const permission = await DeviceOrientationEvent.requestPermission();
                 const statusElement = document.getElementById('status');
+                let orientationPermission = 'granted';
+                let motionPermission = 'granted';
                 
-                if (permission === 'granted') {
-                    statusElement.innerHTML = '✅ 陀螺儀權限已授予';
+                // 請求陀螺儀權限
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    orientationPermission = await DeviceOrientationEvent.requestPermission();
+                }
+                
+                // 請求加速度感測器權限
+                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                    motionPermission = await DeviceMotionEvent.requestPermission();
+                }
+                
+                if (orientationPermission === 'granted' && motionPermission === 'granted') {
+                    statusElement.innerHTML = '✅ 感測器權限已授予';
                     statusElement.className = 'status supported';
-                    startGyroscope();
+                    startSensors();
                 } else {
-                    statusElement.innerHTML = '❌ 陀螺儀權限被拒絕';
+                    statusElement.innerHTML = '❌ 感測器權限被拒絕';
                     statusElement.className = 'status not-supported';
                 }
             } catch (error) {
@@ -523,12 +588,27 @@
             sendGyroscopeData(alpha, beta, gamma) {
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     const data = {
+                        type: 'gyroscope',
                         alpha: alpha,
                         beta: beta,
                         gamma: gamma,
                         timestamp: Date.now()
                     };
-                    console.log('📤 發送數據:', data);
+                    console.log('📤 發送陀螺儀數據:', data);
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+            
+            sendShakeEvent(count, intensity, acceleration) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        type: 'shake',
+                        count: count,
+                        intensity: intensity,
+                        acceleration: acceleration,
+                        timestamp: Date.now()
+                    };
+                    console.log('📤 發送搖晃事件:', data);
                     this.ws.send(JSON.stringify(data));
                 }
             }
@@ -541,19 +621,102 @@
         // 建立WebSocket實例
         const gyroWS = new GyroscopeWebSocket();
         
-        // 開始陀螺儀監聽
-        function startGyroscope() {
+        // 搖晃偵測演算法
+        function detectShake(acceleration) {
+            const currentTime = Date.now();
+            
+            // 計算加速度變化量
+            const deltaX = Math.abs(acceleration.x - lastAcceleration.x);
+            const deltaY = Math.abs(acceleration.y - lastAcceleration.y);
+            const deltaZ = Math.abs(acceleration.z - lastAcceleration.z);
+            
+            // 計算總加速度變化
+            const totalDelta = deltaX + deltaY + deltaZ;
+            
+            // 更新加速度歷史
+            accelerationHistory.push({
+                x: acceleration.x,
+                y: acceleration.y,
+                z: acceleration.z,
+                magnitude: Math.sqrt(acceleration.x * acceleration.x + acceleration.y * acceleration.y + acceleration.z * acceleration.z),
+                timestamp: currentTime
+            });
+            
+            // 限制歷史記錄長度
+            if (accelerationHistory.length > HISTORY_LENGTH) {
+                accelerationHistory.shift();
+            }
+            
+            // 檢查是否超過搖晃閾值且不在冷卻期
+            if (totalDelta > SHAKE_THRESHOLD && (currentTime - lastShakeTime) > SHAKE_COOLDOWN) {
+                shakeCount++;
+                lastShakeTime = currentTime;
+                
+                // 更新搖晃狀態顯示
+                updateShakeStatus('搖晃中！', true);
+                
+                // 透過WebSocket發送搖晃事件
+                gyroWS.sendShakeEvent(shakeCount, totalDelta, acceleration);
+                
+                // 觸發視覺效果
+                triggerShakeEffect();
+                
+                console.log(`📳 偵測到搖晃！第 ${shakeCount} 次，強度: ${totalDelta.toFixed(2)} m/s²`);
+                
+                // 1秒後恢復靜止狀態
+                setTimeout(() => {
+                    updateShakeStatus('靜止', false);
+                }, 1000);
+                
+                return true;
+            }
+            
+            // 更新最後一次加速度
+            lastAcceleration = { ...acceleration };
+            
+            return false;
+        }
+        
+        // 更新搖晃狀態顯示
+        function updateShakeStatus(status, isShaking) {
+            const statusElement = document.getElementById('shake-status');
+            const countElement = document.getElementById('shake-count');
+            
+            statusElement.textContent = status;
+            countElement.textContent = shakeCount;
+            
+            // 添加搖晃效果
+            if (isShaking) {
+                statusElement.parentElement.classList.add('shake-detected');
+                setTimeout(() => {
+                    statusElement.parentElement.classList.remove('shake-detected');
+                }, 500);
+            }
+        }
+        
+        // 觸發搖晃視覺效果
+        function triggerShakeEffect() {
+            // 可以添加更多視覺效果，如震動、閃爍等
+            document.body.style.animation = 'shakePulse 0.3s ease-in-out';
+            setTimeout(() => {
+                document.body.style.animation = '';
+            }, 300);
+        }
+        
+        // 開始感測器監聽
+        function startSensors() {
             // 連接WebSocket
             gyroWS.connect();
             
             // 設置連接成功後的回調
             gyroWS.setOnConnectedCallback(() => {
-                console.log('🎯 WebSocket連接成功，開始陀螺儀監聽');
+                console.log('🎯 WebSocket連接成功，開始感測器監聽');
             });
             
             let dataHistory = [];
             const maxHistory = 100;
             
+            // 陀螺儀監聽
             window.addEventListener('deviceorientation', function(event) {
                 // 更新數值顯示
                 updateDisplay(event.alpha, event.beta, event.gamma);
@@ -575,6 +738,25 @@
                 // 限制歷史數據長度
                 if (dataHistory.length > maxHistory) {
                     dataHistory.shift();
+                }
+            });
+            
+            // 加速度感測器監聽
+            window.addEventListener('devicemotion', function(event) {
+                const acceleration = event.accelerationIncludingGravity;
+                
+                if (acceleration) {
+                    // 更新加速度強度顯示
+                    const magnitude = Math.sqrt(
+                        acceleration.x * acceleration.x + 
+                        acceleration.y * acceleration.y + 
+                        acceleration.z * acceleration.z
+                    );
+                    
+                    document.getElementById('acceleration-magnitude').textContent = magnitude.toFixed(2);
+                    
+                    // 執行搖晃偵測
+                    detectShake(acceleration);
                 }
             });
         }
@@ -608,7 +790,7 @@
         }
         
         // 頁面載入時檢查支援
-        window.addEventListener('load', checkGyroscopeSupport);
+        window.addEventListener('load', checkSensorSupport);
         
         // 處理視窗大小改變
         window.addEventListener('resize', function() {
