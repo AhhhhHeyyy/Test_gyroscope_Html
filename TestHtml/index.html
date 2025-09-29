@@ -82,6 +82,23 @@
             100% { transform: scale(1); }
         }
         
+        @keyframes shakePulseStrong {
+            0% { transform: scale(1) rotate(0deg); }
+            25% { transform: scale(1.08) rotate(-1deg); }
+            50% { transform: scale(1.12) rotate(1deg); }
+            75% { transform: scale(1.08) rotate(-0.5deg); }
+            100% { transform: scale(1) rotate(0deg); }
+        }
+        
+        @keyframes shakePulseIntense {
+            0% { transform: scale(1) rotate(0deg); }
+            20% { transform: scale(1.1) rotate(-2deg); }
+            40% { transform: scale(1.15) rotate(2deg); }
+            60% { transform: scale(1.1) rotate(-1deg); }
+            80% { transform: scale(1.05) rotate(1deg); }
+            100% { transform: scale(1) rotate(0deg); }
+        }
+        
         .data-value {
             font-size: 2em;
             font-weight: bold;
@@ -365,6 +382,12 @@
                 <div id="acceleration-magnitude" class="data-value">0.00</div>
                 <div class="unit">m/s²</div>
             </div>
+            
+            <div class="data-card">
+                <h3>搖晃強度</h3>
+                <div id="shake-intensity" class="data-value">靜止</div>
+                <div class="unit">狀態</div>
+            </div>
         </div>
         
         <div class="chart-container">
@@ -468,9 +491,10 @@
         let lastShakeTime = 0;
         let lastAcceleration = { x: 0, y: 0, z: 0 };
         let accelerationHistory = [];
-        const SHAKE_THRESHOLD = 15; // 搖晃閾值 (m/s²)
-        const SHAKE_COOLDOWN = 1000; // 搖晃冷卻時間 (毫秒)
-        const HISTORY_LENGTH = 10; // 加速度歷史記錄長度
+        const SHAKE_THRESHOLD = 12; // 搖晃閾值 (m/s²) - 基於實際數據調整
+        const INTENSE_SHAKE_THRESHOLD = 20; // 劇烈搖晃閾值 (m/s²)
+        const SHAKE_COOLDOWN = 800; // 搖晃冷卻時間 (毫秒) - 稍微縮短以提升響應性
+        const HISTORY_LENGTH = 15; // 加速度歷史記錄長度 - 增加以更好追蹤變化
         
         // 檢查感測器支援
         function checkSensorSupport() {
@@ -599,13 +623,14 @@
                 }
             }
             
-            sendShakeEvent(count, intensity, acceleration) {
+            sendShakeEvent(count, intensity, acceleration, shakeType = 'normal') {
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     const data = {
                         type: 'shake',
                         count: count,
                         intensity: intensity,
                         acceleration: acceleration,
+                        shakeType: shakeType,
                         timestamp: Date.now()
                     };
                     console.log('📤 發送搖晃事件:', data);
@@ -621,7 +646,7 @@
         // 建立WebSocket實例
         const gyroWS = new GyroscopeWebSocket();
         
-        // 搖晃偵測演算法
+        // 搖晃偵測演算法 - 基於實際數據優化
         function detectShake(acceleration) {
             const currentTime = Date.now();
             
@@ -633,12 +658,20 @@
             // 計算總加速度變化
             const totalDelta = deltaX + deltaY + deltaZ;
             
+            // 計算當前加速度強度
+            const currentMagnitude = Math.sqrt(
+                acceleration.x * acceleration.x + 
+                acceleration.y * acceleration.y + 
+                acceleration.z * acceleration.z
+            );
+            
             // 更新加速度歷史
             accelerationHistory.push({
                 x: acceleration.x,
                 y: acceleration.y,
                 z: acceleration.z,
-                magnitude: Math.sqrt(acceleration.x * acceleration.x + acceleration.y * acceleration.y + acceleration.z * acceleration.z),
+                magnitude: currentMagnitude,
+                delta: totalDelta,
                 timestamp: currentTime
             });
             
@@ -652,21 +685,34 @@
                 shakeCount++;
                 lastShakeTime = currentTime;
                 
+                // 判斷搖晃強度
+                let shakeType = 'normal';
+                let shakeMessage = '搖晃中！';
+                
+                if (totalDelta >= INTENSE_SHAKE_THRESHOLD) {
+                    shakeType = 'intense';
+                    shakeMessage = '劇烈搖晃！';
+                } else if (totalDelta >= 15) {
+                    shakeType = 'strong';
+                    shakeMessage = '強烈搖晃！';
+                }
+                
                 // 更新搖晃狀態顯示
-                updateShakeStatus('搖晃中！', true);
+                updateShakeStatus(shakeMessage, true, shakeType);
                 
                 // 透過WebSocket發送搖晃事件
-                gyroWS.sendShakeEvent(shakeCount, totalDelta, acceleration);
+                gyroWS.sendShakeEvent(shakeCount, totalDelta, acceleration, shakeType);
                 
                 // 觸發視覺效果
-                triggerShakeEffect();
+                triggerShakeEffect(shakeType);
                 
-                console.log(`📳 偵測到搖晃！第 ${shakeCount} 次，強度: ${totalDelta.toFixed(2)} m/s²`);
+                console.log(`📳 偵測到${shakeMessage}第 ${shakeCount} 次，強度: ${totalDelta.toFixed(2)} m/s²，類型: ${shakeType}`);
                 
-                // 1秒後恢復靜止狀態
+                // 根據搖晃強度調整恢復時間
+                const recoveryTime = shakeType === 'intense' ? 1500 : 1000;
                 setTimeout(() => {
                     updateShakeStatus('靜止', false);
-                }, 1000);
+                }, recoveryTime);
                 
                 return true;
             }
@@ -678,29 +724,78 @@
         }
         
         // 更新搖晃狀態顯示
-        function updateShakeStatus(status, isShaking) {
+        function updateShakeStatus(status, isShaking, shakeType = 'normal') {
             const statusElement = document.getElementById('shake-status');
             const countElement = document.getElementById('shake-count');
+            const intensityElement = document.getElementById('shake-intensity');
             
             statusElement.textContent = status;
             countElement.textContent = shakeCount;
             
+            // 更新搖晃強度顯示
+            if (isShaking) {
+                let intensityText = '';
+                let intensityColor = '';
+                
+                switch(shakeType) {
+                    case 'intense':
+                        intensityText = '劇烈';
+                        intensityColor = '#FF4444';
+                        break;
+                    case 'strong':
+                        intensityText = '強烈';
+                        intensityColor = '#FF8800';
+                        break;
+                    default:
+                        intensityText = '一般';
+                        intensityColor = '#FF6B6B';
+                }
+                
+                intensityElement.textContent = intensityText;
+                intensityElement.style.color = intensityColor;
+            } else {
+                intensityElement.textContent = '靜止';
+                intensityElement.style.color = '#4ECDC4';
+            }
+            
             // 添加搖晃效果
             if (isShaking) {
                 statusElement.parentElement.classList.add('shake-detected');
+                
+                // 根據搖晃類型添加不同的視覺效果
+                if (shakeType === 'intense') {
+                    statusElement.parentElement.style.background = 'linear-gradient(45deg, #FF4444, #FF6666)';
+                } else if (shakeType === 'strong') {
+                    statusElement.parentElement.style.background = 'linear-gradient(45deg, #FF8800, #FFAA44)';
+                } else {
+                    statusElement.parentElement.style.background = 'linear-gradient(45deg, #FF6B6B, #FF8E8E)';
+                }
+                
                 setTimeout(() => {
                     statusElement.parentElement.classList.remove('shake-detected');
+                    statusElement.parentElement.style.background = '';
                 }, 500);
             }
         }
         
         // 觸發搖晃視覺效果
-        function triggerShakeEffect() {
-            // 可以添加更多視覺效果，如震動、閃爍等
-            document.body.style.animation = 'shakePulse 0.3s ease-in-out';
+        function triggerShakeEffect(shakeType = 'normal') {
+            let animationDuration = '0.3s';
+            let animationIntensity = 'shakePulse';
+            
+            // 根據搖晃類型調整動畫效果
+            if (shakeType === 'intense') {
+                animationDuration = '0.5s';
+                animationIntensity = 'shakePulseIntense';
+            } else if (shakeType === 'strong') {
+                animationDuration = '0.4s';
+                animationIntensity = 'shakePulseStrong';
+            }
+            
+            document.body.style.animation = `${animationIntensity} ${animationDuration} ease-in-out`;
             setTimeout(() => {
                 document.body.style.animation = '';
-            }, 300);
+            }, parseFloat(animationDuration) * 1000);
         }
         
         // 開始感測器監聽
