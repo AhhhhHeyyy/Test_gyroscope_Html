@@ -364,10 +364,11 @@
         
         // 開始陀螺儀監聽
         function startGyroscope() {
-            // 先連接WebSocket
-            gyroWS.connect();
+            // 設置WebSocket連接成功後的回調（在連接前設置）
+            const originalOnOpen = gyroWS.ws ? gyroWS.ws.onopen : null;
             
-            // 設置WebSocket連接成功後的回調
+            gyroWS.ws = new WebSocket('wss://testgyroscopehtml-production.up.railway.app');
+            
             gyroWS.ws.onopen = function() {
                 console.log('✅ WebSocket連接已建立');
                 gyroWS.isConnected = true;
@@ -378,6 +379,36 @@
                 console.log('🎯 開始陀螺儀監聽');
                 gyroscopeListener = handleGyroscopeEvent;
                 window.addEventListener('deviceorientation', gyroscopeListener);
+            };
+            
+            gyroWS.ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('收到WebSocket訊息:', data);
+                    
+                    if (data.type === 'ack') {
+                        console.log('✅ 數據已成功發送');
+                    }
+                } catch (error) {
+                    console.error('解析WebSocket訊息錯誤:', error);
+                }
+            };
+            
+            gyroWS.ws.onclose = (event) => {
+                console.log('❌ WebSocket連接已關閉:', event.code, event.reason);
+                gyroWS.isConnected = false;
+                gyroWS.updateConnectionStatus('連接已斷開', 'disconnected');
+                
+                // 移除陀螺儀事件監聽器
+                if (gyroscopeListener) {
+                    window.removeEventListener('deviceorientation', gyroscopeListener);
+                    gyroscopeListener = null;
+                }
+            };
+            
+            gyroWS.ws.onerror = (error) => {
+                console.error('❌ WebSocket錯誤:', error);
+                gyroWS.updateConnectionStatus('連接錯誤', 'error');
             };
         }
         
