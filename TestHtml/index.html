@@ -478,8 +478,79 @@
             }
         }
         
+        // WebSocket連接管理
+        class GyroscopeWebSocket {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.onConnectedCallback = null;
+            }
+            
+            connect() {
+                const wsUrl = 'wss://testgyroscopehtml-production.up.railway.app';
+                console.log('嘗試連接WebSocket:', wsUrl);
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    console.log('✅ WebSocket連接已建立');
+                    this.isConnected = true;
+                    if (this.onConnectedCallback) {
+                        this.onConnectedCallback();
+                    }
+                };
+                
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'ack') {
+                            console.log('✅ 數據已成功發送');
+                        }
+                    } catch (error) {
+                        console.error('解析WebSocket訊息錯誤:', error);
+                    }
+                };
+                
+                this.ws.onclose = (event) => {
+                    console.log('❌ WebSocket連接已關閉:', event.code, event.reason);
+                    this.isConnected = false;
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('❌ WebSocket錯誤:', error);
+                };
+            }
+            
+            sendGyroscopeData(alpha, beta, gamma) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        alpha: alpha,
+                        beta: beta,
+                        gamma: gamma,
+                        timestamp: Date.now()
+                    };
+                    console.log('📤 發送數據:', data);
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+            
+            setOnConnectedCallback(callback) {
+                this.onConnectedCallback = callback;
+            }
+        }
+        
+        // 建立WebSocket實例
+        const gyroWS = new GyroscopeWebSocket();
+        
         // 開始陀螺儀監聽
         function startGyroscope() {
+            // 連接WebSocket
+            gyroWS.connect();
+            
+            // 設置連接成功後的回調
+            gyroWS.setOnConnectedCallback(() => {
+                console.log('🎯 WebSocket連接成功，開始陀螺儀監聽');
+            });
+            
             let dataHistory = [];
             const maxHistory = 100;
             
@@ -489,6 +560,9 @@
                 
                 // 更新圖表
                 updateChart(event.alpha, event.beta, event.gamma);
+                
+                // 透過WebSocket發送數據
+                gyroWS.sendGyroscopeData(event.alpha, event.beta, event.gamma);
                 
                 // 儲存歷史數據
                 dataHistory.push({
