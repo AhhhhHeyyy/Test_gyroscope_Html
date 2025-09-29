@@ -252,6 +252,7 @@
                 this.reconnectAttempts = 0;
                 this.maxReconnectAttempts = 5;
                 this.reconnectDelay = 1000;
+                this.onConnectedCallback = null; // 連接成功回調
             }
             
             connect() {
@@ -266,6 +267,11 @@
                     this.isConnected = true;
                     this.reconnectAttempts = 0;
                     this.updateConnectionStatus('已連接', 'connected');
+                    
+                    // 觸發連接成功回調
+                    if (this.onConnectedCallback) {
+                        this.onConnectedCallback();
+                    }
                 };
                 
                 this.ws.onmessage = (event) => {
@@ -321,42 +327,58 @@
                     statusElement.className = `websocket-status ${status}`;
                 }
             }
+            
+            // 設置連接成功回調
+            setOnConnectedCallback(callback) {
+                this.onConnectedCallback = callback;
+            }
         }
         
         // 建立WebSocket實例
         const gyroWS = new GyroscopeWebSocket();
         
+        // 陀螺儀數據處理變數
+        let dataHistory = [];
+        const maxHistory = 100;
+        let gyroscopeListener = null; // 陀螺儀事件監聽器引用
+        
+        // 陀螺儀事件處理函數
+        function handleGyroscopeEvent(event) {
+            // 更新數值顯示
+            updateDisplay(event.alpha, event.beta, event.gamma);
+            
+            // 更新圖表
+            updateChart(event.alpha, event.beta, event.gamma);
+            
+            // 透過WebSocket發送數據
+            gyroWS.sendGyroscopeData(event.alpha, event.beta, event.gamma);
+            
+            // 儲存歷史數據
+            dataHistory.push({
+                alpha: event.alpha,
+                beta: event.beta,
+                gamma: event.gamma,
+                timestamp: Date.now()
+            });
+            
+            // 限制歷史數據長度
+            if (dataHistory.length > maxHistory) {
+                dataHistory.shift();
+            }
+        }
+        
         // 開始陀螺儀監聽
         function startGyroscope() {
+            // 設置WebSocket連接成功回調
+            gyroWS.setOnConnectedCallback(() => {
+                console.log('🎯 WebSocket連接成功，開始陀螺儀監聽');
+                // 只在WebSocket連接成功後才註冊陀螺儀事件監聽器
+                gyroscopeListener = handleGyroscopeEvent;
+                window.addEventListener('deviceorientation', gyroscopeListener);
+            });
+            
             // 連接WebSocket
             gyroWS.connect();
-            
-            let dataHistory = [];
-            const maxHistory = 100;
-            
-            window.addEventListener('deviceorientation', function(event) {
-                // 更新數值顯示
-                updateDisplay(event.alpha, event.beta, event.gamma);
-                
-                // 更新圖表
-                updateChart(event.alpha, event.beta, event.gamma);
-                
-                // 透過WebSocket發送數據
-                gyroWS.sendGyroscopeData(event.alpha, event.beta, event.gamma);
-                
-                // 儲存歷史數據
-                dataHistory.push({
-                    alpha: event.alpha,
-                    beta: event.beta,
-                    gamma: event.gamma,
-                    timestamp: Date.now()
-                });
-                
-                // 限制歷史數據長度
-                if (dataHistory.length > maxHistory) {
-                    dataHistory.shift();
-                }
-            });
         }
         
         // 更新顯示數值
