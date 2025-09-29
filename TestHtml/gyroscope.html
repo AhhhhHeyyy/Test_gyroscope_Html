@@ -252,6 +252,7 @@
                 this.reconnectAttempts = 0;
                 this.maxReconnectAttempts = 5;
                 this.reconnectDelay = 1000;
+                this.onConnectedCallback = null; // 連接成功回調
             }
             
             connect() {
@@ -266,6 +267,11 @@
                     this.isConnected = true;
                     this.reconnectAttempts = 0;
                     this.updateConnectionStatus('已連接', 'connected');
+                    
+                    // 觸發連接成功回調
+                    if (this.onConnectedCallback) {
+                        this.onConnectedCallback();
+                    }
                 };
                 
                 this.ws.onmessage = (event) => {
@@ -327,6 +333,11 @@
                     statusElement.className = `websocket-status ${status}`;
                 }
             }
+            
+            // 設置連接成功回調
+            setOnConnectedCallback(callback) {
+                this.onConnectedCallback = callback;
+            }
         }
         
         // 建立WebSocket實例
@@ -364,52 +375,15 @@
         
         // 開始陀螺儀監聽
         function startGyroscope() {
-            // 設置WebSocket連接成功後的回調（在連接前設置）
-            const originalOnOpen = gyroWS.ws ? gyroWS.ws.onopen : null;
+            // 使用GyroscopeWebSocket類的connect方法
+            gyroWS.connect();
             
-            gyroWS.ws = new WebSocket('wss://testgyroscopehtml-production.up.railway.app');
-            
-            gyroWS.ws.onopen = function() {
-                console.log('✅ WebSocket連接已建立');
-                gyroWS.isConnected = true;
-                gyroWS.reconnectAttempts = 0;
-                gyroWS.updateConnectionStatus('已連接', 'connected');
-                
-                // 只在WebSocket連接成功後才註冊陀螺儀事件監聽器
-                console.log('🎯 開始陀螺儀監聽');
+            // 設置連接成功後的回調
+            gyroWS.setOnConnectedCallback(() => {
+                console.log('🎯 WebSocket連接成功，開始陀螺儀監聽');
                 gyroscopeListener = handleGyroscopeEvent;
                 window.addEventListener('deviceorientation', gyroscopeListener);
-            };
-            
-            gyroWS.ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('收到WebSocket訊息:', data);
-                    
-                    if (data.type === 'ack') {
-                        console.log('✅ 數據已成功發送');
-                    }
-                } catch (error) {
-                    console.error('解析WebSocket訊息錯誤:', error);
-                }
-            };
-            
-            gyroWS.ws.onclose = (event) => {
-                console.log('❌ WebSocket連接已關閉:', event.code, event.reason);
-                gyroWS.isConnected = false;
-                gyroWS.updateConnectionStatus('連接已斷開', 'disconnected');
-                
-                // 移除陀螺儀事件監聽器
-                if (gyroscopeListener) {
-                    window.removeEventListener('deviceorientation', gyroscopeListener);
-                    gyroscopeListener = null;
-                }
-            };
-            
-            gyroWS.ws.onerror = (error) => {
-                console.error('❌ WebSocket錯誤:', error);
-                gyroWS.updateConnectionStatus('連接錯誤', 'error');
-            };
+            });
         }
         
         // 更新顯示數值
