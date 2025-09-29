@@ -255,8 +255,8 @@
             }
             
             connect() {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}`;
+                // 使用Railway線上URL
+                const wsUrl = 'wss://testgyroscopehtml-production.up.railway.app';
                 
                 console.log('嘗試連接WebSocket:', wsUrl);
                 this.ws = new WebSocket(wsUrl);
@@ -388,7 +388,11 @@
         }
         
         // 頁面載入時檢查支援
-        window.addEventListener('load', checkGyroscopeSupport);
+        window.addEventListener('load', function() {
+            // 立即啟動WebSocket連接，不等待陀螺儀權限
+            gyroWS.connect();
+            checkGyroscopeSupport();
+        });
         
         // 處理視窗大小改變
         window.addEventListener('resize', function() {

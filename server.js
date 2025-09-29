@@ -174,7 +174,7 @@ setInterval(() => {
     console.log(`📊 服務狀態: 運行時間 ${uptime}s, 活躍連接 ${clients.size}, 總訊息 ${stats.totalMessages}`);
 }, 60000); // 每分鐘報告一次
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
     console.log('🚀 陀螺儀WebSocket伺服器啟動成功!');
     console.log(`📱 靜態檔案服務: http://localhost:${PORT}`);
