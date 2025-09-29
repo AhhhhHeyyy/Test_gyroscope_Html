@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>手機陀螺儀偵測器</title>
+    <title>手機陀螺儀偵測器 v2.0 - 搖晃偵測版</title>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -97,6 +97,14 @@
             60% { transform: scale(1.1) rotate(-1deg); }
             80% { transform: scale(1.05) rotate(1deg); }
             100% { transform: scale(1) rotate(0deg); }
+        }
+        
+        @keyframes shakeDemo {
+            0% { transform: rotateX(0deg) rotateY(0deg); }
+            25% { transform: rotateX(15deg) rotateY(15deg); }
+            50% { transform: rotateX(-10deg) rotateY(-10deg); }
+            75% { transform: rotateX(10deg) rotateY(-15deg); }
+            100% { transform: rotateX(0deg) rotateY(0deg); }
         }
         
         .data-value {
@@ -340,7 +348,10 @@
 </head>
 <body>
     <div class="container">
-        <h1>📱 手機陀螺儀偵測器</h1>
+        <h1>📱 手機陀螺儀偵測器 v2.0</h1>
+        <div style="text-align: center; margin-bottom: 20px; font-size: 1.2em; color: #FFD700;">
+            🆕 全新搖晃偵測功能 | 三軸感測器 | 即時數據傳輸
+        </div>
         
         <div id="status" class="status">
             正在檢查陀螺儀支援...
@@ -400,6 +411,53 @@
         </div>
         
         <div class="cube-feature">
+            <h3>🆕 v2.0 新功能：智能搖晃偵測</h3>
+            
+            <div class="cube-preview">
+                <div class="cube-mini" style="animation: shakeDemo 2s infinite ease-in-out;">
+                    <div class="face front">搖</div>
+                    <div class="face back">晃</div>
+                    <div class="face right">偵</div>
+                    <div class="face left">測</div>
+                    <div class="face top">v2</div>
+                    <div class="face bottom">.0</div>
+                </div>
+                
+                <div class="cube-info">
+                    <h4>🎯 精準搖晃偵測系統</h4>
+                    <p><strong>基於加速度感測器的智能搖晃偵測</strong></p>
+                    <p>• 使用標準演算法：加速度變化量 + 連續檢測</p>
+                    <p>• 三級強度分類：一般搖晃、強烈搖晃、劇烈搖晃</p>
+                    <p>• 防誤判機制：連續3次超標才觸發</p>
+                    <p>• 即時視覺回饋：動畫效果 + 強度指示</p>
+                </div>
+            </div>
+            
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <span class="icon">📊</span>
+                    <h5>精準閾值</h5>
+                    <p>10-15 m/s² 標準閾值</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">⚡</span>
+                    <h5>即時響應</h5>
+                    <p>毫秒級偵測延遲</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">🛡️</span>
+                    <h5>防誤判</h5>
+                    <p>連續檢測機制</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">🎨</span>
+                    <h5>視覺回饋</h5>
+                    <p>動畫 + 顏色指示</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="cube-feature" style="border-left-color: #4ECDC4;">
             <h3>🎲 3D 陀螺儀立方體</h3>
             
             <div class="cube-preview">
@@ -473,15 +531,55 @@
         </div>
         
         <div class="instructions">
-            <h3>📋 使用說明</h3>
+            <h3>📋 v2.0 使用說明</h3>
             <ul>
-                <li>請在手機上開啟此網頁</li>
-                <li>允許瀏覽器存取裝置方向感應器</li>
-                <li>旋轉手機以查看即時陀螺儀數據</li>
-                <li>X軸 (Alpha): 手機繞Z軸旋轉 (0-360度)</li>
-                <li>Y軸 (Beta): 手機前後傾斜 (-180到180度)</li>
-                <li>Z軸 (Gamma): 手機左右傾斜 (-90到90度)</li>
+                <li><strong>基本操作：</strong>請在手機上開啟此網頁</li>
+                <li><strong>權限設定：</strong>允許瀏覽器存取裝置感測器（陀螺儀 + 加速度）</li>
+                <li><strong>陀螺儀測試：</strong>旋轉手機以查看即時三軸數據</li>
+                <li><strong>搖晃測試：</strong>用力搖晃手機觸發搖晃偵測</li>
+                <li><strong>數據說明：</strong>
+                    <ul style="margin-top: 10px; padding-left: 20px;">
+                        <li>X軸 (Alpha): 手機繞Z軸旋轉 (0-360度)</li>
+                        <li>Y軸 (Beta): 手機前後傾斜 (-180到180度)</li>
+                        <li>Z軸 (Gamma): 手機左右傾斜 (-90到90度)</li>
+                        <li>搖晃偵測: 基於加速度變化量 (10+ m/s²)</li>
+                    </ul>
+                </li>
             </ul>
+        </div>
+        
+        <div class="deploy-info" style="border-left-color: #FF6B6B;">
+            <h3>🔧 v2.0 技術規格</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0;">
+                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
+                    <h4 style="color: #FFD700; margin-top: 0;">搖晃偵測</h4>
+                    <p><strong>演算法：</strong>加速度變化量檢測</p>
+                    <p><strong>閾值：</strong>10-15 m/s²</p>
+                    <p><strong>防誤判：</strong>連續3次超標</p>
+                    <p><strong>響應時間：</strong>&lt; 100ms</p>
+                </div>
+                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
+                    <h4 style="color: #FFD700; margin-top: 0;">感測器支援</h4>
+                    <p><strong>陀螺儀：</strong>DeviceOrientationEvent</p>
+                    <p><strong>加速度：</strong>DeviceMotionEvent</p>
+                    <p><strong>平台：</strong>iOS 13+ / Android</p>
+                    <p><strong>權限：</strong>自動請求</p>
+                </div>
+                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
+                    <h4 style="color: #FFD700; margin-top: 0;">數據傳輸</h4>
+                    <p><strong>協議：</strong>WebSocket (WSS)</p>
+                    <p><strong>頻率：</strong>即時傳輸</p>
+                    <p><strong>格式：</strong>JSON</p>
+                    <p><strong>服務器：</strong>Railway.app</p>
+                </div>
+                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
+                    <h4 style="color: #FFD700; margin-top: 0;">視覺效果</h4>
+                    <p><strong>動畫：</strong>CSS3 動畫</p>
+                    <p><strong>回饋：</strong>顏色 + 震動效果</p>
+                    <p><strong>響應式：</strong>適配各種螢幕</p>
+                    <p><strong>主題：</strong>現代化設計</p>
+                </div>
+            </div>
         </div>
     </div>
 
