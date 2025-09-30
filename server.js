@@ -44,34 +44,54 @@ wss.on('connection', (ws, req) => {
     
     ws.on('message', (message) => {
         try {
-            const data = JSON.parse(message);
+            const msg = JSON.parse(message);
             stats.totalMessages++;
             
-            console.log('📱 收到陀螺儀數據:', {
-                alpha: data.alpha,
-                beta: data.beta,
-                gamma: data.gamma,
-                clientId: stats.totalConnections
-            });
+            let out;
+            if (msg.type === 'shake') {
+                // 處理搖晃數據
+                console.log('📳 收到搖晃數據:', {
+                    count: msg.data?.count,
+                    intensity: msg.data?.intensity,
+                    shakeType: msg.data?.shakeType,
+                    clientId: stats.totalConnections
+                });
+                
+                out = { 
+                    type: 'shake', 
+                    data: msg.data, 
+                    timestamp: Date.now(),
+                    clientId: stats.totalConnections
+                };
+            } else {
+                // 預設當作陀螺儀角度（向後相容）
+                console.log('📱 收到陀螺儀數據:', {
+                    alpha: msg.alpha,
+                    beta: msg.beta,
+                    gamma: msg.gamma,
+                    clientId: stats.totalConnections
+                });
+                
+                const gyroData = {
+                    alpha: msg.alpha,
+                    beta: msg.beta,
+                    gamma: msg.gamma,
+                    timestamp: msg.timestamp,
+                    clientId: stats.totalConnections
+                };
+                
+                out = { 
+                    type: 'gyroscope', 
+                    data: gyroData, 
+                    timestamp: Date.now(),
+                    clientId: stats.totalConnections
+                };
+            }
             
             // 廣播給所有其他客戶端（包括Unity）
             clients.forEach(client => {
                 if (client !== ws && client.readyState === WebSocket.OPEN) {
-                    // 重新格式化數據以符合Unity的GyroscopeData結構
-                    const gyroData = {
-                        alpha: data.alpha,
-                        beta: data.beta,
-                        gamma: data.gamma,
-                        timestamp: data.timestamp,
-                        clientId: stats.totalConnections
-                    };
-                    
-                    client.send(JSON.stringify({
-                        type: 'gyroscope',
-                        data: gyroData,
-                        timestamp: Date.now(),
-                        clientId: stats.totalConnections
-                    }));
+                    client.send(JSON.stringify(out));
                 }
             });
             

@@ -730,11 +730,13 @@
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     const data = {
                         type: 'shake',
-                        count: count,
-                        intensity: intensity,
-                        acceleration: acceleration,
-                        shakeType: shakeType,
-                        timestamp: Date.now()
+                        data: {
+                            count: count,
+                            intensity: intensity,
+                            acceleration: acceleration,
+                            shakeType: shakeType,
+                            timestamp: Date.now()
+                        }
                     };
                     console.log('📤 發送搖晃事件:', data);
                     this.ws.send(JSON.stringify(data));
