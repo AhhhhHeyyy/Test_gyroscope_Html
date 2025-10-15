@@ -1,0 +1,12 @@
+/**
+ * 主要樣式設定
+ * 使用 Flexbox 布局來居中顯示旋轉控制元件
+ */
+body {
+    display: flex;                    /* 使用 Flexbox 布局 */
+    align-items: center;              /* 垂直居中對齊 */
+    justify-content: center;          /* 水平居中對齊 */
+    min-height: 100vh;                /* 最小高度為整個視窗高度 */
+    flex-direction: column;           /* 設定為垂直排列（按鈕在上，旋鈕在下） */
+}
+  

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>旋轉控制測試</title>
+    <!-- 引入自定義樣式表 -->
+    <link rel="stylesheet" href="file.css">
+    <!-- 引入 GSAP 核心庫 - 用於動畫效果 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <!-- 引入 GSAP Draggable 插件 - 用於拖拽功能 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/Draggable.min.js"></script>
+    <!-- 引入 jQuery 庫 - 用於 DOM 操作 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+</head>
+<body>
+    <!-- 控制按鈕：點擊後顯示當前旋鈕的旋轉角度 -->
+    <button id="rotation">顯示旋轉角度</button><br>
+    <!-- 震動測試按鈕 -->
+    <button id="vibrateTest">測試震動</button><br>
+    <!-- 旋鈕圖片：可拖拽旋轉的圓形控制元件 -->
+    <img id="knob" src="https://i.postimg.cc/mr45tyXJ/Hi-Paint-1760323869267.png" width="410" height="410">
+    <!-- 引入主要的 JavaScript 功能檔案 -->
+    <script src="ani.js"></script>
+</body>
+</html>
