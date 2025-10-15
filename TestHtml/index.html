@@ -245,6 +245,14 @@
             to { transform: rotateX(360deg) rotateY(360deg); }
         }
 
+        @keyframes screenCapture {
+            0% { transform: rotateX(0deg) rotateY(0deg) scale(1); }
+            25% { transform: rotateX(15deg) rotateY(15deg) scale(1.05); }
+            50% { transform: rotateX(-10deg) rotateY(-10deg) scale(1.1); }
+            75% { transform: rotateX(10deg) rotateY(-15deg) scale(1.05); }
+            100% { transform: rotateX(0deg) rotateY(0deg) scale(1); }
+        }
+
         .cube-info {
             flex: 1;
             min-width: 200px;
@@ -348,9 +356,9 @@
 </head>
 <body>
     <div class="container">
-        <h1>📱 手機陀螺儀偵測器 v2.0</h1>
+        <h1>📱 手機陀螺儀偵測器 v2.1</h1>
         <div style="text-align: center; margin-bottom: 20px; font-size: 1.2em; color: #FFD700;">
-            🆕 全新搖晃偵測功能 | 三軸感測器 | 即時數據傳輸
+            🆕 搖晃偵測 + 螢幕捕獲 | 三軸感測器 | 即時數據傳輸
         </div>
         
         <div id="status" class="status">
@@ -503,6 +511,73 @@
             </div>
         </div>
         
+        <div class="cube-feature" style="border-left-color: #FF9800;">
+            <h3>📺 螢幕捕獲串流</h3>
+            
+            <div class="cube-preview">
+                <div class="cube-mini" style="animation: screenCapture 3s infinite ease-in-out;">
+                    <div class="face front">螢</div>
+                    <div class="face back">幕</div>
+                    <div class="face right">捕</div>
+                    <div class="face left">獲</div>
+                    <div class="face top">📺</div>
+                    <div class="face bottom">串流</div>
+                </div>
+                
+                <div class="cube-info">
+                    <h4>即時螢幕捕獲與串流</h4>
+                    <p>捕獲整個螢幕或特定視窗，透過WebSocket即時傳送到Unity</p>
+                    <p>支援全螢幕、特定視窗、瀏覽器標籤頁捕獲</p>
+                    <p>高品質JPEG壓縮，15fps流暢傳輸</p>
+                    <button id="startScreenCapture" class="cube-link" style="border: none; cursor: pointer;">🎬 開始捕獲</button>
+                    <button id="stopScreenCapture" class="cube-link" style="border: none; cursor: pointer; background: linear-gradient(45deg, #f44336, #da190b); display: none;">⏹️ 停止捕獲</button>
+                </div>
+            </div>
+            
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <span class="icon">🖥️</span>
+                    <h5>全螢幕捕獲</h5>
+                    <p>捕獲整個桌面畫面</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">🪟</span>
+                    <h5>視窗選擇</h5>
+                    <p>選擇特定應用程式視窗</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">📱</span>
+                    <h5>即時串流</h5>
+                    <p>15fps流暢傳輸</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">🎯</span>
+                    <h5>Unity整合</h5>
+                    <p>直接傳送到Unity客戶端</p>
+                </div>
+            </div>
+            
+            <!-- 螢幕捕獲預覽區域 -->
+            <div id="screenCapturePreview" style="display: none; margin-top: 20px;">
+                <h4 style="color: #FFD700; margin-bottom: 15px;">📱 螢幕捕獲預覽</h4>
+                <video id="screenCaptureVideo" autoplay muted style="width: 100%; max-width: 500px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);"></video>
+                <div id="screenCaptureStats" style="margin-top: 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="color: #4ECDC4; font-weight: bold;">串流狀態</div>
+                        <div id="captureStatus">未開始</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="color: #4ECDC4; font-weight: bold;">幀率</div>
+                        <div id="captureFPS">0 FPS</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="color: #4ECDC4; font-weight: bold;">數據大小</div>
+                        <div id="captureDataSize">0 KB</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <div class="deploy-info">
             <h3>🚀 快速部署方案</h3>
             <p><strong>方案一：Netlify（推薦）</strong></p>
@@ -537,12 +612,14 @@
                 <li><strong>權限設定：</strong>允許瀏覽器存取裝置感測器（陀螺儀 + 加速度）</li>
                 <li><strong>陀螺儀測試：</strong>旋轉手機以查看即時三軸數據</li>
                 <li><strong>搖晃測試：</strong>用力搖晃手機觸發搖晃偵測</li>
+                <li><strong>螢幕捕獲：</strong>點擊「開始捕獲」按鈕，選擇要捕獲的螢幕或視窗</li>
                 <li><strong>數據說明：</strong>
                     <ul style="margin-top: 10px; padding-left: 20px;">
                         <li>X軸 (Alpha): 手機繞Z軸旋轉 (0-360度)</li>
                         <li>Y軸 (Beta): 手機前後傾斜 (-180到180度)</li>
                         <li>Z軸 (Gamma): 手機左右傾斜 (-90到90度)</li>
                         <li>搖晃偵測: 基於加速度變化量 (10+ m/s²)</li>
+                        <li>螢幕捕獲: 支援全螢幕、視窗、標籤頁捕獲，15fps串流</li>
                     </ul>
                 </li>
             </ul>
@@ -578,6 +655,13 @@
                     <p><strong>回饋：</strong>顏色 + 震動效果</p>
                     <p><strong>響應式：</strong>適配各種螢幕</p>
                     <p><strong>主題：</strong>現代化設計</p>
+                </div>
+                <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
+                    <h4 style="color: #FFD700; margin-top: 0;">螢幕捕獲</h4>
+                    <p><strong>解析度：</strong>1280x720</p>
+                    <p><strong>幀率：</strong>15fps</p>
+                    <p><strong>編碼：</strong>JPEG 70%品質</p>
+                    <p><strong>傳輸：</strong>WebSocket即時</p>
                 </div>
             </div>
         </div>
@@ -743,6 +827,19 @@
                 }
             }
             
+            sendScreenCaptureData(imageData, size) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        type: 'screen_capture',
+                        data: imageData,
+                        timestamp: Date.now(),
+                        size: size
+                    };
+                    console.log('📤 發送螢幕捕獲數據:', { size: size, timestamp: Date.now() });
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+            
             setOnConnectedCallback(callback) {
                 this.onConnectedCallback = callback;
             }
@@ -750,6 +847,15 @@
         
         // 建立WebSocket實例
         const gyroWS = new GyroscopeWebSocket();
+        
+        // 螢幕捕獲相關變數
+        let screenCaptureStream = null;
+        let screenCaptureCanvas = null;
+        let screenCaptureCtx = null;
+        let isScreenCapturing = false;
+        let screenCaptureFrameCount = 0;
+        let screenCaptureLastTime = Date.now();
+        let screenCaptureTotalDataSize = 0;
         
         // 搖晃偵測演算法 - 基於推薦的標準方式
         function detectShake(acceleration) {
@@ -999,6 +1105,145 @@
             document.getElementById('beta-line').style.left = Math.max(0, Math.min(100, betaPos)) + '%';
             document.getElementById('gamma-line').style.left = Math.max(0, Math.min(100, gammaPos)) + '%';
         }
+        
+        // 螢幕捕獲功能
+        async function startScreenCapture() {
+            try {
+                console.log('🎬 開始螢幕捕獲...');
+                
+                // 請求螢幕捕獲權限
+                screenCaptureStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        mediaSource: 'screen',
+                        width: { ideal: 1280, max: 1920 },
+                        height: { ideal: 720, max: 1080 },
+                        frameRate: { ideal: 15, max: 30 }
+                    },
+                    audio: false
+                });
+                
+                console.log('✅ 螢幕捕獲權限已獲得');
+                console.log('📺 捕獲的畫面範圍:', screenCaptureStream.getVideoTracks()[0].label);
+                
+                // 顯示本地預覽
+                const video = document.getElementById('screenCaptureVideo');
+                video.srcObject = screenCaptureStream;
+                await video.play();
+                
+                // 創建Canvas用於捕獲幀
+                screenCaptureCanvas = document.createElement('canvas');
+                screenCaptureCanvas.width = 1280;
+                screenCaptureCanvas.height = 720;
+                screenCaptureCtx = screenCaptureCanvas.getContext('2d');
+                
+                // 開始捕獲幀
+                isScreenCapturing = true;
+                captureScreenFrames();
+                
+                // 更新UI
+                document.getElementById('startScreenCapture').style.display = 'none';
+                document.getElementById('stopScreenCapture').style.display = 'inline-block';
+                document.getElementById('screenCapturePreview').style.display = 'block';
+                document.getElementById('captureStatus').textContent = '串流中';
+                
+                console.log('📹 螢幕捕獲已開始');
+                
+            } catch (error) {
+                console.error('❌ 螢幕捕獲失敗:', error);
+                
+                let errorMessage = '螢幕捕獲失敗: ';
+                if (error.name === 'NotAllowedError') {
+                    errorMessage += '用戶拒絕了螢幕捕獲權限';
+                } else if (error.name === 'NotFoundError') {
+                    errorMessage += '找不到可用的螢幕捕獲源';
+                } else {
+                    errorMessage += error.message;
+                }
+                
+                alert(errorMessage);
+            }
+        }
+        
+        function stopScreenCapture() {
+            isScreenCapturing = false;
+            
+            if (screenCaptureStream) {
+                screenCaptureStream.getTracks().forEach(track => track.stop());
+                screenCaptureStream = null;
+            }
+            
+            const video = document.getElementById('screenCaptureVideo');
+            video.srcObject = null;
+            
+            // 更新UI
+            document.getElementById('startScreenCapture').style.display = 'inline-block';
+            document.getElementById('stopScreenCapture').style.display = 'none';
+            document.getElementById('screenCapturePreview').style.display = 'none';
+            document.getElementById('captureStatus').textContent = '未開始';
+            
+            console.log('📹 螢幕捕獲已停止');
+        }
+        
+        function captureScreenFrames() {
+            if (!isScreenCapturing) return;
+            
+            const video = document.getElementById('screenCaptureVideo');
+            
+            // 繪製當前幀到Canvas
+            screenCaptureCtx.drawImage(video, 0, 0, screenCaptureCanvas.width, screenCaptureCanvas.height);
+            
+            // 轉換為JPEG並發送
+            screenCaptureCanvas.toBlob((blob) => {
+                if (blob && gyroWS.isConnected) {
+                    blob.arrayBuffer().then(buffer => {
+                        const imageData = Array.from(new Uint8Array(buffer));
+                        gyroWS.sendScreenCaptureData(imageData, buffer.byteLength);
+                        
+                        // 更新統計數據
+                        screenCaptureTotalDataSize += buffer.byteLength;
+                        screenCaptureFrameCount++;
+                    });
+                }
+            }, 'image/jpeg', 0.7); // 70%品質的JPEG
+            
+            // 15fps (每66ms一幀)
+            setTimeout(() => captureScreenFrames(), 66);
+        }
+        
+        // 更新螢幕捕獲統計數據
+        function updateScreenCaptureStats() {
+            const now = Date.now();
+            const timeDiff = (now - screenCaptureLastTime) / 1000;
+            
+            if (timeDiff > 0) {
+                const currentFPS = Math.round(screenCaptureFrameCount / timeDiff);
+                document.getElementById('captureFPS').textContent = `${currentFPS} FPS`;
+                
+                // 重置計數器
+                screenCaptureFrameCount = 0;
+                screenCaptureLastTime = now;
+            }
+            
+            // 更新數據大小顯示
+            const sizeInKB = Math.round(screenCaptureTotalDataSize / 1024);
+            document.getElementById('captureDataSize').textContent = `${sizeInKB} KB`;
+        }
+        
+        // 添加螢幕捕獲按鈕事件監聽器
+        document.addEventListener('DOMContentLoaded', function() {
+            const startBtn = document.getElementById('startScreenCapture');
+            const stopBtn = document.getElementById('stopScreenCapture');
+            
+            if (startBtn) {
+                startBtn.addEventListener('click', startScreenCapture);
+            }
+            if (stopBtn) {
+                stopBtn.addEventListener('click', stopScreenCapture);
+            }
+            
+            // 開始統計更新
+            setInterval(updateScreenCaptureStats, 1000);
+        });
         
         // 頁面載入時檢查支援
         window.addEventListener('load', checkSensorSupport);

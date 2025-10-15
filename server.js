@@ -25,6 +25,9 @@ const stats = {
     totalConnections: 0,
     activeConnections: 0,
     totalMessages: 0,
+    screenCaptureMessages: 0,
+    gyroscopeMessages: 0,
+    shakeMessages: 0,
     startTime: Date.now()
 };
 
@@ -48,8 +51,26 @@ wss.on('connection', (ws, req) => {
             stats.totalMessages++;
             
             let out;
-            if (msg.type === 'shake') {
+            if (msg.type === 'screen_capture') {
+                // 處理螢幕捕獲數據
+                stats.screenCaptureMessages++;
+                console.log('📺 收到螢幕捕獲數據:', {
+                    size: msg.size,
+                    timestamp: msg.timestamp,
+                    clientId: stats.totalConnections,
+                    dataLength: msg.data?.length
+                });
+                
+                out = { 
+                    type: 'screen_capture', 
+                    data: msg.data,
+                    timestamp: Date.now(),
+                    clientId: stats.totalConnections,
+                    size: msg.size
+                };
+            } else if (msg.type === 'shake') {
                 // 處理搖晃數據
+                stats.shakeMessages++;
                 console.log('📳 收到搖晃數據:', {
                     count: msg.data?.count,
                     intensity: msg.data?.intensity,
@@ -65,6 +86,7 @@ wss.on('connection', (ws, req) => {
                 };
             } else {
                 // 預設當作陀螺儀角度（向後相容）
+                stats.gyroscopeMessages++;
                 console.log('📱 收到陀螺儀數據:', {
                     alpha: msg.alpha,
                     beta: msg.beta,
@@ -136,7 +158,12 @@ app.get('/health', (req, res) => {
             active: stats.activeConnections,
             total: stats.totalConnections
         },
-        messages: stats.totalMessages,
+        messages: {
+            total: stats.totalMessages,
+            gyroscope: stats.gyroscopeMessages,
+            shake: stats.shakeMessages,
+            screenCapture: stats.screenCaptureMessages
+        },
         timestamp: Date.now()
     });
 });
@@ -147,18 +174,28 @@ app.get('/api/status', (req, res) => {
     const memoryUsage = process.memoryUsage();
     
     res.json({
-        service: 'Gyroscope WebSocket Server',
-        version: '1.0.0',
+        service: 'Gyroscope & Screen Capture WebSocket Server',
+        version: '2.1.0',
         uptime: Math.floor(uptime / 1000),
         connections: {
             active: stats.activeConnections,
             total: stats.totalConnections
         },
-        messages: stats.totalMessages,
+        messages: {
+            total: stats.totalMessages,
+            gyroscope: stats.gyroscopeMessages,
+            shake: stats.shakeMessages,
+            screenCapture: stats.screenCaptureMessages
+        },
         memory: {
             used: Math.round(memoryUsage.heapUsed / 1024 / 1024),
             total: Math.round(memoryUsage.heapTotal / 1024 / 1024),
             external: Math.round(memoryUsage.external / 1024 / 1024)
+        },
+        features: {
+            gyroscope: true,
+            shakeDetection: true,
+            screenCapture: true
         },
         timestamp: Date.now()
     });
@@ -192,16 +229,18 @@ setInterval(() => {
 setInterval(() => {
     const uptime = Math.floor((Date.now() - stats.startTime) / 1000);
     console.log(`📊 服務狀態: 運行時間 ${uptime}s, 活躍連接 ${clients.size}, 總訊息 ${stats.totalMessages}`);
+    console.log(`📱 數據統計: 陀螺儀 ${stats.gyroscopeMessages}, 搖晃 ${stats.shakeMessages}, 螢幕捕獲 ${stats.screenCaptureMessages}`);
 }, 60000); // 每分鐘報告一次
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-    console.log('🚀 陀螺儀WebSocket伺服器啟動成功!');
+    console.log('🚀 陀螺儀 & 螢幕捕獲 WebSocket伺服器啟動成功!');
     console.log(`📱 靜態檔案服務: http://localhost:${PORT}`);
     console.log(`🔌 WebSocket端點: ws://localhost:${PORT}`);
     console.log(`❤️ 健康檢查: http://localhost:${PORT}/health`);
     console.log(`📊 狀態監控: http://localhost:${PORT}/api/status`);
     console.log(`🏓 保持活躍: http://localhost:${PORT}/api/ping`);
+    console.log(`📺 支援功能: 陀螺儀、搖晃偵測、螢幕捕獲串流`);
 });
 
 // 優雅關閉
