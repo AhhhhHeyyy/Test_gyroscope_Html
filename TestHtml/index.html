@@ -574,6 +574,10 @@
                         <div style="color: #4ECDC4; font-weight: bold;">數據大小</div>
                         <div id="captureDataSize">0 KB</div>
                     </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="color: #4ECDC4; font-weight: bold;">平均延遲</div>
+                        <div id="captureLatency">0 ms</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -658,9 +662,9 @@
                 </div>
                 <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
                     <h4 style="color: #FFD700; margin-top: 0;">螢幕捕獲</h4>
-                    <p><strong>解析度：</strong>1280x720</p>
-                    <p><strong>幀率：</strong>15fps</p>
-                    <p><strong>編碼：</strong>JPEG 70%品質</p>
+                    <p><strong>解析度：</strong>640x360 (優化)</p>
+                    <p><strong>幀率：</strong>30fps (優化)</p>
+                    <p><strong>編碼：</strong>JPEG 50%品質 (優化)</p>
                     <p><strong>傳輸：</strong>WebSocket即時</p>
                 </div>
             </div>
@@ -870,6 +874,15 @@
         let screenCaptureFrameCount = 0;
         let screenCaptureLastTime = Date.now();
         let screenCaptureTotalDataSize = 0;
+        
+        // 性能監控變數
+        let performanceStats = {
+            captureStartTime: 0,
+            lastFrameTime: 0,
+            frameTimes: [],
+            dataSizes: [],
+            networkLatency: []
+        };
         
         // 搖晃偵測演算法 - 基於推薦的標準方式
         function detectShake(acceleration) {
@@ -1143,10 +1156,10 @@
                 video.srcObject = screenCaptureStream;
                 await video.play();
                 
-                // 創建Canvas用於捕獲幀
+                // 創建Canvas用於捕獲幀 - 降低分辨率減少延遲
                 screenCaptureCanvas = document.createElement('canvas');
-                screenCaptureCanvas.width = 1280;
-                screenCaptureCanvas.height = 720;
+                screenCaptureCanvas.width = 640;  // 降低到640x360
+                screenCaptureCanvas.height = 360;
                 screenCaptureCtx = screenCaptureCanvas.getContext('2d');
                 
                 // 開始捕獲幀
@@ -1200,27 +1213,49 @@
         function captureScreenFrames() {
             if (!isScreenCapturing) return;
             
+            const frameStartTime = performance.now();
             const video = document.getElementById('screenCaptureVideo');
             
             // 繪製當前幀到Canvas
             screenCaptureCtx.drawImage(video, 0, 0, screenCaptureCanvas.width, screenCaptureCanvas.height);
             
-            // 轉換為JPEG並發送
+            // 轉換為JPEG並發送 - 降低品質減少延遲
             screenCaptureCanvas.toBlob((blob) => {
                 if (blob && gyroWS.isConnected) {
+                    const encodeTime = performance.now() - frameStartTime;
+                    
                     blob.arrayBuffer().then(buffer => {
                         const imageData = new Uint8Array(buffer);
+                        const sendTime = performance.now();
+                        
                         gyroWS.sendScreenCaptureData(imageData, buffer.byteLength);
+                        
+                        // 性能監控
+                        performanceStats.frameTimes.push(encodeTime);
+                        performanceStats.dataSizes.push(buffer.byteLength);
                         
                         // 更新統計數據
                         screenCaptureTotalDataSize += buffer.byteLength;
                         screenCaptureFrameCount++;
+                        
+                        // 記錄網絡延遲（模擬）
+                        const networkTime = performance.now() - sendTime;
+                        performanceStats.networkLatency.push(networkTime);
+                        
+                        // 限制記錄數量
+                        if (performanceStats.frameTimes.length > 100) {
+                            performanceStats.frameTimes.shift();
+                            performanceStats.dataSizes.shift();
+                            performanceStats.networkLatency.shift();
+                        }
+                        
+                        console.log(`📊 性能統計: 編碼=${encodeTime.toFixed(2)}ms, 大小=${(buffer.byteLength/1024).toFixed(1)}KB, 網絡=${networkTime.toFixed(2)}ms`);
                     });
                 }
-            }, 'image/jpeg', 0.7); // 70%品質的JPEG
+            }, 'image/jpeg', 0.5); // 降低到50%品質減少延遲
             
-            // 15fps (每66ms一幀)
-            setTimeout(() => captureScreenFrames(), 66);
+            // 提高到30fps減少延遲 (每33ms一幀)
+            setTimeout(() => captureScreenFrames(), 33);
         }
         
         // 更新螢幕捕獲統計數據
@@ -1240,6 +1275,18 @@
             // 更新數據大小顯示
             const sizeInKB = Math.round(screenCaptureTotalDataSize / 1024);
             document.getElementById('captureDataSize').textContent = `${sizeInKB} KB`;
+            
+            // 更新延遲統計
+            if (performanceStats.frameTimes.length > 0) {
+                const avgEncodeTime = performanceStats.frameTimes.reduce((a, b) => a + b, 0) / performanceStats.frameTimes.length;
+                const avgDataSize = performanceStats.dataSizes.reduce((a, b) => a + b, 0) / performanceStats.dataSizes.length;
+                const avgNetworkTime = performanceStats.networkLatency.reduce((a, b) => a + b, 0) / performanceStats.networkLatency.length;
+                
+                const totalLatency = avgEncodeTime + avgNetworkTime;
+                document.getElementById('captureLatency').textContent = `${totalLatency.toFixed(1)} ms`;
+                
+                console.log(`📊 平均性能: 編碼=${avgEncodeTime.toFixed(2)}ms, 網絡=${avgNetworkTime.toFixed(2)}ms, 總延遲=${totalLatency.toFixed(2)}ms, 大小=${(avgDataSize/1024).toFixed(1)}KB`);
+            }
         }
         
         // 添加螢幕捕獲按鈕事件監聽器
