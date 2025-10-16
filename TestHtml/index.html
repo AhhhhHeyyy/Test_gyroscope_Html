@@ -760,6 +760,8 @@
                 this.ws = null;
                 this.isConnected = false;
                 this.onConnectedCallback = null;
+                this.lastSendTime = 0;
+                this.sendInterval = 50; // 20fps (50ms間隔)
             }
             
             connect() {
@@ -802,13 +804,19 @@
             }
             
             sendGyroscopeData(alpha, beta, gamma) {
+                const now = Date.now();
+                if (now - this.lastSendTime < this.sendInterval) {
+                    return; // 跳過這幀，節流處理
+                }
+                this.lastSendTime = now;
+                
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     const data = {
                         type: 'gyroscope',
-                        alpha: alpha,
-                        beta: beta,
-                        gamma: gamma,
-                        timestamp: Date.now()
+                        alpha: alpha ?? 0,
+                        beta: beta ?? 0,
+                        gamma: gamma ?? 0,
+                        timestamp: now
                     };
                     console.log('📤 發送陀螺儀數據:', data);
                     this.ws.send(JSON.stringify(data));
