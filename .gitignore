@@ -1,5 +1,5 @@
-# Unity專案檔案 (完全排除)
-UnityWebsocket0927/
+# Unity專案檔案 (在 main 分支排除，在 Unity 分支包含)
+# UnityWebsocket0927/  # 註解掉，讓 Unity 分支可以包含此資料夾
 
 # Unity生成的檔案
 Library/
