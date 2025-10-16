@@ -49,14 +49,16 @@ wss.on('connection', (ws, req) => {
         instance: INSTANCE
     }));
     
-    ws.on('message', (message) => {
+    // ws@8+ 使用 (data, isBinary) 簽名；文字常為 Buffer，但 isBinary=false
+    ws.on('message', (data, isBinary) => {
         try {
-            // 檢查是否為二進位數據
-            if (Buffer.isBuffer(message)) {
+            // 二進位數據：僅用於螢幕捕獲幀
+            if (isBinary) {
                 // 處理二進位螢幕捕獲數據
                 if (ws.screenCaptureHeader) {
                     const header = ws.screenCaptureHeader;
-                    const imageData = Array.from(message);
+                    const bytes = Buffer.isBuffer(data) ? new Uint8Array(data) : new Uint8Array();
+                    const imageData = Array.from(bytes);
                     
                     stats.screenCaptureMessages++;
                     console.log('📺 收到螢幕捕獲二進位數據:', {
@@ -92,7 +94,9 @@ wss.on('connection', (ws, req) => {
                 return;
             }
             
-            const msg = JSON.parse(message);
+            // 文字數據：轉字串再解析
+            const text = (typeof data === 'string') ? data : data.toString('utf8');
+            const msg = JSON.parse(text);
             stats.totalMessages++;
             
             let out;
