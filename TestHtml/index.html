@@ -763,6 +763,11 @@
             }
             
             connect() {
+                // 防止重複連線：若已連線或正在連線則略過
+                if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+                    console.log('ℹ️ WebSocket 已在連線或連線中，略過重複連線');
+                    return;
+                }
                 const wsUrl = 'wss://testgyroscopehtml-production.up.railway.app';
                 console.log('嘗試連接WebSocket:', wsUrl);
                 this.ws = new WebSocket(wsUrl);
@@ -1031,8 +1036,7 @@
         
         // 開始感測器監聽
         function startSensors() {
-            // 連接WebSocket
-            gyroWS.connect();
+            // 此處不再重複連線，載入時已先嘗試連線
             
             // 設置連接成功後的回調
             gyroWS.setOnConnectedCallback(() => {
