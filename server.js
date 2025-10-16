@@ -47,27 +47,55 @@ wss.on('connection', (ws, req) => {
     
     ws.on('message', (message) => {
         try {
+            // 檢查是否為二進位數據
+            if (Buffer.isBuffer(message)) {
+                // 處理二進位螢幕捕獲數據
+                if (ws.screenCaptureHeader) {
+                    const header = ws.screenCaptureHeader;
+                    const imageData = Array.from(message);
+                    
+                    stats.screenCaptureMessages++;
+                    console.log('📺 收到螢幕捕獲二進位數據:', {
+                        size: header.size,
+                        timestamp: header.timestamp,
+                        clientId: header.clientId,
+                        dataLength: imageData.length
+                    });
+                    
+                    const out = {
+                        type: 'screen_capture',
+                        clientId: header.clientId,
+                        timestamp: header.timestamp,
+                        size: header.size,
+                        data: imageData
+                    };
+                    
+                    // 廣播給所有其他客戶端
+                    clients.forEach(client => {
+                        if (client !== ws && client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify(out));
+                        }
+                    });
+                    
+                    // 清除header
+                    delete ws.screenCaptureHeader;
+                }
+                return;
+            }
+            
             const msg = JSON.parse(message);
             stats.totalMessages++;
             
             let out;
-            if (msg.type === 'screen_capture') {
-                // 處理螢幕捕獲數據
-                stats.screenCaptureMessages++;
-                console.log('📺 收到螢幕捕獲數據:', {
+            if (msg.type === 'screen_capture_header') {
+                // 儲存螢幕捕獲header，等待二進位數據
+                ws.screenCaptureHeader = msg;
+                console.log('📺 收到螢幕捕獲header:', {
+                    clientId: msg.clientId,
                     size: msg.size,
-                    timestamp: msg.timestamp,
-                    clientId: stats.totalConnections,
-                    dataLength: msg.data?.length
+                    timestamp: msg.timestamp
                 });
-                
-                out = { 
-                    type: 'screen_capture', 
-                    data: msg.data,
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections,
-                    size: msg.size
-                };
+                return; // 不廣播，等待二進位數據
             } else if (msg.type === 'shake') {
                 // 處理搖晃數據
                 stats.shakeMessages++;

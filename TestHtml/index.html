@@ -829,14 +829,23 @@
             
             sendScreenCaptureData(imageData, size) {
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    const data = {
-                        type: 'screen_capture',
-                        data: imageData,
+                    // 雙包傳輸：先發送header
+                    const header = {
+                        type: 'screen_capture_header',
+                        clientId: this.clientId || 0,
                         timestamp: Date.now(),
                         size: size
                     };
-                    console.log('📤 發送螢幕捕獲數據:', { size: size, timestamp: Date.now() });
-                    this.ws.send(JSON.stringify(data));
+                    this.ws.send(JSON.stringify(header));
+                    
+                    // 再發送二進位數據
+                    this.ws.send(imageData);
+                    
+                    console.log('📤 發送螢幕捕獲: header + binary data', { 
+                        clientId: header.clientId, 
+                        size: size, 
+                        timestamp: header.timestamp 
+                    });
                 }
             }
             
@@ -1196,7 +1205,7 @@
             screenCaptureCanvas.toBlob((blob) => {
                 if (blob && gyroWS.isConnected) {
                     blob.arrayBuffer().then(buffer => {
-                        const imageData = Array.from(new Uint8Array(buffer));
+                        const imageData = new Uint8Array(buffer);
                         gyroWS.sendScreenCaptureData(imageData, buffer.byteLength);
                         
                         // 更新統計數據
