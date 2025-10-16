@@ -1036,11 +1036,7 @@
         
         // 開始感測器監聽
         function startSensors() {
-            // 若尚未連線（或連線掉了），此處再嘗試一次連線，避免時序問題
-            if (!gyroWS || !gyroWS.ws || gyroWS.ws.readyState !== WebSocket.OPEN) {
-                console.log('ℹ️ 感測器啟動前檢查：WebSocket 尚未連線，嘗試連線…');
-                gyroWS.connect();
-            }
+            // 此處不再重複連線，載入時已先嘗試連線
             
             // 設置連接成功後的回調
             gyroWS.setOnConnectedCallback(() => {
@@ -1126,13 +1122,6 @@
         // 螢幕捕獲功能
         async function startScreenCapture() {
             try {
-                // 捕獲前確保已連線
-                if (!gyroWS || !gyroWS.ws || gyroWS.ws.readyState !== WebSocket.OPEN) {
-                    console.warn('⚠️ 尚未連上 WebSocket，先嘗試連線');
-                    gyroWS.connect();
-                    alert('正在建立連線，請 1-2 秒後再按「開始捕獲」');
-                    return;
-                }
                 console.log('🎬 開始螢幕捕獲...');
                 
                 // 請求螢幕捕獲權限

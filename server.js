@@ -9,6 +9,9 @@ const server = http.createServer(app);
 // 靜態檔案服務 - 指向TestHtml資料夾
 app.use(express.static(path.join(__dirname, 'TestHtml')));
 
+// 實例識別（用於診斷是否多實例）
+const INSTANCE = process.env.RAILWAY_STATIC_URL || process.env.HOSTNAME || String(process.pid);
+
 // 根路徑重導向到index.html
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'TestHtml', 'index.html'));
@@ -32,7 +35,7 @@ const stats = {
 };
 
 wss.on('connection', (ws, req) => {
-    console.log('🔌 新的WebSocket連接來自:', req.socket.remoteAddress);
+    console.log('🔌 新的WebSocket連接來自:', req.socket.remoteAddress, 'instance=', INSTANCE);
     clients.add(ws);
     stats.totalConnections++;
     stats.activeConnections = clients.size;
@@ -42,7 +45,8 @@ wss.on('connection', (ws, req) => {
         type: 'connection',
         message: 'WebSocket連接已建立',
         timestamp: Date.now(),
-        clientId: stats.totalConnections
+        clientId: stats.totalConnections,
+        instance: INSTANCE
     }));
     
     ws.on('message', (message) => {
@@ -70,12 +74,17 @@ wss.on('connection', (ws, req) => {
                         image: imageData
                     };
                     
-                    // 廣播給所有其他客戶端
+                    // 廣播給所有客戶端（包含發送者，以便偵錯）
                     clients.forEach(client => {
-                        if (client !== ws && client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify(out));
+                        if (client.readyState === WebSocket.OPEN) {
+                            try {
+                                client.send(JSON.stringify(out));
+                            } catch (e) {
+                                console.error('❌ 廣播失敗:', e);
+                            }
                         }
                     });
+                    console.log('📣 廣播訊息: screen_capture → clients:', clients.size, 'size=', out.size, 'instance=', INSTANCE);
                     
                     // 清除header
                     delete ws.screenCaptureHeader;
@@ -138,12 +147,17 @@ wss.on('connection', (ws, req) => {
                 };
             }
             
-            // 廣播給所有其他客戶端（包括Unity）
+            // 廣播給所有客戶端（包括Unity，含發送者以便偵錯）
             clients.forEach(client => {
-                if (client !== ws && client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify(out));
+                if (client.readyState === WebSocket.OPEN) {
+                    try {
+                        client.send(JSON.stringify(out));
+                    } catch (e) {
+                        console.error('❌ 廣播失敗:', e);
+                    }
                 }
             });
+            console.log('📣 廣播訊息:', out.type, '→ clients:', clients.size, 'instance=', INSTANCE);
             
             // 回應發送者確認收到
             ws.send(JSON.stringify({
