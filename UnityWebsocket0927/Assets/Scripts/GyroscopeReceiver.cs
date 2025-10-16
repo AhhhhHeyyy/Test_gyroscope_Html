@@ -55,11 +55,23 @@ public class GyroscopeReceiver : MonoBehaviour
         public GyroscopeData data;
         public long timestamp;
         public int clientId;
+        public int size;
+        public int[] image; // 螢幕捕獲數據
     }
     
-    // 事件 - 新增搖晃事件
+    [System.Serializable]
+    public struct ScreenFrame
+    {
+        public int clientId;
+        public long timestamp;
+        public byte[] data;
+        public int size;
+    }
+    
+    // 事件 - 新增搖晃事件和螢幕捕獲事件
     public static event Action<GyroscopeData> OnGyroscopeDataReceived;
     public static event Action<ShakeData> OnShakeDataReceived; // 新增搖晃事件
+    public static event Action<ScreenFrame> OnScreenCaptureReceived; // 新增螢幕捕獲事件
     public static event Action OnConnected;
     public static event Action OnDisconnected;
     public static event Action<string> OnError;
@@ -199,6 +211,30 @@ public class GyroscopeReceiver : MonoBehaviour
                             catch (System.Exception e)
                             {
                                 Debug.LogError($"❌ 解析搖晃數據錯誤: {e.Message}");
+                            }
+                            break;
+                            
+                        case "screen_capture":
+                            // 處理螢幕捕獲數據
+                            Debug.Log($"📺 收到螢幕捕獲消息: {message}");
+                            try
+                            {
+                                var screenFrame = new ScreenFrame
+                                {
+                                    clientId = serverMessage.clientId,
+                                    timestamp = serverMessage.timestamp,
+                                    size = serverMessage.size,
+                                    data = System.Array.ConvertAll(serverMessage.image, x => (byte)x)
+                                };
+                                
+                                Debug.Log($"📺 螢幕捕獲: ClientId={screenFrame.clientId}, Size={screenFrame.size} bytes");
+                                
+                                // 觸發螢幕捕獲事件
+                                OnScreenCaptureReceived?.Invoke(screenFrame);
+                            }
+                            catch (System.Exception e)
+                            {
+                                Debug.LogError($"❌ 解析螢幕捕獲數據錯誤: {e.Message}");
                             }
                             break;
                             
