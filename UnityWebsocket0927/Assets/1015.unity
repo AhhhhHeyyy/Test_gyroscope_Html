@@ -185,7 +185,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8376c908399cabe429b1dcfc6879879c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gyroReceiver: {fileID: 0}
+  gyroReceiver: {fileID: 117218824}
   enableRotation: 1
   enablePosition: 0
   rotationSensitivity: 1
@@ -247,13 +247,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 790361821}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.000036478043, y: 0, z: 0}
-  m_LocalScale: {x: 26.739195, y: 19.416008, z: 20.635334}
+  m_LocalRotation: {x: -0.0073367944, y: 0.7020351, z: -0.7121039, w: 0.00095686305}
+  m_LocalPosition: {x: -21, y: 8, z: 712}
+  m_LocalScale: {x: 183.8481, y: 107.6934, z: 121.0492}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1749464573}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 88.943, y: 39.737, z: -140.78}
 --- !u!114 &790361823
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -570,7 +570,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1749464573
 Transform:
   m_ObjectHideFlags: 0
@@ -580,7 +580,7 @@ Transform:
   m_GameObject: {fileID: 1749464572}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.5173635, y: 4.437875, z: -4.423424}
+  m_LocalPosition: {x: -1.5173635, y: 4.437875, z: 219}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
