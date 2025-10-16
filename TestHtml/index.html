@@ -1254,8 +1254,17 @@
             setInterval(updateScreenCaptureStats, 1000);
         });
         
-        // 頁面載入時檢查支援
-        window.addEventListener('load', checkSensorSupport);
+        // 頁面載入時：先連上 WebSocket，再檢查/請求感測器權限（授權後才開始送資料）
+        window.addEventListener('load', function () {
+            try {
+                if (!gyroWS || !gyroWS.ws || gyroWS.ws.readyState !== WebSocket.OPEN) {
+                    gyroWS.connect();
+                }
+            } catch (e) {
+                console.error('初始化 WebSocket 連線時出錯:', e);
+            }
+            checkSensorSupport();
+        });
         
         // 處理視窗大小改變
         window.addEventListener('resize', function() {
