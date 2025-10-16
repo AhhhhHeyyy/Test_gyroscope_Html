@@ -67,7 +67,7 @@ wss.on('connection', (ws, req) => {
                         clientId: header.clientId,
                         timestamp: header.timestamp,
                         size: header.size,
-                        data: imageData
+                        image: imageData
                     };
                     
                     // 廣播給所有其他客戶端
