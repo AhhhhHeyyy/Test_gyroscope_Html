@@ -944,6 +944,12 @@
                 try {
                     console.log('🎬 啟動 WebRTC 螢幕捕捉');
                     
+                    // 檢查是否已經有流
+                    if (this.localStream) {
+                        console.log('⚠️ 已有螢幕流，重複使用');
+                        return;
+                    }
+                    
                     // 1. 獲取螢幕流
                     this.localStream = await navigator.mediaDevices.getDisplayMedia({
                         video: {
@@ -1447,16 +1453,21 @@
         function waitForRoomReady() {
             return new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => {
-                    reject(new Error('房間配對超時'));
-                }, 10000);
+                    console.warn('⚠️ 房間配對超時，直接開始 WebRTC');
+                    resolve(); // 改為 resolve 而不是 reject，讓 WebRTC 嘗試連接
+                }, 5000); // 縮短到 5 秒
                 
                 const messageHandler = (event) => {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'ready') {
-                        console.log('🤝 收到房間配對完成通知:', data.message);
-                        clearTimeout(timeout);
-                        gyroWS.ws.removeEventListener('message', messageHandler);
-                        resolve();
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'ready') {
+                            console.log('🤝 收到房間配對完成通知:', data.message);
+                            clearTimeout(timeout);
+                            gyroWS.ws.removeEventListener('message', messageHandler);
+                            resolve();
+                        }
+                    } catch (e) {
+                        // 忽略解析錯誤
                     }
                 };
                 
@@ -1465,8 +1476,16 @@
         }
         
         // 螢幕捕獲功能
+        let isStartingCapture = false; // 防止重複點擊
+        
         async function startScreenCapture() {
+            if (isStartingCapture) {
+                console.log('⚠️ 螢幕捕獲正在啟動中，請稍候...');
+                return;
+            }
+            
             try {
+                isStartingCapture = true;
                 console.log('🎬 開始螢幕捕獲...');
                 
                 // 檢查 WebRTC 支援
@@ -1479,32 +1498,40 @@
                 // 等待 WebSocket 連接就緒
                 await waitForWebSocketReady();
                 
-                // 生成房間 ID（可改為 URL 參數或用戶輸入）
+                // 生成房間 ID
                 const roomId = 'default-room';
                 
-                // 先加入房間，但不立即開始 WebRTC
+                // 加入房間
                 gyroWS.joinRoom(roomId, 'web-sender');
                 
-                // 等待房間配對完成
-                await waitForRoomReady();
-                
-                console.log('🤝 房間配對完成，開始 WebRTC');
-                
-                // 現在才開始 WebRTC
-                webrtcCapture = new WebRTCScreenCapture(gyroWS.ws, roomId);
-                gyroWS.webrtcCapture = webrtcCapture;
-                
-                await webrtcCapture.start();
-                
-                // 更新 UI
-                document.getElementById('startScreenCapture').style.display = 'none';
-                document.getElementById('stopScreenCapture').style.display = 'inline-block';
-                document.getElementById('screenCapturePreview').style.display = 'block';
-                document.getElementById('captureStatus').textContent = 'WebRTC 串流中';
+                // 短暫等待後開始 WebRTC（不管是否有 Unity 端）
+                setTimeout(async () => {
+                    try {
+                        console.log('🚀 開始 WebRTC 嘗試');
+                        
+                        // 創建 WebRTC 實例
+                        webrtcCapture = new WebRTCScreenCapture(gyroWS.ws, roomId);
+                        gyroWS.webrtcCapture = webrtcCapture;
+                        
+                        await webrtcCapture.start();
+                        
+                        // 更新 UI
+                        document.getElementById('startScreenCapture').style.display = 'none';
+                        document.getElementById('stopScreenCapture').style.display = 'inline-block';
+                        document.getElementById('screenCapturePreview').style.display = 'block';
+                        document.getElementById('captureStatus').textContent = 'WebRTC 串流中';
+                        
+                    } catch (error) {
+                        console.error('❌ WebRTC 啟動失敗:', error);
+                        startWebSocketScreenCapture();
+                    }
+                }, 1000); // 1秒後開始
                 
             } catch (error) {
                 console.error('❌ 螢幕捕捉啟動失敗:', error);
                 startWebSocketScreenCapture();
+            } finally {
+                isStartingCapture = false;
             }
         }
         
@@ -1654,6 +1681,13 @@
                 updateWebSocketStatsUI('WebSocket 中繼', 'connected', currentBitrate, currentFPS, 0, 'unknown');
             }
         }
+        
+        // 定期更新 WebSocket 統計
+        setInterval(() => {
+            if (isUsingWebSocket && isScreenCapturing) {
+                updateWebSocketStats();
+            }
+        }, 2000);
         
         // 更新螢幕捕獲統計數據
         function updateScreenCaptureStats() {
