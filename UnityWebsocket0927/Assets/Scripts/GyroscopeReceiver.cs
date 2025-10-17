@@ -28,7 +28,7 @@ public class GyroscopeReceiver : MonoBehaviour
     private Coroutine reconnectCoroutine;
     
     // 訊息排隊機制，避免丟失重要信令
-    private Queue<string> pendingMessages = new Queue<string>();
+    public Queue<string> pendingMessages = new Queue<string>();
     
     // WebRTC 信令 DTO 類別
     [System.Serializable]
@@ -463,7 +463,18 @@ public class GyroscopeReceiver : MonoBehaviour
     {
         if (!IsWsReady())
         {
-            Debug.LogWarning($"⚠️ WebSocket未連接，緩發訊息或略過：{dto.type}");
+            Debug.LogWarning($"⚠️ WebSocket未連接，訊息排隊：{dto.type}");
+            
+            // 將訊息排隊，等待連接恢復
+            var jsonData = JsonUtility.ToJson(dto);
+            pendingMessages.Enqueue(jsonData);
+            
+            // 如果連接關閉，嘗試重連
+            if (websocket?.State == WebSocketState.Closed)
+            {
+                Debug.Log("🔄 嘗試重新連接...");
+                ConnectToServer();
+            }
             return;
         }
         

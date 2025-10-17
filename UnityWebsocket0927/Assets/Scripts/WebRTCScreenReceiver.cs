@@ -19,7 +19,6 @@ public class WebRTCScreenReceiver : MonoBehaviour
     private RTCPeerConnection peerConnection;
     private RTCConfiguration config;
     private VideoStreamTrack remoteVideoTrack;
-    private Texture2D remoteTexture;
     private bool isWebRTCMode = false;
     private bool isConnected = false;
     private GyroscopeReceiver gyroscopeReceiver;
@@ -281,7 +280,6 @@ public class WebRTCScreenReceiver : MonoBehaviour
     {
         remoteVideoTrack?.Dispose(); 
         remoteVideoTrack = null;
-        remoteTexture = null;
         peerConnection?.Close(); 
         peerConnection?.Dispose(); 
         peerConnection = null;
