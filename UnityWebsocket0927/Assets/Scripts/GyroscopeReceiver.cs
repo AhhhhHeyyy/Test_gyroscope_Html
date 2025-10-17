@@ -10,6 +10,10 @@ public class GyroscopeReceiver : MonoBehaviour
     [SerializeField] private bool autoConnect = true;
     [SerializeField] private float reconnectInterval = 5f; // 重連間隔（秒）
     
+    [Header("Signaling / Room")]
+    [SerializeField] private string roomId = "default-room";
+    [SerializeField] private string role = "unity-receiver";
+    
     [Header("陀螺儀數據")]
     [SerializeField] private float alpha = 0f;
     [SerializeField] private float beta = 0f;
@@ -73,6 +77,7 @@ public class GyroscopeReceiver : MonoBehaviour
     public static event Action<ShakeData> OnShakeDataReceived; // 新增搖晃事件
     public static event Action<ScreenFrame> OnScreenCaptureReceived; // 新增螢幕捕獲事件
     public static event Action<SignalingMessage> OnWebRTCSignaling; // 新增 WebRTC 信令事件
+    public static event Action<string> OnRawMessage; // 新增原始訊息事件
     public static event Action OnConnected;
     public static event Action OnDisconnected;
     public static event Action<string> OnError;
@@ -127,7 +132,10 @@ public class GyroscopeReceiver : MonoBehaviour
                 }
                 
                 // 立即加入房間
-                JoinRoom("default-room", "unity-receiver");
+                Debug.Log("✅ WS Connected, sending join");
+                var join = new { type = "join", room = roomId, role = role };
+                websocket.SendText(JsonUtility.ToJson(join));
+                Debug.Log($"✅ 已發送加入房間請求: {roomId} as {role}");
                 
                 OnConnected?.Invoke();
             };
@@ -167,6 +175,9 @@ public class GyroscopeReceiver : MonoBehaviour
                 {
                     string message = System.Text.Encoding.UTF8.GetString(bytes);
                     Debug.Log($"📱 收到原始訊息: {message}");
+                    
+                    // 觸發原始訊息事件
+                    OnRawMessage?.Invoke(message);
                     
                     // 解析服務器消息格式
                     var serverMessage = JsonUtility.FromJson<ServerMessage>(message);
@@ -372,6 +383,21 @@ public class GyroscopeReceiver : MonoBehaviour
         if (websocket != null && websocket.State == WebSocketState.Open)
         {
             websocket.SendText(message);
+        }
+    }
+    
+    // 發送 JSON 物件
+    public void SendJson(object message)
+    {
+        if (websocket != null && websocket.State == WebSocketState.Open)
+        {
+            string json = JsonUtility.ToJson(message);
+            websocket.SendText(json);
+            Debug.Log($"📤 發送 JSON: {json}");
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ WebSocket未連接，無法發送JSON");
         }
     }
     

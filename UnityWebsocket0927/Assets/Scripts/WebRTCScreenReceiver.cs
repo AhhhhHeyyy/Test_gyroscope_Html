@@ -40,10 +40,44 @@ public class WebRTCScreenReceiver : MonoBehaviour
         
         // 訂閱信令事件
         GyroscopeReceiver.OnWebRTCSignaling += HandleSignaling;
+        GyroscopeReceiver.OnRawMessage += HandleSignalingText;
         
         Debug.Log("📺 WebRTCScreenReceiver 已初始化");
     }
     
+    
+    void HandleSignalingText(string text)
+    {
+        try
+        {
+            var msg = JsonUtility.FromJson<SignalingBase>(text);
+            if (msg.type == "offer")
+            {
+                var offer = JsonUtility.FromJson<OfferMessage>(text);
+                Debug.Log("📩 收到 Offer");
+                StartCoroutine(AcceptOffer(offer.sdp));
+            }
+            else if (msg.type == "candidate")
+            {
+                var cand = JsonUtility.FromJson<CandidateMessage>(text);
+                if (peerConnection != null && cand.candidate != null)
+                {
+                    var candidate = new RTCIceCandidate(new RTCIceCandidateInit
+                    {
+                        candidate = cand.candidate.candidate,
+                        sdpMid = cand.candidate.sdpMid,
+                        sdpMLineIndex = cand.candidate.sdpMLineIndex
+                    });
+                    peerConnection.AddIceCandidate(candidate);
+                    Debug.Log("✅ 添加 ICE 候選者");
+                }
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"❌ 處理信令文字錯誤: {e.Message}");
+        }
+    }
     
     void HandleSignaling(GyroscopeReceiver.SignalingMessage msg)
     {
@@ -217,9 +251,103 @@ public class WebRTCScreenReceiver : MonoBehaviour
         }
     }
     
+    // 數據結構
+    [System.Serializable]
+    public class SignalingBase
+    {
+        public string type;
+    }
+    
+    [System.Serializable]
+    public class OfferMessage
+    {
+        public string type;
+        public string sdp;
+    }
+    
+    [System.Serializable]
+    public class CandidateMessage
+    {
+        public string type;
+        public IceCandidateData candidate;
+    }
+    
+    [System.Serializable]
+    public class IceCandidateData
+    {
+        public string candidate;
+        public string sdpMid;
+        public int sdpMLineIndex;
+    }
+    
+    // 接受 Offer 的協程
+    System.Collections.IEnumerator AcceptOffer(string sdp)
+    {
+        // 創建 PeerConnection
+        peerConnection = new RTCPeerConnection(ref config);
+        
+        // ICE 候選者處理
+        peerConnection.OnIceCandidate = candidate =>
+        {
+            if (candidate == null) return;
+            gyroscopeReceiver.SendJson(new { 
+                type = "candidate", 
+                candidate = new {
+                    candidate = candidate.Candidate, 
+                    sdpMid = candidate.SdpMid, 
+                    sdpMLineIndex = candidate.SdpMLineIndex
+                }
+            });
+        };
+
+        // ICE 連接狀態改變
+        peerConnection.OnIceConnectionChange = state =>
+        {
+            iceConnectionState = state.ToString();
+            Debug.Log($"🔌 ICE 連接狀態改變: {state}");
+            if (state == RTCIceConnectionState.Failed || state == RTCIceConnectionState.Disconnected)
+            {
+                Debug.LogWarning("⚠️ ICE 連接失敗，降級到 WebSocket");
+                FallbackToWebSocket();
+            }
+        };
+        
+        // 接收遠端軌道
+        peerConnection.OnTrack = (RTCTrackEvent e) =>
+        {
+            if (e.Track is VideoStreamTrack vtrack)
+            {
+                Debug.Log("📺 收到視頻軌道");
+                remoteVideoTrack = vtrack;
+                
+                // 直接使用 VideoStreamTrack 的 Texture 屬性
+                remoteTexture = vtrack.Texture as Texture2D;
+            }
+        };
+        
+        // 設置遠端描述
+        var desc = new RTCSessionDescription { type = RTCSdpType.Offer, sdp = sdp };
+        var setOp = peerConnection.SetRemoteDescription(ref desc);
+        yield return setOp;
+        
+        // 創建 Answer
+        var answerOp = peerConnection.CreateAnswer();
+        yield return answerOp;
+        var answer = answerOp.Desc;
+        
+        // 設置本地描述
+        var setLocalOp = peerConnection.SetLocalDescription(ref answer);
+        yield return setLocalOp;
+        
+        // 發送 Answer
+        gyroscopeReceiver.SendJson(new { type = "answer", sdp = answer.sdp });
+        Debug.Log("📤 已發送 Answer");
+    }
+    
     void OnDestroy()
     {
         GyroscopeReceiver.OnWebRTCSignaling -= HandleSignaling;
+        GyroscopeReceiver.OnRawMessage -= HandleSignalingText;
         CleanupWebRTC();
     }
 }

@@ -964,19 +964,29 @@
                     const [videoTrack] = this.localStream.getVideoTracks();
                     videoTrack.contentHint = 'text'; // 文字清晰優先
                     
-                    // 3. 監聽用戶停止分享
+                    // 3. 設置預覽串流（WebRTC 路徑也要顯示）
+                    const videoEl = document.getElementById('screenCaptureVideo');
+                    if (videoEl) {
+                        videoEl.srcObject = this.localStream;
+                        await videoEl.play();
+                        console.log('📺 WebRTC 預覽串流已設置');
+                    }
+                    document.getElementById('screenCapturePreview').style.display = 'block';
+                    document.getElementById('captureStatus').textContent = 'WebRTC 串流中';
+                    
+                    // 4. 監聽用戶停止分享
                     videoTrack.onended = () => {
                         console.log('📺 用戶停止分享');
                         this.teardown(false);
                     };
                     
-                    // 4. 創建 RTCPeerConnection
+                    // 5. 創建 RTCPeerConnection
                     this.peerConnection = new RTCPeerConnection(this.rtcConfig);
                     
-                    // 5. 添加軌道
+                    // 6. 添加軌道
                     this.peerConnection.addTrack(videoTrack, this.localStream);
                     
-                    // 6. ICE 候選者處理
+                    // 7. ICE 候選者處理
                     this.peerConnection.onicecandidate = (event) => {
                         if (event.candidate) {
                             this.signalingWS.send(JSON.stringify({
