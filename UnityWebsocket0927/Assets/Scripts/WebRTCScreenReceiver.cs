@@ -12,6 +12,9 @@ public class WebRTCScreenReceiver : MonoBehaviour
     [Header("狀態顯示")]
     public bool showDebugInfo = true;
     
+    [Header("狀態")]
+    public string iceConnectionState = "new";
+    
     private RTCPeerConnection peerConnection;
     private RTCConfiguration config;
     private VideoStreamTrack remoteVideoTrack;
@@ -303,7 +306,7 @@ public class WebRTCScreenReceiver : MonoBehaviour
         // ICE 連接狀態改變
         peerConnection.OnIceConnectionChange = state =>
         {
-            iceConnectionState = state.ToString();
+            this.iceConnectionState = state.ToString();
             Debug.Log($"🔌 ICE 連接狀態改變: {state}");
             if (state == RTCIceConnectionState.Failed || state == RTCIceConnectionState.Disconnected)
             {
