@@ -137,6 +137,23 @@ wss.on('connection', (ws, req) => {
                 }));
                 
                 console.log(`✅ ${role} joined room: ${room}, peers: ${peers.size}`);
+                
+                // 檢查房間是否已滿（2個 peer）
+                if (peers.size === 2) {
+                    console.log(`🤝 Room ${room} has both peers ready, notifying all`);
+                    
+                    // 通知所有同房 peer 準備就緒
+                    for (const peer of peers) {
+                        if (peer.readyState === WebSocket.OPEN) {
+                            peer.send(JSON.stringify({
+                                type: 'ready',
+                                room: room,
+                                message: 'Both peers joined, WebRTC can start'
+                            }));
+                        }
+                    }
+                }
+                
                 return;
             }
             

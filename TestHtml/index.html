@@ -799,6 +799,12 @@
                     try {
                         const data = JSON.parse(event.data);
                         
+                        // 處理 ready 消息（房間配對完成）
+                        if (data.type === 'ready') {
+                            console.log('🤝 房間配對完成:', data.message);
+                            return;
+                        }
+                        
                         // WebRTC 原生三型別
                         if (['offer', 'answer', 'candidate'].includes(data.type)) {
                             if (this.webrtcCapture) {
@@ -1414,6 +1420,50 @@
             document.getElementById('gamma-line').style.left = Math.max(0, Math.min(100, gammaPos)) + '%';
         }
         
+        // 等待 WebSocket 連接就緒
+        function waitForWebSocketReady() {
+            return new Promise((resolve, reject) => {
+                if (gyroWS.ws && gyroWS.ws.readyState === WebSocket.OPEN) {
+                    resolve();
+                    return;
+                }
+                
+                const checkInterval = setInterval(() => {
+                    if (gyroWS.ws && gyroWS.ws.readyState === WebSocket.OPEN) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 100);
+                
+                // 10秒超時
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    reject(new Error('WebSocket 連接超時'));
+                }, 10000);
+            });
+        }
+        
+        // 等待房間配對完成
+        function waitForRoomReady() {
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('房間配對超時'));
+                }, 10000);
+                
+                const messageHandler = (event) => {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'ready') {
+                        console.log('🤝 收到房間配對完成通知:', data.message);
+                        clearTimeout(timeout);
+                        gyroWS.ws.removeEventListener('message', messageHandler);
+                        resolve();
+                    }
+                };
+                
+                gyroWS.ws.addEventListener('message', messageHandler);
+            });
+        }
+        
         // 螢幕捕獲功能
         async function startScreenCapture() {
             try {
@@ -1426,13 +1476,21 @@
                     return;
                 }
                 
+                // 等待 WebSocket 連接就緒
+                await waitForWebSocketReady();
+                
                 // 生成房間 ID（可改為 URL 參數或用戶輸入）
                 const roomId = 'default-room';
                 
-                // 確保已加入房間
+                // 先加入房間，但不立即開始 WebRTC
                 gyroWS.joinRoom(roomId, 'web-sender');
                 
-                // 啟動 WebRTC
+                // 等待房間配對完成
+                await waitForRoomReady();
+                
+                console.log('🤝 房間配對完成，開始 WebRTC');
+                
+                // 現在才開始 WebRTC
                 webrtcCapture = new WebRTCScreenCapture(gyroWS.ws, roomId);
                 gyroWS.webrtcCapture = webrtcCapture;
                 
