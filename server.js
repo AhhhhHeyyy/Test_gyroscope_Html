@@ -48,9 +48,9 @@ wss.on('connection', (ws, req) => {
     stats.totalConnections++;
     stats.activeConnections = clients.size;
     
-    // 設置心跳保活
-    ws.isAlive = true;
-    ws.on('pong', () => { ws.isAlive = true; });
+    // 心跳保活設置（Unity 客戶端可能不會回應 pong，所以不依賴 isAlive）
+    // ws.isAlive = true;
+    // ws.on('pong', () => { ws.isAlive = true; });
     
     // 發送歡迎訊息
     ws.send(JSON.stringify({
@@ -360,14 +360,18 @@ app.get('/api/ping', (req, res) => {
     });
 });
 
-// 心跳保活
+// 心跳保活（僅送 ping，不強制關閉，避免 Unity 客戶端被誤殺）
 setInterval(() => {
     wss.clients.forEach(ws => {
-        if (!ws.isAlive) return ws.terminate();
-        ws.isAlive = false;
-        ws.ping();
+        try {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.ping(); // 只發 ping，若對方不回也不立刻 terminate
+            }
+        } catch (e) { 
+            // 忽略個別錯誤，避免影響其他連接
+        }
     });
-}, 25000);
+}, 30000);
 
 // 定期清理無效連接
 setInterval(() => {
