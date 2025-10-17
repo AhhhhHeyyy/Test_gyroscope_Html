@@ -802,7 +802,7 @@
                         // 處理 ready 消息（房間配對完成）
                         if (data.type === 'ready') {
                             console.log('🤝 房間配對完成:', data.message);
-                            return;
+                            // 不要 return，讓後續信令也能被處理
                         }
                         
                         // WebRTC 原生三型別
@@ -1455,7 +1455,7 @@
                 const timeout = setTimeout(() => {
                     console.warn('⚠️ 房間配對超時，直接開始 WebRTC');
                     resolve(); // 改為 resolve 而不是 reject，讓 WebRTC 嘗試連接
-                }, 5000); // 縮短到 5 秒
+                }, 10000); // 10秒超時
                 
                 const messageHandler = (event) => {
                     try {
@@ -1471,7 +1471,18 @@
                     }
                 };
                 
-                gyroWS.ws.addEventListener('message', messageHandler);
+                // 確保 WebSocket 已連接
+                if (gyroWS.ws && gyroWS.ws.readyState === WebSocket.OPEN) {
+                    gyroWS.ws.addEventListener('message', messageHandler);
+                } else {
+                    // 如果 WebSocket 未連接，等待連接後再添加監聽器
+                    waitForWebSocketReady().then(() => {
+                        gyroWS.ws.addEventListener('message', messageHandler);
+                    }).catch(() => {
+                        clearTimeout(timeout);
+                        resolve(); // 超時時仍然 resolve
+                    });
+                }
             });
         }
         
@@ -1504,28 +1515,22 @@
                 // 加入房間
                 gyroWS.joinRoom(roomId, 'web-sender');
                 
-                // 短暫等待後開始 WebRTC（不管是否有 Unity 端）
-                setTimeout(async () => {
-                    try {
-                        console.log('🚀 開始 WebRTC 嘗試');
-                        
-                        // 創建 WebRTC 實例
-                        webrtcCapture = new WebRTCScreenCapture(gyroWS.ws, roomId);
-                        gyroWS.webrtcCapture = webrtcCapture;
-                        
-                        await webrtcCapture.start();
-                        
-                        // 更新 UI
-                        document.getElementById('startScreenCapture').style.display = 'none';
-                        document.getElementById('stopScreenCapture').style.display = 'inline-block';
-                        document.getElementById('screenCapturePreview').style.display = 'block';
-                        document.getElementById('captureStatus').textContent = 'WebRTC 串流中';
-                        
-                    } catch (error) {
-                        console.error('❌ WebRTC 啟動失敗:', error);
-                        startWebSocketScreenCapture();
-                    }
-                }, 1000); // 1秒後開始
+                // 等待房間配對完成
+                await waitForRoomReady();
+                
+                console.log('🤝 房間配對完成，開始 WebRTC');
+                
+                // 現在才開始 WebRTC
+                webrtcCapture = new WebRTCScreenCapture(gyroWS.ws, roomId);
+                gyroWS.webrtcCapture = webrtcCapture;
+                
+                await webrtcCapture.start();
+                
+                // 更新 UI
+                document.getElementById('startScreenCapture').style.display = 'none';
+                document.getElementById('stopScreenCapture').style.display = 'inline-block';
+                document.getElementById('screenCapturePreview').style.display = 'block';
+                document.getElementById('captureStatus').textContent = 'WebRTC 串流中';
                 
             } catch (error) {
                 console.error('❌ 螢幕捕捉啟動失敗:', error);
