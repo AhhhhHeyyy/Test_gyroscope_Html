@@ -57,6 +57,44 @@ public class GyroscopeReceiver : MonoBehaviour
         public int clientId;
         public int size;
         public int[] image; // 螢幕捕獲數據
+        public string sdp; // WebRTC SDP
+        public IceCandidate candidate; // WebRTC ICE candidate
+    }
+    
+    [System.Serializable]
+    public class IceCandidate
+    {
+        public string candidate;
+        public string sdpMid;
+        public int sdpMLineIndex;
+    }
+    
+    [System.Serializable]
+    public class SignalingMessage
+    {
+        public string type;
+        public string sdp;
+        public IceCandidate candidate;
+        public string room;
+        public string role;
+    }
+    
+    [System.Serializable]
+    public class SignalingDTO
+    {
+        public string type;          // "offer" | "answer" | "candidate"
+        public string sdp;           // for offer/answer
+        public IceCandidateDTO candidate; // for candidate
+        public string room;          // optional
+        public string role;          // optional
+    }
+    
+    [System.Serializable]
+    public class IceCandidateDTO
+    {
+        public string candidate;
+        public string sdpMid;
+        public int sdpMLineIndex;
     }
     
     [System.Serializable]
@@ -75,6 +113,9 @@ public class GyroscopeReceiver : MonoBehaviour
     public static event Action OnConnected;
     public static event Action OnDisconnected;
     public static event Action<string> OnError;
+    
+    // WebRTC 信令事件
+    public event Action<SignalingMessage> OnWebRTCSignaling;
     
     void Start()
     {
@@ -375,5 +416,25 @@ public class GyroscopeReceiver : MonoBehaviour
             
             GUILayout.EndArea();
         }
+    }
+    
+    // WebRTC 信令發送方法
+    public void SendSignaling(SignalingDTO dto)
+    {
+        if (websocket == null || websocket.State != NativeWebSocket.WebSocketState.Open)
+        {
+            Debug.LogWarning($"⚠️ WebSocket未連接，無法發送信令: {dto.type}");
+            return;
+        }
+        
+        var json = JsonUtility.ToJson(dto);
+        websocket.SendText(json);
+        Debug.Log($"📤 發送 WebRTC 信令: {dto.type}");
+    }
+    
+    // 檢查 WebSocket 連接狀態
+    public bool IsWsReady()
+    {
+        return websocket != null && websocket.State == NativeWebSocket.WebSocketState.Open;
     }
 }
