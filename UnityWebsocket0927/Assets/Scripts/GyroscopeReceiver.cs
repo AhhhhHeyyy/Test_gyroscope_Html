@@ -131,24 +131,30 @@ public class GyroscopeReceiver : MonoBehaviour
             
             websocket.OnError += (error) =>
             {
-                Debug.LogError($"❌ WebSocket錯誤: {error}");
-                isConnected = false;
-                connectionStatus = $"錯誤: {error}";
-                OnError?.Invoke(error);
+                if (this != null) // 檢查物件是否還存在
+                {
+                    Debug.LogError($"❌ WebSocket錯誤: {error}");
+                    isConnected = false;
+                    connectionStatus = $"錯誤: {error}";
+                    OnError?.Invoke(error);
+                }
             };
             
             websocket.OnClose += (closeCode) =>
             {
-                Debug.Log($"🔌 WebSocket連接已關閉: {closeCode}");
-                Debug.Log($"🔍 關閉原因代碼: {closeCode} (1000=正常關閉, 1001=離開, 1002=錯誤, 1003=不支援數據)");
-                isConnected = false;
-                connectionStatus = "已斷線";
-                OnDisconnected?.Invoke();
-                
-                // 啟動自動重連
-                if (reconnectCoroutine == null)
+                if (this != null) // 檢查物件是否還存在
                 {
-                    reconnectCoroutine = StartCoroutine(AutoReconnect());
+                    Debug.Log($"🔌 WebSocket連接已關閉: {closeCode}");
+                    Debug.Log($"🔍 關閉原因代碼: {closeCode} (1000=正常關閉, 1001=離開, 1002=錯誤, 1003=不支援數據)");
+                    isConnected = false;
+                    connectionStatus = "已斷線";
+                    OnDisconnected?.Invoke();
+                    
+                    // 啟動自動重連
+                    if (reconnectCoroutine == null)
+                    {
+                        reconnectCoroutine = StartCoroutine(AutoReconnect());
+                    }
                 }
             };
             

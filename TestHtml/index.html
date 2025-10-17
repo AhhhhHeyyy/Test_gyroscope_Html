@@ -1451,6 +1451,8 @@
         }
         
         function startWebSocketScreenCapture() {
+            console.log('🔄 切換到 WebSocket 模式');
+            
             // 停止 WebRTC（如果存在）
             if (webrtcCapture) {
                 webrtcCapture.teardown(false);
@@ -1501,6 +1503,9 @@
                 document.getElementById('stopScreenCapture').style.display = 'inline-block';
                 document.getElementById('screenCapturePreview').style.display = 'block';
                 document.getElementById('captureStatus').textContent = 'WebSocket 串流中';
+                
+                // 更新 Stats UI
+                updateWebSocketStatsUI('WebSocket 中繼', 'connected', 0, 0, 0, 'unknown');
                 
                 console.log('📹 WebSocket 螢幕捕獲已開始');
                 
@@ -1558,12 +1563,38 @@
                         // 更新統計數據
                         screenCaptureTotalDataSize += buffer.byteLength;
                         screenCaptureFrameCount++;
+                        
+                        // 更新 WebSocket Stats
+                        updateWebSocketStats();
                     });
                 }
             }, 'image/jpeg', 0.7); // 70%品質的JPEG
             
             // 15fps (每66ms一幀)
             setTimeout(() => captureScreenFrames(), 66);
+        }
+        
+        // 更新 WebSocket Stats UI
+        function updateWebSocketStatsUI(mode, state, bitrate, fps, rtt, candidate) {
+            document.getElementById('webrtc-mode').textContent = mode;
+            document.getElementById('webrtc-state').textContent = state;
+            document.getElementById('webrtc-bitrate').textContent = bitrate + ' kbps';
+            document.getElementById('webrtc-fps').textContent = fps + ' fps';
+            document.getElementById('webrtc-rtt').textContent = rtt + ' ms';
+            document.getElementById('webrtc-candidate').textContent = candidate;
+        }
+        
+        // 更新 WebSocket 統計數據
+        function updateWebSocketStats() {
+            const now = Date.now();
+            const timeDiff = (now - screenCaptureLastTime) / 1000;
+            
+            if (timeDiff > 0) {
+                const currentFPS = Math.round(screenCaptureFrameCount / timeDiff);
+                const currentBitrate = Math.round((screenCaptureTotalDataSize * 8) / (timeDiff * 1000)); // kbps
+                
+                updateWebSocketStatsUI('WebSocket 中繼', 'connected', currentBitrate, currentFPS, 0, 'unknown');
+            }
         }
         
         // 更新螢幕捕獲統計數據
