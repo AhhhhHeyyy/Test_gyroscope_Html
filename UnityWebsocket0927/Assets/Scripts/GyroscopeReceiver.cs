@@ -126,6 +126,9 @@ public class GyroscopeReceiver : MonoBehaviour
                     reconnectCoroutine = null;
                 }
                 
+                // 立即加入房間
+                JoinRoom("default-room", "unity-receiver");
+                
                 OnConnected?.Invoke();
             };
             
@@ -369,6 +372,27 @@ public class GyroscopeReceiver : MonoBehaviour
         if (websocket != null && websocket.State == WebSocketState.Open)
         {
             websocket.SendText(message);
+        }
+    }
+    
+    // 加入房間
+    public void JoinRoom(string roomId, string role)
+    {
+        if (websocket != null && websocket.State == WebSocketState.Open)
+        {
+            var joinMessage = JsonUtility.ToJson(new
+            {
+                type = "join",
+                room = roomId,
+                role = role
+            });
+            
+            websocket.SendText(joinMessage);
+            Debug.Log($"✅ 已發送加入房間請求: {roomId} as {role}");
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ WebSocket未連接，無法加入房間");
         }
     }
     

@@ -41,30 +41,9 @@ public class WebRTCScreenReceiver : MonoBehaviour
         // 訂閱信令事件
         GyroscopeReceiver.OnWebRTCSignaling += HandleSignaling;
         
-        // 註冊為 unity-receiver
-        StartCoroutine(RegisterAsReceiver());
-        
         Debug.Log("📺 WebRTCScreenReceiver 已初始化");
     }
     
-    IEnumerator RegisterAsReceiver()
-    {
-        // 等待 WebSocket 連接
-        while (!gyroscopeReceiver.isConnected)
-        {
-            yield return new WaitForSeconds(0.5f);
-        }
-        
-        // 註冊角色
-        gyroscopeReceiver.SendRaw(JsonUtility.ToJson(new
-        {
-            type = "join",
-            room = roomId,
-            role = "unity-receiver"
-        }));
-        
-        Debug.Log($"✅ 已註冊為 unity-receiver, room: {roomId}");
-    }
     
     void HandleSignaling(GyroscopeReceiver.SignalingMessage msg)
     {
