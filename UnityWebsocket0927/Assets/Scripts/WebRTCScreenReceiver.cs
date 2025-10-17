@@ -25,13 +25,30 @@ public class WebRTCScreenReceiver : MonoBehaviour
     
     void Start()
     {
+        // 初始化 WebRTC - 這行很重要！
+        WebRTC.Initialize();
+        Debug.Log("🚀 WebRTC 已初始化");
+        
         // ICE 配置
         config = new RTCConfiguration
         {
             iceServers = new[] { 
-                new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } }
-            }
+                new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } },
+                new RTCIceServer { urls = new[] { "stun:stun1.l.google.com:19302" } }
+            },
+            iceCandidatePoolSize = 10
         };
+        
+        // 檢查 targetRenderer 設置
+        if (targetRenderer == null)
+        {
+            Debug.LogError("❌ targetRenderer 未設置！請在 Inspector 中設置 Target Renderer");
+            return;
+        }
+        else
+        {
+            Debug.Log($"✅ targetRenderer 已設置: {targetRenderer.name}");
+        }
         
         // 獲取 GyroscopeReceiver
         gyroscopeReceiver = FindFirstObjectByType<GyroscopeReceiver>();
@@ -93,9 +110,19 @@ public class WebRTCScreenReceiver : MonoBehaviour
     {
         try
         {
-            if (msg.type == "offer")
+            if (msg.type == "ready")
+            {
+                Debug.Log("🤝 WebRTC 信令：房間準備就緒");
+                return;
+            }
+            else if (msg.type == "offer")
             {
                 Debug.Log("📩 收到 Offer");
+                if (string.IsNullOrEmpty(msg.sdp))
+                {
+                    Debug.LogError("❌ Offer SDP 為空！");
+                    return;
+                }
                 HandleOffer(msg.sdp);
             }
             else if (msg.type == "candidate")
@@ -169,8 +196,19 @@ public class WebRTCScreenReceiver : MonoBehaviour
                 Debug.Log("📺 收到視頻軌道");
                 remoteVideoTrack = vtrack;
                 
-                // 直接使用 VideoStreamTrack 的 Texture 屬性
-                remoteTexture = vtrack.Texture as Texture2D;
+                // 修正：使用 OnVideoReceived 事件
+                vtrack.OnVideoReceived += (tex) => {
+                    Debug.Log("📺 收到視頻幀");
+                    if (targetRenderer != null && targetRenderer.material != null)
+                    {
+                        targetRenderer.material.mainTexture = tex;
+                        Debug.Log("✅ 材質已更新");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("⚠️ targetRenderer 或 material 為空，無法更新材質");
+                    }
+                };
             }
         };
         
@@ -237,12 +275,7 @@ public class WebRTCScreenReceiver : MonoBehaviour
     
     void Update()
     {
-        // 持續更新材質（如果使用 WebRTC）
-        if (remoteTexture != null && targetRenderer != null)
-        {
-            if (targetRenderer.material.mainTexture != remoteTexture)
-                targetRenderer.material.mainTexture = remoteTexture;
-        }
+        // 材質更新現在在 OnVideoReceived 事件中處理，不需要在 Update 中輪詢
     }
     
     void OnGUI()
@@ -330,8 +363,19 @@ public class WebRTCScreenReceiver : MonoBehaviour
                 Debug.Log("📺 收到視頻軌道");
                 remoteVideoTrack = vtrack;
                 
-                // 直接使用 VideoStreamTrack 的 Texture 屬性
-                remoteTexture = vtrack.Texture as Texture2D;
+                // 修正：使用 OnVideoReceived 事件
+                vtrack.OnVideoReceived += (tex) => {
+                    Debug.Log("📺 收到視頻幀");
+                    if (targetRenderer != null && targetRenderer.material != null)
+                    {
+                        targetRenderer.material.mainTexture = tex;
+                        Debug.Log("✅ 材質已更新");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("⚠️ targetRenderer 或 material 為空，無法更新材質");
+                    }
+                };
             }
         };
         
@@ -359,5 +403,7 @@ public class WebRTCScreenReceiver : MonoBehaviour
         GyroscopeReceiver.OnWebRTCSignaling -= HandleSignaling;
         GyroscopeReceiver.OnRawMessage -= HandleSignalingText;
         CleanupWebRTC();
+        WebRTC.Dispose();
+        Debug.Log("🧹 WebRTC 已清理");
     }
 }

@@ -157,14 +157,23 @@ wss.on('connection', (ws, req) => {
                 return;
             }
             
-            // WebRTC 原生三型別轉發
+            // WebRTC 原生三型別轉發 - 修正：直接轉發原始 JSON
             if (['offer', 'answer', 'candidate'].includes(msg.type)) {
-                if (!ws.room) return;
+                if (!ws.room) {
+                    console.warn(`⚠️ WebSocket ${ws.id} 沒有房間信息，無法轉發信令`);
+                    return;
+                }
                 
                 const peers = rooms.get(ws.room) || new Set();
+                console.log(`📡 轉發 ${msg.type} from ${ws.role} to room ${ws.room}, peers=${peers.size}`);
+                
+                // 確保發送原始 JSON 字符串
+                const rawData = typeof raw === 'string' ? raw : JSON.stringify(msg);
+                
                 for (const peer of peers) {
                     if (peer !== ws && peer.readyState === WebSocket.OPEN) {
-                        peer.send(data);
+                        peer.send(rawData);
+                        console.log(`📤 已轉發 ${msg.type} 給 ${peer.role}`);
                     }
                 }
                 
