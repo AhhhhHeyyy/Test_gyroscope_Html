@@ -175,7 +175,7 @@ public class WebRTCScreenReceiver : MonoBehaviour
                 {
                     candidate = candidate.Candidate,
                     sdpMid = candidate.SdpMid,
-                    sdpMLineIndex = candidate.SdpMLineIndex
+                    sdpMLineIndex = candidate.SdpMLineIndex ?? 0
                 }
             }));
             Debug.Log("📤 發送 ICE 候選者");
@@ -367,7 +367,7 @@ public class WebRTCScreenReceiver : MonoBehaviour
                 {
                     candidate = candidate.Candidate,
                     sdpMid = candidate.SdpMid,
-                    sdpMLineIndex = candidate.SdpMLineIndex
+                    sdpMLineIndex = candidate.SdpMLineIndex ?? 0
                 }
             };
             gyroscopeReceiver.SendSignaling(candidateDto);

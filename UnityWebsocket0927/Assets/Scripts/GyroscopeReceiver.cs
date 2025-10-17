@@ -27,6 +27,28 @@ public class GyroscopeReceiver : MonoBehaviour
     private Queue<GyroscopeData> dataQueue = new Queue<GyroscopeData>();
     private Coroutine reconnectCoroutine;
     
+    // 訊息排隊機制，避免丟失重要信令
+    private Queue<string> pendingMessages = new Queue<string>();
+    
+    // WebRTC 信令 DTO 類別
+    [System.Serializable]
+    public class IceCandidateDTO
+    {
+        public string candidate;
+        public string sdpMid;
+        public int sdpMLineIndex;
+    }
+
+    [System.Serializable]
+    public class SignalingDTO
+    {
+        public string type;          // "offer" | "answer" | "candidate"
+        public string sdp;           // for offer/answer
+        public IceCandidateDTO candidate; // for candidate
+        public string room;          // optional
+        public string role;          // optional
+    }
+    
     [System.Serializable]
     public class GyroscopeData
     {
@@ -61,6 +83,8 @@ public class GyroscopeReceiver : MonoBehaviour
         public int clientId;
         public int size;
         public int[] image; // 螢幕捕獲數據
+        public string sdp; // WebRTC SDP
+        public IceCandidate candidate; // WebRTC ICE candidate
     }
     
     [System.Serializable]
@@ -300,10 +324,15 @@ public class GyroscopeReceiver : MonoBehaviour
                         case "offer":
                         case "answer":
                         case "candidate":
-                            // WebRTC 信令處理
-                            var signalingMsg = JsonUtility.FromJson<SignalingMessage>(message);
+                            // WebRTC 信令處理 - 修正解析邏輯
+                            Debug.Log($"📡 收到 WebRTC 信令: {serverMessage.type}");
+                            var signalingMsg = new SignalingMessage
+                            {
+                                type = serverMessage.type,
+                                sdp = serverMessage.sdp,
+                                candidate = serverMessage.candidate
+                            };
                             OnWebRTCSignaling?.Invoke(signalingMsg);
-                            Debug.Log($"📡 收到 WebRTC 信令: {signalingMsg.type}");
                             break;
                             
                         case "joined":
@@ -312,6 +341,8 @@ public class GyroscopeReceiver : MonoBehaviour
                             
                         case "ready":
                             Debug.Log($"🤝 房間準備就緒: {serverMessage.message}");
+                            // 觸發 WebRTC 準備事件
+                            OnWebRTCSignaling?.Invoke(new SignalingMessage { type = "ready" });
                             break;
                             
                         case "ack":
@@ -359,6 +390,18 @@ public class GyroscopeReceiver : MonoBehaviour
                 Debug.LogWarning($"⚠️ WebSocket狀態不同步! Unity認為已連接，但實際狀態: {websocket.State}");
                 isConnected = false;
                 connectionStatus = "連接狀態不同步";
+            }
+            
+            // 處理排隊的訊息
+            if (websocket.State == WebSocketState.Open && pendingMessages.Count > 0)
+            {
+                Debug.Log($"📤 發送排隊訊息，共 {pendingMessages.Count} 條");
+                while (pendingMessages.Count > 0 && websocket.State == WebSocketState.Open)
+                {
+                    string msg = pendingMessages.Dequeue();
+                    websocket.SendText(msg);
+                    Debug.Log($"📤 發送排隊 JSON: {msg}");
+                }
             }
         }
         else
@@ -412,18 +455,44 @@ public class GyroscopeReceiver : MonoBehaviour
         }
     }
     
-    // 發送 JSON 物件
+    // 檢查 WebSocket 是否準備就緒
+    bool IsWsReady() => websocket != null && websocket.State == WebSocketState.Open;
+
+    // 專門發送 WebRTC 信令的方法
+    public void SendSignaling(SignalingDTO dto)
+    {
+        if (!IsWsReady())
+        {
+            Debug.LogWarning($"⚠️ WebSocket未連接，緩發訊息或略過：{dto.type}");
+            return;
+        }
+        
+        var json = JsonUtility.ToJson(dto);
+        websocket.SendText(json);
+        Debug.Log($"📤 發送 JSON: {json}");
+    }
+
+    // 發送 JSON 物件（保留原有方法用於其他用途）
     public void SendJson(object message)
     {
+        string json = JsonUtility.ToJson(message);
+        
         if (websocket != null && websocket.State == WebSocketState.Open)
         {
-            string json = JsonUtility.ToJson(message);
             websocket.SendText(json);
             Debug.Log($"📤 發送 JSON: {json}");
         }
         else
         {
-            Debug.LogWarning("⚠️ WebSocket未連接，無法發送JSON");
+            Debug.LogWarning($"⚠️ WebSocket未連接，訊息先暫存排隊。狀態: {websocket?.State}");
+            pendingMessages.Enqueue(json);
+            
+            // 嘗試重新連接
+            if (websocket?.State == WebSocketState.Closed)
+            {
+                Debug.Log("🔄 嘗試重新連接...");
+                ConnectToServer();
+            }
         }
     }
     
