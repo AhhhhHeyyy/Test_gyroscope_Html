@@ -359,14 +359,19 @@ public class WebRTCScreenReceiver : MonoBehaviour
         peerConnection.OnIceCandidate = candidate =>
         {
             if (candidate == null) return;
-            gyroscopeReceiver.SendJson(new { 
-                type = "candidate", 
-                candidate = new {
-                    candidate = candidate.Candidate, 
-                    sdpMid = candidate.SdpMid, 
+            
+            var candidateDto = new GyroscopeReceiver.SignalingDTO
+            {
+                type = "candidate",
+                candidate = new GyroscopeReceiver.IceCandidateDTO
+                {
+                    candidate = candidate.Candidate,
+                    sdpMid = candidate.SdpMid,
                     sdpMLineIndex = candidate.SdpMLineIndex
                 }
-            });
+            };
+            gyroscopeReceiver.SendSignaling(candidateDto);
+            Debug.Log("📤 發送 ICE 候選者");
         };
 
         // ICE 連接狀態改變
@@ -434,8 +439,12 @@ public class WebRTCScreenReceiver : MonoBehaviour
         Debug.Log("✅ 已設置本地描述");
         
         // 發送 Answer
-        var answerMsg = new { type = "answer", sdp = answer.sdp };
-        gyroscopeReceiver.SendJson(answerMsg);
+        var answerDto = new GyroscopeReceiver.SignalingDTO
+        {
+            type = "answer",
+            sdp = answer.sdp
+        };
+        gyroscopeReceiver.SendSignaling(answerDto);
         Debug.Log("📤 已發送 Answer");
     }
     
