@@ -72,9 +72,26 @@ public class GyroscopeReceiver : MonoBehaviour
     public static event Action<GyroscopeData> OnGyroscopeDataReceived;
     public static event Action<ShakeData> OnShakeDataReceived; // 新增搖晃事件
     public static event Action<ScreenFrame> OnScreenCaptureReceived; // 新增螢幕捕獲事件
+    public static event Action<SignalingMessage> OnWebRTCSignaling; // 新增 WebRTC 信令事件
     public static event Action OnConnected;
     public static event Action OnDisconnected;
     public static event Action<string> OnError;
+    
+    [System.Serializable]
+    public class SignalingMessage
+    {
+        public string type; // offer, answer, candidate
+        public string sdp;
+        public IceCandidate candidate;
+    }
+
+    [System.Serializable]
+    public class IceCandidate
+    {
+        public string candidate;
+        public string sdpMid;
+        public int? sdpMLineIndex;
+    }
     
     void Start()
     {
@@ -238,6 +255,19 @@ public class GyroscopeReceiver : MonoBehaviour
                             }
                             break;
                             
+                        case "offer":
+                        case "answer":
+                        case "candidate":
+                            // WebRTC 信令處理
+                            var signalingMsg = JsonUtility.FromJson<SignalingMessage>(message);
+                            OnWebRTCSignaling?.Invoke(signalingMsg);
+                            Debug.Log($"📡 收到 WebRTC 信令: {signalingMsg.type}");
+                            break;
+                            
+                        case "joined":
+                            Debug.Log($"✅ 已加入房間");
+                            break;
+                            
                         case "ack":
                             Debug.Log($"✅ 確認: {serverMessage.message}");
                             break;
@@ -325,6 +355,15 @@ public class GyroscopeReceiver : MonoBehaviour
     public void ClearDataQueue()
     {
         dataQueue.Clear();
+    }
+    
+    // 發送原始消息（用於 WebRTC 信令）
+    public void SendRaw(string message)
+    {
+        if (websocket != null && websocket.State == WebSocketState.Open)
+        {
+            websocket.SendText(message);
+        }
     }
     
     private System.Collections.IEnumerator AutoReconnect()

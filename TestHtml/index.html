@@ -528,9 +528,21 @@
                     <h4>即時螢幕捕獲與串流</h4>
                     <p>捕獲整個螢幕或特定視窗，透過WebSocket即時傳送到Unity</p>
                     <p>支援全螢幕、特定視窗、瀏覽器標籤頁捕獲</p>
-                    <p>高品質JPEG壓縮，15fps流暢傳輸</p>
+                    <p>WebRTC P2P 優先，WebSocket 降級備用</p>
                     <button id="startScreenCapture" class="cube-link" style="border: none; cursor: pointer;">🎬 開始捕獲</button>
                     <button id="stopScreenCapture" class="cube-link" style="border: none; cursor: pointer; background: linear-gradient(45deg, #f44336, #da190b); display: none;">⏹️ 停止捕獲</button>
+                    
+                    <div class="webrtc-stats" style="margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.9em;">
+                        <h4 style="margin: 0 0 10px 0; color: #FFD700;">傳輸狀態</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                            <div>模式: <span id="transferMode">準備中</span></div>
+                            <div>狀態: <span id="connectionState">未連接</span></div>
+                            <div>位元率: <span id="webrtcBitrate">0 kbps</span></div>
+                            <div>幀率: <span id="webrtcFPS">0 fps</span></div>
+                            <div>RTT: <span id="webrtcRTT">0 ms</span></div>
+                            <div>候選者: <span id="webrtcCandidate">unknown</span></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -760,6 +772,9 @@
                 this.ws = null;
                 this.isConnected = false;
                 this.onConnectedCallback = null;
+                this.webrtcCapture = null; // WebRTC 實例引用
+                this.room = null;
+                this.role = null;
             }
             
             connect() {
@@ -783,6 +798,22 @@
                 this.ws.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
+                        
+                        // WebRTC 原生三型別
+                        if (['offer', 'answer', 'candidate'].includes(data.type)) {
+                            if (this.webrtcCapture) {
+                                this.webrtcCapture.handleSignaling(data);
+                            }
+                            return;
+                        }
+                        
+                        // 房間加入確認
+                        if (data.type === 'joined') {
+                            console.log(`✅ 已加入房間: ${data.room} as ${data.role}`);
+                            return;
+                        }
+                        
+                        // 保留現有消息處理
                         if (data.type === 'ack') {
                             console.log('✅ 數據已成功發送');
                         }
@@ -857,6 +888,266 @@
             setOnConnectedCallback(callback) {
                 this.onConnectedCallback = callback;
             }
+            
+            joinRoom(roomId, role) {
+                this.room = roomId;
+                this.role = role;
+                
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({
+                        type: 'join',
+                        room: roomId,
+                        role: role
+                    }));
+                }
+            }
+            
+            send(message) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(message);
+                }
+            }
+        }
+        
+        // WebRTC 螢幕捕捉類
+        class WebRTCScreenCapture {
+            constructor(signalingWS, roomId) {
+                this.signalingWS = signalingWS;
+                this.roomId = roomId;
+                this.peerConnection = null;
+                this.localStream = null;
+                this.iceOk = false;
+                this.t1 = null; // 10秒超時計時器
+                this.t2 = null; // 18秒降級計時器
+                this.mode = 'WebRTC'; // 或 'WebSocket'
+                this.stats = { bitrate: 0, fps: 0, rtt: 0, candidateType: 'unknown' };
+                this.statsTimer = null;
+                
+                // ICE 配置：只使用 STUN
+                this.rtcConfig = {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' }
+                    ],
+                    iceCandidatePoolSize: 10
+                };
+            }
+            
+            async start() {
+                try {
+                    console.log('🎬 啟動 WebRTC 螢幕捕捉');
+                    
+                    // 1. 獲取螢幕流
+                    this.localStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            frameRate: { ideal: 30, max: 30 }
+                        },
+                        audio: false
+                    });
+                    
+                    // 2. 設置 contentHint
+                    const [videoTrack] = this.localStream.getVideoTracks();
+                    videoTrack.contentHint = 'text'; // 文字清晰優先
+                    
+                    // 3. 監聽用戶停止分享
+                    videoTrack.onended = () => {
+                        console.log('📺 用戶停止分享');
+                        this.teardown(false);
+                    };
+                    
+                    // 4. 創建 RTCPeerConnection
+                    this.peerConnection = new RTCPeerConnection(this.rtcConfig);
+                    
+                    // 5. 添加軌道
+                    this.peerConnection.addTrack(videoTrack, this.localStream);
+                    
+                    // 6. ICE 候選者處理
+                    this.peerConnection.onicecandidate = (event) => {
+                        if (event.candidate) {
+                            this.signalingWS.send(JSON.stringify({
+                                type: 'candidate',
+                                candidate: event.candidate
+                            }));
+                        }
+                    };
+                    
+                    // 7. ICE 連接狀態監控
+                    this.peerConnection.oniceconnectionstatechange = () => {
+                        const state = this.peerConnection.iceConnectionState;
+                        console.log('🔌 ICE 狀態:', state);
+                        
+                        if (state === 'connected' || state === 'completed') {
+                            this.iceOk = true;
+                            clearTimeout(this.t1);
+                            clearTimeout(this.t2);
+                            this.updateUI('WebRTC P2P', 'connected');
+                        } else if (state === 'failed' || state === 'disconnected') {
+                            this.teardown(true);
+                        }
+                    };
+                    
+                    // 8. 創建 Offer
+                    const offer = await this.peerConnection.createOffer();
+                    await this.peerConnection.setLocalDescription(offer);
+                    
+                    // 9. 發送 Offer
+                    this.signalingWS.send(JSON.stringify({
+                        type: 'offer',
+                        sdp: offer.sdp
+                    }));
+                    
+                    // 10. 設置超時機制
+                    this.setupTimeout();
+                    
+                    // 11. 開始 Stats 監控
+                    this.startStatsMonitoring();
+                    
+                    console.log('✅ WebRTC Offer 已發送');
+                    
+                } catch (error) {
+                    console.error('❌ WebRTC 啟動失敗:', error);
+                    this.teardown(true);
+                }
+            }
+            
+            setupTimeout() {
+                // T+10s：如果還沒連上，嘗試 restartIce
+                this.t1 = setTimeout(async () => {
+                    if (!this.iceOk) {
+                        console.warn('⚠️ 10秒超時，嘗試 restartIce');
+                        try {
+                            await this.peerConnection.restartIce();
+                        } catch (e) {
+                            console.error('restartIce 失敗:', e);
+                        }
+                        
+                        // T+18s：仍不通 → 降級
+                        this.t2 = setTimeout(() => {
+                            if (!this.iceOk) {
+                                console.warn('⚠️ 18秒仍未連接，降級到 WebSocket');
+                                this.teardown(true);
+                            }
+                        }, 8000);
+                    }
+                }, 10000);
+            }
+            
+            async handleSignaling(message) {
+                try {
+                    if (message.type === 'answer') {
+                        const answer = new RTCSessionDescription({
+                            type: 'answer',
+                            sdp: message.sdp
+                        });
+                        await this.peerConnection.setRemoteDescription(answer);
+                        console.log('✅ 收到 Answer');
+                    } else if (message.type === 'candidate') {
+                        const candidate = new RTCIceCandidate(message.candidate);
+                        await this.peerConnection.addIceCandidate(candidate);
+                        console.log('✅ 添加 ICE 候選者');
+                    }
+                } catch (error) {
+                    console.error('❌ 處理信令失敗:', error);
+                }
+            }
+            
+            startStatsMonitoring() {
+                let last = { bytes: 0, ts: 0, frames: 0 };
+                this.statsTimer = setInterval(async () => {
+                    if (!this.peerConnection || this.peerConnection.connectionState !== 'connected') return;
+
+                    const stats = await this.peerConnection.getStats();
+                    let remoteCand = {}, pair, outbound;
+
+                    stats.forEach(r => {
+                        if (r.type === 'candidate-pair' && r.state === 'succeeded') pair = r;
+                        if (r.type === 'remote-candidate') remoteCand[r.id] = r;
+                        if (r.type === 'outbound-rtp' && r.kind === 'video') outbound = r;
+                    });
+
+                    if (outbound) {
+                        const now = outbound.timestamp;       // ms
+                        const bytes = outbound.bytesSent || 0;
+                        const frames = outbound.framesEncoded ?? 0;
+
+                        if (last.ts) {
+                            const dt = (now - last.ts) / 1000;  // s
+                            const db = bytes - last.bytes;
+                            const df = frames - last.frames;
+                            this.stats.bitrate = Math.max(0, Math.round((db * 8) / 1000 / dt)); // kbps
+                            this.stats.fps = Math.max(0, Math.round(df / dt));
+                        }
+                        last = { bytes, ts: now, frames };
+                    }
+
+                    if (pair) {
+                        this.stats.rtt = pair.currentRoundTripTime ? Math.round(pair.currentRoundTripTime * 1000) : 0;
+                        // 解析 candidate type（host/srflx/relay）
+                        const rcId = pair.remoteCandidateId;
+                        const rc = rcId ? remoteCand[rcId] : null;
+                        if (rc && rc.candidateType) this.stats.candidateType = rc.candidateType;
+                    }
+
+                    this.updateStatsUI();
+                }, 2000);
+            }
+            
+            updateStatsUI() {
+                const bitrateEl = document.getElementById('webrtcBitrate');
+                const fpsEl = document.getElementById('webrtcFPS');
+                const rttEl = document.getElementById('webrtcRTT');
+                const candidateEl = document.getElementById('webrtcCandidate');
+                
+                if (bitrateEl) bitrateEl.textContent = `${this.stats.bitrate} kbps`;
+                if (fpsEl) fpsEl.textContent = `${this.stats.fps} fps`;
+                if (rttEl) rttEl.textContent = `${this.stats.rtt.toFixed(0)} ms`;
+                if (candidateEl) candidateEl.textContent = this.stats.candidateType;
+            }
+            
+            updateUI(mode, state) {
+                const modeEl = document.getElementById('transferMode');
+                const stateEl = document.getElementById('connectionState');
+                
+                if (modeEl) modeEl.textContent = mode;
+                if (stateEl) stateEl.textContent = state;
+            }
+            
+            teardown(fallbackToWS) {
+                console.log('🛑 清理 WebRTC 資源');
+                
+                // 停止所有軌道
+                try {
+                    this.localStream?.getTracks().forEach(track => track.stop());
+                } catch (e) {}
+                
+                // 停止 PeerConnection 的 senders
+                try {
+                    this.peerConnection?.getSenders().forEach(sender => {
+                        if (sender.track) sender.track.stop();
+                    });
+                } catch (e) {}
+                
+                // 關閉 PeerConnection
+                try {
+                    this.peerConnection?.close();
+                } catch (e) {}
+                
+                // 清理計時器
+                clearTimeout(this.t1);
+                clearTimeout(this.t2);
+                clearInterval(this.statsTimer);
+                
+                this.mode = 'WebSocket';
+                
+                // 降級到 WebSocket
+                if (fallbackToWS) {
+                    this.updateUI('WebSocket 中繼', 'fallback');
+                    startWebSocketScreenCapture();
+                }
+            }
         }
         
         // 建立WebSocket實例
@@ -870,6 +1161,10 @@
         let screenCaptureFrameCount = 0;
         let screenCaptureLastTime = Date.now();
         let screenCaptureTotalDataSize = 0;
+        
+        // WebRTC 相關變數
+        let webrtcCapture = null;
+        let isUsingWebSocket = false;
         
         // 搖晃偵測演算法 - 基於推薦的標準方式
         function detectShake(acceleration) {
@@ -1124,6 +1419,54 @@
             try {
                 console.log('🎬 開始螢幕捕獲...');
                 
+                // 檢查 WebRTC 支援
+                if (!window.RTCPeerConnection) {
+                    console.warn('⚠️ 不支援 WebRTC，使用 WebSocket');
+                    startWebSocketScreenCapture();
+                    return;
+                }
+                
+                // 生成房間 ID（可改為 URL 參數或用戶輸入）
+                const roomId = 'default-room';
+                
+                // 確保已加入房間
+                gyroWS.joinRoom(roomId, 'web-sender');
+                
+                // 啟動 WebRTC
+                webrtcCapture = new WebRTCScreenCapture(gyroWS.ws, roomId);
+                gyroWS.webrtcCapture = webrtcCapture;
+                
+                await webrtcCapture.start();
+                
+                // 更新 UI
+                document.getElementById('startScreenCapture').style.display = 'none';
+                document.getElementById('stopScreenCapture').style.display = 'inline-block';
+                document.getElementById('screenCapturePreview').style.display = 'block';
+                document.getElementById('captureStatus').textContent = 'WebRTC 串流中';
+                
+            } catch (error) {
+                console.error('❌ 螢幕捕捉啟動失敗:', error);
+                startWebSocketScreenCapture();
+            }
+        }
+        
+        function startWebSocketScreenCapture() {
+            // 停止 WebRTC（如果存在）
+            if (webrtcCapture) {
+                webrtcCapture.teardown(false);
+                webrtcCapture = null;
+            }
+            
+            isUsingWebSocket = true;
+            
+            // 使用現有的 WebSocket 螢幕捕捉邏輯
+            startWebSocketScreenCaptureImpl();
+        }
+        
+        async function startWebSocketScreenCaptureImpl() {
+            try {
+                console.log('🎬 開始 WebSocket 螢幕捕獲...');
+                
                 // 請求螢幕捕獲權限
                 screenCaptureStream = await navigator.mediaDevices.getDisplayMedia({
                     video: {
@@ -1157,12 +1500,12 @@
                 document.getElementById('startScreenCapture').style.display = 'none';
                 document.getElementById('stopScreenCapture').style.display = 'inline-block';
                 document.getElementById('screenCapturePreview').style.display = 'block';
-                document.getElementById('captureStatus').textContent = '串流中';
+                document.getElementById('captureStatus').textContent = 'WebSocket 串流中';
                 
-                console.log('📹 螢幕捕獲已開始');
+                console.log('📹 WebSocket 螢幕捕獲已開始');
                 
             } catch (error) {
-                console.error('❌ 螢幕捕獲失敗:', error);
+                console.error('❌ WebSocket 螢幕捕獲失敗:', error);
                 
                 let errorMessage = '螢幕捕獲失敗: ';
                 if (error.name === 'NotAllowedError') {

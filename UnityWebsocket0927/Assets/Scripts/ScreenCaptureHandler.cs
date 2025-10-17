@@ -25,6 +25,10 @@ public class ScreenCaptureHandler : MonoBehaviour
     
     void Start()
     {
+        // WebSocket 模式作為降級方案
+        // 初始禁用，等 WebRTC 失敗時啟用
+        this.enabled = false;
+        
         // 訂閱事件
         GyroscopeReceiver.OnScreenCaptureReceived += HandleScreenFrame;
         
@@ -40,7 +44,7 @@ public class ScreenCaptureHandler : MonoBehaviour
         
         adaptiveInterval = baseUpdateInterval;
         
-        Debug.Log("📺 ScreenCaptureHandler 已初始化");
+        Debug.Log("📺 ScreenCaptureHandler 已初始化（WebSocket 降級模式）");
     }
     
     void HandleScreenFrame(GyroscopeReceiver.ScreenFrame frame)
