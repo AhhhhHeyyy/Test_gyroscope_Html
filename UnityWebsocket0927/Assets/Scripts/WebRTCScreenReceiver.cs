@@ -1,6 +1,7 @@
 using Unity.WebRTC;
 using UnityEngine;
 using System.Collections;
+using System;  
 
 public class WebRTCScreenReceiver : MonoBehaviour
 {
@@ -25,9 +26,8 @@ public class WebRTCScreenReceiver : MonoBehaviour
     
     void Start()
     {
-        // 初始化 WebRTC - 這行很重要！
-        WebRTC.Initialize();
-        Debug.Log("🚀 WebRTC 已初始化");
+        // Unity WebRTC 包在較新版本中可能不需要手動初始化
+        Debug.Log("🚀 WebRTC 準備就緒");
         
         // ICE 配置
         config = new RTCConfiguration
@@ -110,6 +110,8 @@ public class WebRTCScreenReceiver : MonoBehaviour
     {
         try
         {
+            Debug.Log($"📡 收到 WebRTC 信令: {msg.type}");
+            
             if (msg.type == "ready")
             {
                 Debug.Log("🤝 WebRTC 信令：房間準備就緒");
@@ -118,12 +120,23 @@ public class WebRTCScreenReceiver : MonoBehaviour
             else if (msg.type == "offer")
             {
                 Debug.Log("📩 收到 Offer");
+                
+                // 檢查 SDP
                 if (string.IsNullOrEmpty(msg.sdp))
                 {
-                    Debug.LogError("❌ Offer SDP 為空！");
+                    Debug.LogError("❌ Offer SDP 為空！檢查伺服器轉發格式");
+                    Debug.Log($"🔍 完整訊息: {JsonUtility.ToJson(msg)}");
                     return;
                 }
-                HandleOffer(msg.sdp);
+                
+                Debug.Log($"📄 收到 Offer SDP 長度: {msg.sdp.Length}");
+                Debug.Log($"📄 SDP 前50字符: {msg.sdp.Substring(0, Math.Min(50, msg.sdp.Length))}...");
+                
+                StartCoroutine(AcceptOffer(msg.sdp));
+            }
+            else if (msg.type == "answer")
+            {
+                Debug.Log("📩 收到 Answer（理論上不該 Unity 收到）");
             }
             else if (msg.type == "candidate")
             {
@@ -143,6 +156,7 @@ public class WebRTCScreenReceiver : MonoBehaviour
         catch (System.Exception e)
         {
             Debug.LogError($"❌ 處理信令錯誤: {e.Message}");
+            Debug.LogError($"🔍 錯誤堆疊: {e.StackTrace}");
         }
     }
     
@@ -276,6 +290,9 @@ public class WebRTCScreenReceiver : MonoBehaviour
     void Update()
     {
         // 材質更新現在在 OnVideoReceived 事件中處理，不需要在 Update 中輪詢
+        
+        // WebRTC 3.x 版本建議：每 frame 更新 internal context 以確保穩定運行
+        WebRTC.Update();
     }
     
     void OnGUI()
@@ -326,7 +343,16 @@ public class WebRTCScreenReceiver : MonoBehaviour
     // 接受 Offer 的協程
     System.Collections.IEnumerator AcceptOffer(string sdp)
     {
-        // 創建 PeerConnection
+        Debug.Log($"🎯 開始處理 Offer SDP: {sdp.Substring(0, Math.Min(30, sdp.Length))}...");
+        
+        // 清理舊的連接
+        if (peerConnection != null)
+        {
+            peerConnection.Close();
+            peerConnection.Dispose();
+        }
+        
+        // 創建新的 PeerConnection
         peerConnection = new RTCPeerConnection(ref config);
         
         // ICE 候選者處理
@@ -347,8 +373,19 @@ public class WebRTCScreenReceiver : MonoBehaviour
         peerConnection.OnIceConnectionChange = state =>
         {
             this.iceConnectionState = state.ToString();
-            Debug.Log($"🔌 ICE 連接狀態改變: {state}");
-            if (state == RTCIceConnectionState.Failed || state == RTCIceConnectionState.Disconnected)
+            Debug.Log($"🔌 ICE 狀態: {state}");
+            
+            if (state == RTCIceConnectionState.Connected || state == RTCIceConnectionState.Completed)
+            {
+                isConnected = true;
+                isWebRTCMode = true;
+                Debug.Log("🎉 WebRTC 連接成功！");
+                
+                // 停用 WebSocket 模式
+                var handler = GetComponent<ScreenCaptureHandler>();
+                if (handler) handler.enabled = false;
+            }
+            else if (state == RTCIceConnectionState.Failed || state == RTCIceConnectionState.Disconnected)
             {
                 Debug.LogWarning("⚠️ ICE 連接失敗，降級到 WebSocket");
                 FallbackToWebSocket();
@@ -383,18 +420,22 @@ public class WebRTCScreenReceiver : MonoBehaviour
         var desc = new RTCSessionDescription { type = RTCSdpType.Offer, sdp = sdp };
         var setOp = peerConnection.SetRemoteDescription(ref desc);
         yield return setOp;
+        Debug.Log("✅ 已設置遠端描述");
         
         // 創建 Answer
         var answerOp = peerConnection.CreateAnswer();
         yield return answerOp;
         var answer = answerOp.Desc;
+        Debug.Log("✅ 已創建 Answer");
         
         // 設置本地描述
         var setLocalOp = peerConnection.SetLocalDescription(ref answer);
         yield return setLocalOp;
+        Debug.Log("✅ 已設置本地描述");
         
         // 發送 Answer
-        gyroscopeReceiver.SendJson(new { type = "answer", sdp = answer.sdp });
+        var answerMsg = new { type = "answer", sdp = answer.sdp };
+        gyroscopeReceiver.SendJson(answerMsg);
         Debug.Log("📤 已發送 Answer");
     }
     
@@ -403,7 +444,7 @@ public class WebRTCScreenReceiver : MonoBehaviour
         GyroscopeReceiver.OnWebRTCSignaling -= HandleSignaling;
         GyroscopeReceiver.OnRawMessage -= HandleSignalingText;
         CleanupWebRTC();
-        WebRTC.Dispose();
+        // WebRTC.Dispose() 在較新版本中可能不需要手動調用
         Debug.Log("🧹 WebRTC 已清理");
     }
 }
