@@ -54,7 +54,14 @@ public class WebRTCScreenReceiver : MonoBehaviour
         try
         {
             var msg = JsonUtility.FromJson<SignalingBase>(text);
-            if (msg.type == "offer")
+            Debug.Log($"📡 收到信令: {msg.type}");
+            
+            if (msg.type == "ready")
+            {
+                Debug.Log("🤝 房間準備就緒，等待 WebRTC offer");
+                return;
+            }
+            else if (msg.type == "offer")
             {
                 var offer = JsonUtility.FromJson<OfferMessage>(text);
                 Debug.Log("📩 收到 Offer");
