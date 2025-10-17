@@ -168,6 +168,8 @@ MonoBehaviour:
   serverUrl: wss://testgyroscopehtml-production.up.railway.app
   autoConnect: 1
   reconnectInterval: 5
+  roomId: default-room
+  role: unity-receiver
   alpha: 0
   beta: 0
   gamma: 0
@@ -218,6 +220,55 @@ MonoBehaviour:
   shakeIntensity: 0
   shakeType: normal
   showDebugInfo: 1
+--- !u!1 &643382373
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 643382375}
+  - component: {fileID: 643382374}
+  m_Layer: 0
+  m_Name: WebRTCReceiver
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &643382374
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 643382373}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a290664b2e7db1d499eb3231ef215aa6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetRenderer: {fileID: 790361826}
+  roomId: default-room
+  connectionTimeout: 18
+  showDebugInfo: 1
+  iceConnectionState: new
+--- !u!4 &643382375
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 643382373}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -724.13226, y: 968.7065, z: 63.64509}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &790361821
 GameObject:
   m_ObjectHideFlags: 0
@@ -233,7 +284,7 @@ GameObject:
   - component: {fileID: 790361824}
   - component: {fileID: 790361823}
   m_Layer: 0
-  m_Name: plane
+  m_Name: ScreenDisplay
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -248,11 +299,11 @@ Transform:
   m_GameObject: {fileID: 790361821}
   serializedVersion: 2
   m_LocalRotation: {x: -0.0073367944, y: 0.7020351, z: -0.7121039, w: 0.00095686305}
-  m_LocalPosition: {x: -21, y: 8, z: 712}
-  m_LocalScale: {x: 183.8481, y: 107.6934, z: 121.0492}
+  m_LocalPosition: {x: -22.517365, y: 12.437875, z: 931}
+  m_LocalScale: {x: 183.84811, y: 107.693405, z: 121.049194}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1749464573}
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 88.943, y: 39.737, z: -140.78}
 --- !u!114 &790361823
 MonoBehaviour:
@@ -286,6 +337,8 @@ MonoBehaviour:
   serverUrl: wss://testgyroscopehtml-production.up.railway.app
   autoConnect: 1
   reconnectInterval: 5
+  roomId: default-room
+  role: unity-receiver
   alpha: 0
   beta: 0
   gamma: 0
@@ -555,38 +608,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1749464572
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1749464573}
-  m_Layer: 0
-  m_Name: ScreenTest
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1749464573
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1749464572}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.5173635, y: 4.437875, z: 219}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 790361822}
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -594,4 +615,5 @@ SceneRoots:
   - {fileID: 1682427877}
   - {fileID: 1133156674}
   - {fileID: 117218822}
-  - {fileID: 1749464573}
+  - {fileID: 790361822}
+  - {fileID: 643382375}

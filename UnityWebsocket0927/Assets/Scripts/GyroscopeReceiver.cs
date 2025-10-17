@@ -98,11 +98,27 @@ public class GyroscopeReceiver : MonoBehaviour
         public int? sdpMLineIndex;
     }
     
+    [System.Serializable]
+    public class JoinMessage
+    {
+        public string type;
+        public string room;
+        public string role;
+    }
+    
     void Start()
     {
+        Debug.Log("🚀 GyroscopeReceiver Start() 被調用");
+        Debug.Log($"🔍 當前配置 - Server: {serverUrl}, Room: {roomId}, Role: {role}");
+        
         if (autoConnect)
         {
+            Debug.Log("🔄 自動連接已啟用，開始連接...");
             ConnectToServer();
+        }
+        else
+        {
+            Debug.Log("⚠️ 自動連接已禁用");
         }
     }
     
@@ -133,8 +149,14 @@ public class GyroscopeReceiver : MonoBehaviour
                 
                 // 立即加入房間
                 Debug.Log("✅ WS Connected, sending join");
-                var join = new { type = "join", room = roomId, role = role };
-                websocket.SendText(JsonUtility.ToJson(join));
+                Debug.Log($"🔍 Room ID: '{roomId}', Role: '{role}'");
+                
+                // 強制使用正確的 JSON 格式
+                var joinMessage = new JoinMessage { type = "join", room = roomId, role = role };
+                string joinJson = JsonUtility.ToJson(joinMessage);
+                Debug.Log($"[WS] sent join: {joinJson}");
+                
+                websocket.SendText(joinJson);
                 Debug.Log($"✅ 已發送加入房間請求: {roomId} as {role}");
                 
                 OnConnected?.Invoke();
@@ -285,7 +307,11 @@ public class GyroscopeReceiver : MonoBehaviour
                             break;
                             
                         case "joined":
-                            Debug.Log($"✅ 已加入房間");
+                            Debug.Log($"✅ 已加入房間: {serverMessage.message}");
+                            break;
+                            
+                        case "ready":
+                            Debug.Log($"🤝 房間準備就緒: {serverMessage.message}");
                             break;
                             
                         case "ack":
@@ -406,14 +432,13 @@ public class GyroscopeReceiver : MonoBehaviour
     {
         if (websocket != null && websocket.State == WebSocketState.Open)
         {
-            var joinMessage = JsonUtility.ToJson(new
-            {
-                type = "join",
-                room = roomId,
-                role = role
-            });
+            Debug.Log($"🔍 JoinRoom - Room ID: '{roomId}', Role: '{role}'");
             
-            websocket.SendText(joinMessage);
+            var joinMessage = new JoinMessage { type = "join", room = roomId, role = role };
+            string joinJson = JsonUtility.ToJson(joinMessage);
+            
+            Debug.Log($"[WS] sent join: {joinJson}");
+            websocket.SendText(joinJson);
             Debug.Log($"✅ 已發送加入房間請求: {roomId} as {role}");
         }
         else
@@ -466,6 +491,23 @@ public class GyroscopeReceiver : MonoBehaviour
             if (isConnected && GUILayout.Button("斷線"))
             {
                 Disconnect();
+            }
+            
+            if (GUILayout.Button("手動加入房間"))
+            {
+                Debug.Log("🔧 手動加入房間按鈕被點擊");
+                Debug.Log($"🔍 手動加入 - Room: '{roomId}', Role: '{role}'");
+                JoinRoom(roomId, role);
+            }
+            
+            if (GUILayout.Button("強制重新連接"))
+            {
+                Debug.Log("🔧 強制重新連接按鈕被點擊");
+                if (websocket != null)
+                {
+                    websocket.Close();
+                }
+                ConnectToServer();
             }
             
             GUILayout.EndArea();
