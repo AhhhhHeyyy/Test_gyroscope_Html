@@ -10,10 +10,6 @@ public class GyroscopeReceiver : MonoBehaviour
     [SerializeField] private bool autoConnect = true;
     [SerializeField] private float reconnectInterval = 5f; // 重連間隔（秒）
     
-    [Header("Signaling / Room")]
-    [SerializeField] private string roomId = "default-room";
-    [SerializeField] private string role = "unity-receiver";
-    
     [Header("陀螺儀數據")]
     [SerializeField] private float alpha = 0f;
     [SerializeField] private float beta = 0f;
@@ -26,28 +22,6 @@ public class GyroscopeReceiver : MonoBehaviour
     private WebSocket websocket;
     private Queue<GyroscopeData> dataQueue = new Queue<GyroscopeData>();
     private Coroutine reconnectCoroutine;
-    
-    // 訊息排隊機制，避免丟失重要信令
-    public Queue<string> pendingMessages = new Queue<string>();
-    
-    // WebRTC 信令 DTO 類別
-    [System.Serializable]
-    public class IceCandidateDTO
-    {
-        public string candidate;
-        public string sdpMid;
-        public int sdpMLineIndex;
-    }
-
-    [System.Serializable]
-    public class SignalingDTO
-    {
-        public string type;          // "offer" | "answer" | "candidate"
-        public string sdp;           // for offer/answer
-        public IceCandidateDTO candidate; // for candidate
-        public string room;          // optional
-        public string role;          // optional
-    }
     
     [System.Serializable]
     public class GyroscopeData
@@ -88,6 +62,42 @@ public class GyroscopeReceiver : MonoBehaviour
     }
     
     [System.Serializable]
+    public class IceCandidate
+    {
+        public string candidate;
+        public string sdpMid;
+        public int sdpMLineIndex;
+    }
+    
+    [System.Serializable]
+    public class SignalingMessage
+    {
+        public string type;
+        public string sdp;
+        public IceCandidate candidate;
+        public string room;
+        public string role;
+    }
+    
+    [System.Serializable]
+    public class SignalingDTO
+    {
+        public string type;          // "offer" | "answer" | "candidate"
+        public string sdp;           // for offer/answer
+        public IceCandidateDTO candidate; // for candidate
+        public string room;          // optional
+        public string role;          // optional
+    }
+    
+    [System.Serializable]
+    public class IceCandidateDTO
+    {
+        public string candidate;
+        public string sdpMid;
+        public int sdpMLineIndex;
+    }
+    
+    [System.Serializable]
     public struct ScreenFrame
     {
         public int clientId;
@@ -100,49 +110,18 @@ public class GyroscopeReceiver : MonoBehaviour
     public static event Action<GyroscopeData> OnGyroscopeDataReceived;
     public static event Action<ShakeData> OnShakeDataReceived; // 新增搖晃事件
     public static event Action<ScreenFrame> OnScreenCaptureReceived; // 新增螢幕捕獲事件
-    public static event Action<SignalingMessage> OnWebRTCSignaling; // 新增 WebRTC 信令事件
-    public static event Action<string> OnRawMessage; // 新增原始訊息事件
     public static event Action OnConnected;
     public static event Action OnDisconnected;
     public static event Action<string> OnError;
     
-    [System.Serializable]
-    public class SignalingMessage
-    {
-        public string type; // offer, answer, candidate
-        public string sdp;
-        public IceCandidate candidate;
-    }
-
-    [System.Serializable]
-    public class IceCandidate
-    {
-        public string candidate;
-        public string sdpMid;
-        public int? sdpMLineIndex;
-    }
-    
-    [System.Serializable]
-    public class JoinMessage
-    {
-        public string type;
-        public string room;
-        public string role;
-    }
+    // WebRTC 信令事件
+    public event Action<SignalingMessage> OnWebRTCSignaling;
     
     void Start()
     {
-        Debug.Log("🚀 GyroscopeReceiver Start() 被調用");
-        Debug.Log($"🔍 當前配置 - Server: {serverUrl}, Room: {roomId}, Role: {role}");
-        
         if (autoConnect)
         {
-            Debug.Log("🔄 自動連接已啟用，開始連接...");
             ConnectToServer();
-        }
-        else
-        {
-            Debug.Log("⚠️ 自動連接已禁用");
         }
     }
     
@@ -171,47 +150,29 @@ public class GyroscopeReceiver : MonoBehaviour
                     reconnectCoroutine = null;
                 }
                 
-                // 立即加入房間
-                Debug.Log("✅ WS Connected, sending join");
-                Debug.Log($"🔍 Room ID: '{roomId}', Role: '{role}'");
-                
-                // 強制使用正確的 JSON 格式
-                var joinMessage = new JoinMessage { type = "join", room = roomId, role = role };
-                string joinJson = JsonUtility.ToJson(joinMessage);
-                Debug.Log($"[WS] sent join: {joinJson}");
-                
-                websocket.SendText(joinJson);
-                Debug.Log($"✅ 已發送加入房間請求: {roomId} as {role}");
-                
                 OnConnected?.Invoke();
             };
             
             websocket.OnError += (error) =>
             {
-                if (this != null) // 檢查物件是否還存在
-                {
-                    Debug.LogError($"❌ WebSocket錯誤: {error}");
-                    isConnected = false;
-                    connectionStatus = $"錯誤: {error}";
-                    OnError?.Invoke(error);
-                }
+                Debug.LogError($"❌ WebSocket錯誤: {error}");
+                isConnected = false;
+                connectionStatus = $"錯誤: {error}";
+                OnError?.Invoke(error);
             };
             
             websocket.OnClose += (closeCode) =>
             {
-                if (this != null) // 檢查物件是否還存在
+                Debug.Log($"🔌 WebSocket連接已關閉: {closeCode}");
+                Debug.Log($"🔍 關閉原因代碼: {closeCode} (1000=正常關閉, 1001=離開, 1002=錯誤, 1003=不支援數據)");
+                isConnected = false;
+                connectionStatus = "已斷線";
+                OnDisconnected?.Invoke();
+                
+                // 啟動自動重連
+                if (reconnectCoroutine == null)
                 {
-                    Debug.Log($"🔌 WebSocket連接已關閉: {closeCode}");
-                    Debug.Log($"🔍 關閉原因代碼: {closeCode} (1000=正常關閉, 1001=離開, 1002=錯誤, 1003=不支援數據)");
-                    isConnected = false;
-                    connectionStatus = "已斷線";
-                    OnDisconnected?.Invoke();
-                    
-                    // 啟動自動重連
-                    if (reconnectCoroutine == null)
-                    {
-                        reconnectCoroutine = StartCoroutine(AutoReconnect());
-                    }
+                    reconnectCoroutine = StartCoroutine(AutoReconnect());
                 }
             };
             
@@ -221,9 +182,6 @@ public class GyroscopeReceiver : MonoBehaviour
                 {
                     string message = System.Text.Encoding.UTF8.GetString(bytes);
                     Debug.Log($"📱 收到原始訊息: {message}");
-                    
-                    // 觸發原始訊息事件
-                    OnRawMessage?.Invoke(message);
                     
                     // 解析服務器消息格式
                     var serverMessage = JsonUtility.FromJson<ServerMessage>(message);
@@ -321,30 +279,6 @@ public class GyroscopeReceiver : MonoBehaviour
                             }
                             break;
                             
-                        case "offer":
-                        case "answer":
-                        case "candidate":
-                            // WebRTC 信令處理 - 修正解析邏輯
-                            Debug.Log($"📡 收到 WebRTC 信令: {serverMessage.type}");
-                            var signalingMsg = new SignalingMessage
-                            {
-                                type = serverMessage.type,
-                                sdp = serverMessage.sdp,
-                                candidate = serverMessage.candidate
-                            };
-                            OnWebRTCSignaling?.Invoke(signalingMsg);
-                            break;
-                            
-                        case "joined":
-                            Debug.Log($"✅ 已加入房間: {serverMessage.message}");
-                            break;
-                            
-                        case "ready":
-                            Debug.Log($"🤝 房間準備就緒: {serverMessage.message}");
-                            // 觸發 WebRTC 準備事件
-                            OnWebRTCSignaling?.Invoke(new SignalingMessage { type = "ready" });
-                            break;
-                            
                         case "ack":
                             Debug.Log($"✅ 確認: {serverMessage.message}");
                             break;
@@ -391,18 +325,6 @@ public class GyroscopeReceiver : MonoBehaviour
                 isConnected = false;
                 connectionStatus = "連接狀態不同步";
             }
-            
-            // 處理排隊的訊息
-            if (websocket.State == WebSocketState.Open && pendingMessages.Count > 0)
-            {
-                Debug.Log($"📤 發送排隊訊息，共 {pendingMessages.Count} 條");
-                while (pendingMessages.Count > 0 && websocket.State == WebSocketState.Open)
-                {
-                    string msg = pendingMessages.Dequeue();
-                    websocket.SendText(msg);
-                    Debug.Log($"📤 發送排隊 JSON: {msg}");
-                }
-            }
         }
         else
         {
@@ -444,87 +366,6 @@ public class GyroscopeReceiver : MonoBehaviour
     public void ClearDataQueue()
     {
         dataQueue.Clear();
-    }
-    
-    // 發送原始消息（用於 WebRTC 信令）
-    public void SendRaw(string message)
-    {
-        if (websocket != null && websocket.State == WebSocketState.Open)
-        {
-            websocket.SendText(message);
-        }
-    }
-    
-    // 檢查 WebSocket 是否準備就緒
-    bool IsWsReady() => websocket != null && websocket.State == WebSocketState.Open;
-
-    // 專門發送 WebRTC 信令的方法
-    public void SendSignaling(SignalingDTO dto)
-    {
-        if (!IsWsReady())
-        {
-            Debug.LogWarning($"⚠️ WebSocket未連接，訊息排隊：{dto.type}");
-            
-            // 將訊息排隊，等待連接恢復
-            var jsonData = JsonUtility.ToJson(dto);
-            pendingMessages.Enqueue(jsonData);
-            
-            // 如果連接關閉，嘗試重連
-            if (websocket?.State == WebSocketState.Closed)
-            {
-                Debug.Log("🔄 嘗試重新連接...");
-                ConnectToServer();
-            }
-            return;
-        }
-        
-        var json = JsonUtility.ToJson(dto);
-        websocket.SendText(json);
-        Debug.Log($"📤 發送 JSON: {json}");
-    }
-
-    // 發送 JSON 物件（保留原有方法用於其他用途）
-    public void SendJson(object message)
-    {
-        string json = JsonUtility.ToJson(message);
-        
-        if (websocket != null && websocket.State == WebSocketState.Open)
-        {
-            websocket.SendText(json);
-            Debug.Log($"📤 發送 JSON: {json}");
-        }
-        else
-        {
-            Debug.LogWarning($"⚠️ WebSocket未連接，訊息先暫存排隊。狀態: {websocket?.State}");
-            pendingMessages.Enqueue(json);
-            
-            // 嘗試重新連接
-            if (websocket?.State == WebSocketState.Closed)
-            {
-                Debug.Log("🔄 嘗試重新連接...");
-                ConnectToServer();
-            }
-        }
-    }
-    
-    // 加入房間
-    public void JoinRoom(string roomId, string role)
-    {
-        if (websocket != null && websocket.State == WebSocketState.Open)
-        {
-            Debug.Log($"🔍 JoinRoom - Room ID: '{roomId}', Role: '{role}'");
-            
-            var joinMessage = new JoinMessage { type = "join", room = roomId, role = role };
-            string joinJson = JsonUtility.ToJson(joinMessage);
-            
-            Debug.Log($"[WS] sent join: {joinJson}");
-            websocket.SendText(joinJson);
-            Debug.Log($"✅ 已發送加入房間請求: {roomId} as {role}");
-        }
-        else
-        {
-            Debug.LogWarning("⚠️ WebSocket未連接，無法加入房間");
-        }
     }
     
     private System.Collections.IEnumerator AutoReconnect()
@@ -573,24 +414,27 @@ public class GyroscopeReceiver : MonoBehaviour
                 Disconnect();
             }
             
-            if (GUILayout.Button("手動加入房間"))
-            {
-                Debug.Log("🔧 手動加入房間按鈕被點擊");
-                Debug.Log($"🔍 手動加入 - Room: '{roomId}', Role: '{role}'");
-                JoinRoom(roomId, role);
-            }
-            
-            if (GUILayout.Button("強制重新連接"))
-            {
-                Debug.Log("🔧 強制重新連接按鈕被點擊");
-                if (websocket != null)
-                {
-                    websocket.Close();
-                }
-                ConnectToServer();
-            }
-            
             GUILayout.EndArea();
         }
+    }
+    
+    // WebRTC 信令發送方法
+    public void SendSignaling(SignalingDTO dto)
+    {
+        if (websocket == null || websocket.State != NativeWebSocket.WebSocketState.Open)
+        {
+            Debug.LogWarning($"⚠️ WebSocket未連接，無法發送信令: {dto.type}");
+            return;
+        }
+        
+        var json = JsonUtility.ToJson(dto);
+        websocket.SendText(json);
+        Debug.Log($"📤 發送 WebRTC 信令: {dto.type}");
+    }
+    
+    // 檢查 WebSocket 連接狀態
+    public bool IsWsReady()
+    {
+        return websocket != null && websocket.State == NativeWebSocket.WebSocketState.Open;
     }
 }
