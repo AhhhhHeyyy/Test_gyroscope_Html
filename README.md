@@ -6,7 +6,7 @@
 
 - 🔄 **即時數據傳輸**：手機陀螺儀數據即時傳送到Unity
 - 📳 **搖晃偵測**：基於加速度感測器的智能搖晃偵測功能
-- 📺 **螢幕捕獲**：WebRTC P2P 優先，WebSocket 降級備用
+- 📺 **螢幕捕獲**：即時螢幕捕獲並傳輸到Unity顯示
 - 🌐 **跨平台支援**：支援iOS、Android、桌面平台
 - 🎮 **Unity整合**：完整的Unity C#腳本和組件
 - ☁️ **雲端部署**：使用Railway進行雲端部署
@@ -31,8 +31,7 @@ Project1141/
         ├── GyroscopeReceiver.cs    # WebSocket接收器（支援搖晃數據 + 螢幕捕獲）
         ├── GyroscopeController.cs  # 陀螺儀控制器（整合搖晃顯示）
         ├── GyroscopeDebugger.cs    # 調試工具
-        ├── ScreenCaptureHandler.cs # 螢幕捕獲處理器（WebSocket 降級）
-        ├── WebRTCScreenReceiver.cs # WebRTC 接收器（新增）
+        ├── ScreenCaptureHandler.cs # 螢幕捕獲處理器（新增）
         ├── ShakeData.cs            # 搖晃數據結構
         └── ShakeDisplay.cs         # 搖晃狀態顯示（獨立組件）
 ```
@@ -294,16 +293,7 @@ railway logs
 
 ## 🔄 版本歷史
 
-### v3.0.0 (最新)
-- 🚀 **WebRTC P2P 螢幕捕捉**：低延遲點對點視頻傳輸（100-300ms）
-- 🔄 **智能降級機制**：WebRTC 失敗時自動切換到 WebSocket
-- 📊 **即時性能監控**：位元率、幀率、RTT、候選者類型顯示
-- 🏠 **房間制度**：支援多對端連接和角色管理
-- ⚡ **性能優化**：自適應幀率調整和記憶體管理
-- 🔧 **技術改進**：優化信令處理和資源管理
-- 🛠️ **穩定性提升**：完整的錯誤處理和重連機制
-
-### v2.3.1
+### v2.3.1 (最新)
 - 📺 **新增螢幕捕獲功能**：即時螢幕捕獲並傳輸到Unity顯示
 - ⚡ **性能優化**：自適應幀率調整和記憶體管理
 - 🔧 **技術改進**：優化WebSocket消息處理和數據解析
@@ -347,12 +337,10 @@ railway logs
 - **問題回報**：[GitHub Issues](https://github.com/your-username/your-repo/issues)
 - **功能建議**：[GitHub Discussions](https://github.com/your-username/your-repo/discussions)
 - **技術文檔**：[TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-- **WebRTC 設置**：[WEBRTC_SETUP.md](WEBRTC_SETUP.md)
 
 ## 🙏 致謝
 
 - [NativeWebSocket](https://github.com/endel/NativeWebSocket) - Unity WebSocket套件
-- [Unity WebRTC](https://docs.unity3d.com/Packages/com.unity.webrtc@latest/) - Unity WebRTC套件
 - [Railway](https://railway.app/) - 雲端部署平台
 - [Unity](https://unity.com/) - 遊戲引擎
 

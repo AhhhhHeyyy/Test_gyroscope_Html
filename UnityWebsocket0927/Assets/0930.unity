@@ -119,7 +119,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &117218821
+--- !u!1 &172402999
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -127,177 +127,24 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 117218822}
-  - component: {fileID: 117218825}
-  - component: {fileID: 117218824}
-  - component: {fileID: 117218826}
+  - component: {fileID: 172403003}
+  - component: {fileID: 172403002}
+  - component: {fileID: 172403001}
+  - component: {fileID: 172403000}
   m_Layer: 0
-  m_Name: GyroscopeReceiver
+  m_Name: Cube
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &117218822
-Transform:
+--- !u!65 &172403000
+BoxCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 117218821}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.5173635, y: 4.437875, z: -4.423424}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &117218824
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 117218821}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 05067a9cc04e5f443a24fec11f92313e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  serverUrl: wss://testgyroscopehtml-production.up.railway.app
-  autoConnect: 1
-  reconnectInterval: 5
-  alpha: 0
-  beta: 0
-  gamma: 0
-  isConnected: 0
-  connectionStatus: "\u672A\u9023\u63A5"
---- !u!114 &117218825
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 117218821}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8376c908399cabe429b1dcfc6879879c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  gyroReceiver: {fileID: 117218824}
-  enableRotation: 1
-  enablePosition: 0
-  rotationSensitivity: 1
-  positionSensitivity: 0.01
-  enableSmoothing: 1
-  smoothingFactor: 0.1
-  enableRotationLimits: 0
-  xRotationLimits: {x: -90, y: 90}
-  yRotationLimits: {x: -180, y: 180}
-  zRotationLimits: {x: -180, y: 180}
-  showDebugInfo: 0
---- !u!114 &117218826
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 117218821}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9a6ed9a0777ad6543baa8c6629263ddf, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  shakeStatusText: {fileID: 0}
-  shakeCountText: {fileID: 0}
-  shakeIntensityText: {fileID: 0}
-  shakeTypeText: {fileID: 0}
-  currentShakeStatus: "\u975C\u6B62"
-  shakeCount: 0
-  shakeIntensity: 0
-  shakeType: normal
-  showDebugInfo: 1
---- !u!1 &790361821
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 790361822}
-  - component: {fileID: 790361827}
-  - component: {fileID: 790361826}
-  - component: {fileID: 790361825}
-  - component: {fileID: 790361824}
-  - component: {fileID: 790361823}
-  m_Layer: 0
-  m_Name: ScreenDisplay
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &790361822
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 790361821}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0.0073367944, y: 0.7020351, z: -0.7121039, w: 0.00095686305}
-  m_LocalPosition: {x: -22.517365, y: 12.437875, z: 931}
-  m_LocalScale: {x: 183.84811, y: 107.693405, z: 121.049194}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 88.943, y: 39.737, z: -140.78}
---- !u!114 &790361823
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 790361821}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c792729e422c24c46a2a63791dc281ed, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  targetRenderer: {fileID: 790361826}
-  screenMaterial: {fileID: 0}
-  maxQueueSize: 3
-  baseUpdateInterval: 0.066
-  maxUpdateInterval: 0.2
---- !u!114 &790361824
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 790361821}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 05067a9cc04e5f443a24fec11f92313e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  serverUrl: wss://testgyroscopehtml-production.up.railway.app
-  autoConnect: 1
-  reconnectInterval: 5
-  alpha: 0
-  beta: 0
-  gamma: 0
-  isConnected: 0
-  connectionStatus: "\u672A\u9023\u63A5"
---- !u!64 &790361825
-MeshCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 790361821}
+  m_GameObject: {fileID: 172402999}
   m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
@@ -309,17 +156,16 @@ MeshCollider:
   m_IsTrigger: 0
   m_ProvidesContacts: 0
   m_Enabled: 1
-  serializedVersion: 5
-  m_Convex: 0
-  m_CookingOptions: 30
-  m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
---- !u!23 &790361826
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!23 &172403001
 MeshRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 790361821}
+  m_GameObject: {fileID: 172402999}
   m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
@@ -336,7 +182,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 10303, guid: 0000000000000000f000000000000000, type: 0}
+  - {fileID: 2100000, guid: 7821ddafb9436bc46840b7b199437576, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -358,15 +204,30 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!33 &790361827
+--- !u!33 &172403002
 MeshFilter:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 790361821}
-  m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
---- !u!1 &1133156672
+  m_GameObject: {fileID: 172402999}
+  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!4 &172403003
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 172402999}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 2.46, y: 4.437875, z: 5.28}
+  m_LocalScale: {x: 68.964676, y: 74.44865, z: 19.488153}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &288611992
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -374,8 +235,8 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1133156674}
-  - component: {fileID: 1133156673}
+  - component: {fileID: 288611994}
+  - component: {fileID: 288611993}
   m_Layer: 0
   m_Name: Directional Light
   m_TagString: Untagged
@@ -383,13 +244,13 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!108 &1133156673
+--- !u!108 &288611993
 Light:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1133156672}
+  m_GameObject: {fileID: 288611992}
   m_Enabled: 1
   serializedVersion: 11
   m_Type: 1
@@ -448,13 +309,13 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
---- !u!4 &1133156674
+--- !u!4 &288611994
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1133156672}
+  m_GameObject: {fileID: 288611992}
   serializedVersion: 2
   m_LocalRotation: {x: 0.40821788, y: -0.23456968, z: 0.10938163, w: 0.8754261}
   m_LocalPosition: {x: 0, y: 3, z: 0}
@@ -463,7 +324,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
---- !u!1 &1682427874
+--- !u!1 &1054834760
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -471,9 +332,106 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1682427877}
-  - component: {fileID: 1682427876}
-  - component: {fileID: 1682427875}
+  - component: {fileID: 1054834764}
+  - component: {fileID: 1054834763}
+  - component: {fileID: 1054834762}
+  - component: {fileID: 1054834765}
+  m_Layer: 0
+  m_Name: GameObject
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1054834762
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1054834760}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c8fea83b8b247524eb6c5801f712b05c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  statusText: {fileID: 0}
+  dataText: {fileID: 0}
+  connectionText: {fileID: 0}
+  connectButton: {fileID: 0}
+  disconnectButton: {fileID: 0}
+  enableDetailedLogging: 1
+  updateInterval: 0.1
+--- !u!114 &1054834763
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1054834760}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8376c908399cabe429b1dcfc6879879c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  gyroReceiver: {fileID: 0}
+  enableRotation: 1
+  enablePosition: 0
+  rotationSensitivity: 1
+  positionSensitivity: 0.01
+  enableSmoothing: 1
+  smoothingFactor: 0.1
+  enableRotationLimits: 0
+  xRotationLimits: {x: -90, y: 90}
+  yRotationLimits: {x: -180, y: 180}
+  zRotationLimits: {x: -180, y: 180}
+  showDebugInfo: 1
+--- !u!4 &1054834764
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1054834760}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1054834765
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1054834760}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 05067a9cc04e5f443a24fec11f92313e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  serverUrl: wss://testgyroscopehtml-production.up.railway.app
+  autoConnect: 1
+  reconnectInterval: 5
+  alpha: 0
+  beta: 0
+  gamma: 0
+  isConnected: 0
+  connectionStatus: "\u672A\u9023\u63A5"
+--- !u!1 &1793696212
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1793696215}
+  - component: {fileID: 1793696214}
+  - component: {fileID: 1793696213}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -481,21 +439,21 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!81 &1682427875
+--- !u!81 &1793696213
 AudioListener:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1682427874}
+  m_GameObject: {fileID: 1793696212}
   m_Enabled: 1
---- !u!20 &1682427876
+--- !u!20 &1793696214
 Camera:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1682427874}
+  m_GameObject: {fileID: 1793696212}
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 1
@@ -540,66 +498,16 @@ Camera:
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
   m_StereoSeparation: 0.022
---- !u!4 &1682427877
+--- !u!4 &1793696215
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1682427874}
+  m_GameObject: {fileID: 1793696212}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 1, z: -10}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1858101326
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1858101328}
-  - component: {fileID: 1858101327}
-  m_Layer: 0
-  m_Name: WebRTCReceiver
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &1858101327
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1858101326}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a290664b2e7db1d499eb3231ef215aa6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  targetRenderer: {fileID: 0}
-  gyroscopeReceiver: {fileID: 0}
-  stunServers:
-  - stun:stun.l.google.com:19302
-  - stun:stun1.l.google.com:19302
-  - stun:stun2.l.google.com:19302
---- !u!4 &1858101328
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1858101326}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.5173635, y: 4.437875, z: -4.423424}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -609,8 +517,7 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 1682427877}
-  - {fileID: 1133156674}
-  - {fileID: 117218822}
-  - {fileID: 1858101328}
-  - {fileID: 790361822}
+  - {fileID: 1793696215}
+  - {fileID: 288611994}
+  - {fileID: 1054834764}
+  - {fileID: 172403003}
