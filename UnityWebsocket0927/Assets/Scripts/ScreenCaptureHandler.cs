@@ -1,11 +1,21 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using UnityEngine.UI;
 
 public class ScreenCaptureHandler : MonoBehaviour
 {
+    [Header("顯示模式")]
+    public enum DisplayMode
+    {
+        Renderer,
+        RawImage
+    }
+    
     [Header("顯示設定")]
+    public DisplayMode displayMode = DisplayMode.Renderer;
     public Renderer targetRenderer;
+    public RawImage targetRawImage;
     public Material screenMaterial;
     
     [Header("性能設定")]
@@ -28,9 +38,29 @@ public class ScreenCaptureHandler : MonoBehaviour
         // 訂閱事件
         GyroscopeReceiver.OnScreenCaptureReceived += HandleScreenFrame;
         
-        // 初始化
-        if (targetRenderer == null)
-            targetRenderer = GetComponent<Renderer>();
+        // 根據顯示模式初始化
+        if (displayMode == DisplayMode.RawImage)
+        {
+            if (targetRawImage == null)
+            {
+                GameObject screenDisplay = GameObject.Find("ScreenCaptureDisplay");
+                if (screenDisplay != null)
+                {
+                    targetRawImage = screenDisplay.GetComponent<RawImage>();
+                    if (targetRawImage != null)
+                    {
+                        Debug.Log("✅ ScreenCaptureHandler RawImage 模式已設置");
+                        targetRawImage.color = Color.white;
+                    }
+                }
+            }
+        }
+        else
+        {
+            // 初始化
+            if (targetRenderer == null)
+                targetRenderer = GetComponent<Renderer>();
+        }
             
         if (screenMaterial == null)
         {
@@ -93,9 +123,25 @@ public class ScreenCaptureHandler : MonoBehaviour
             // 載入圖像（標記為不可讀，減少記憶體使用）
             if (screenTexture.LoadImage(frame.data, true))
             {
-                // 應用到材質
-                screenMaterial.mainTexture = screenTexture;
-                targetRenderer.material = screenMaterial;
+                // 根據顯示模式應用紋理
+                if (displayMode == DisplayMode.RawImage)
+                {
+                    if (targetRawImage != null)
+                    {
+                        targetRawImage.texture = screenTexture;
+                        targetRawImage.color = Color.white;
+                        
+                        // 強制刷新UI
+                        targetRawImage.SetMaterialDirty();
+                        targetRawImage.SetVerticesDirty();
+                    }
+                }
+                else
+                {
+                    // 應用到材質
+                    screenMaterial.mainTexture = screenTexture;
+                    targetRenderer.material = screenMaterial;
+                }
                 
                 frameCount++;
                 Debug.Log($"📺 處理螢幕幀 #{frameCount} (ClientId: {frame.clientId}, Size: {frame.size} bytes)");

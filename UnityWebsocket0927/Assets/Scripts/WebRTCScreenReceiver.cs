@@ -2,11 +2,21 @@ using System.Collections;
 using UnityEngine;
 using Unity.WebRTC;
 using System;
+using UnityEngine.UI;
 
 public class WebRTCScreenReceiver : MonoBehaviour
 {
+    [Header("顯示模式")]
+    public enum DisplayMode
+    {
+        Renderer,
+        RawImage
+    }
+    
     [Header("WebRTC 設置")]
+    [SerializeField] private DisplayMode displayMode = DisplayMode.Renderer;
     [SerializeField] private MeshRenderer targetRenderer;
+    [SerializeField] private RawImage targetRawImage;
     [SerializeField] private GyroscopeReceiver gyroscopeReceiver;
     
     [Header("STUN 服務器")]
@@ -24,25 +34,54 @@ public class WebRTCScreenReceiver : MonoBehaviour
     {
         Debug.Log("🚀 WebRTC 準備就緒");
         
-        // 自動尋找 ScreenDisplay 物件
-        if (targetRenderer == null)
+        // 根據顯示模式設置目標
+        if (displayMode == DisplayMode.RawImage)
         {
-            GameObject screenDisplay = GameObject.Find("ScreenDisplay");
-            if (screenDisplay != null)
+            if (targetRawImage == null)
             {
-                targetRenderer = screenDisplay.GetComponent<MeshRenderer>();
-                if (targetRenderer != null)
+                GameObject screenDisplay = GameObject.Find("ScreenCaptureDisplay");
+                if (screenDisplay != null)
                 {
-                    Debug.Log("✅ targetRenderer 已設置: ScreenDisplay");
+                    targetRawImage = screenDisplay.GetComponent<RawImage>();
+                    if (targetRawImage != null)
+                    {
+                        Debug.Log("✅ RawImage 模式已設置: ScreenCaptureDisplay");
+                        // 確保RawImage顏色為白色
+                        targetRawImage.color = Color.white;
+                    }
+                    else
+                    {
+                        Debug.LogError("❌ ScreenCaptureDisplay 物件沒有 RawImage 組件！");
+                    }
                 }
                 else
                 {
-                    Debug.LogError("❌ ScreenDisplay 物件沒有 MeshRenderer 組件！");
+                    Debug.LogError("❌ 找不到 ScreenCaptureDisplay 物件！請確保場景中有名為 'ScreenCaptureDisplay' 的物件");
                 }
             }
-            else
+        }
+        else
+        {
+            // 自動尋找 ScreenDisplay 物件
+            if (targetRenderer == null)
             {
-                Debug.LogError("❌ 找不到 ScreenDisplay 物件！請確保場景中有名為 'ScreenDisplay' 的物件");
+                GameObject screenDisplay = GameObject.Find("ScreenDisplay");
+                if (screenDisplay != null)
+                {
+                    targetRenderer = screenDisplay.GetComponent<MeshRenderer>();
+                    if (targetRenderer != null)
+                    {
+                        Debug.Log("✅ targetRenderer 已設置: ScreenDisplay");
+                    }
+                    else
+                    {
+                        Debug.LogError("❌ ScreenDisplay 物件沒有 MeshRenderer 組件！");
+                    }
+                }
+                else
+                {
+                    Debug.LogError("❌ 找不到 ScreenDisplay 物件！請確保場景中有名為 'ScreenDisplay' 的物件");
+                }
             }
         }
         
@@ -293,14 +332,36 @@ public class WebRTCScreenReceiver : MonoBehaviour
         
         Debug.Log("📺 收到視頻幀");
         
-        if (targetRenderer != null && texture != null)
+        // 根據顯示模式應用紋理
+        if (displayMode == DisplayMode.RawImage)
         {
-            targetRenderer.material.mainTexture = texture;
-            Debug.Log("✅ 材質已更新");
+            if (targetRawImage != null && texture != null)
+            {
+                targetRawImage.texture = texture;
+                targetRawImage.color = Color.white;
+                
+                // 強制刷新UI
+                targetRawImage.SetMaterialDirty();
+                targetRawImage.SetVerticesDirty();
+                
+                Debug.Log("✅ RawImage 已更新");
+            }
+            else
+            {
+                Debug.LogWarning($"⚠️ 無法設定RawImage - targetRawImage: {targetRawImage}, texture: {texture}");
+            }
         }
         else
         {
-            Debug.LogWarning($"⚠️ 無法設定材質 - targetRenderer: {targetRenderer}, texture: {texture}");
+            if (targetRenderer != null && texture != null)
+            {
+                targetRenderer.material.mainTexture = texture;
+                Debug.Log("✅ 材質已更新");
+            }
+            else
+            {
+                Debug.LogWarning($"⚠️ 無法設定材質 - targetRenderer: {targetRenderer}, texture: {texture}");
+            }
         }
     }
 }
