@@ -1,20 +1,11 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
-using UnityEngine.UI;
 
 public class ScreenCaptureHandler : MonoBehaviour
 {
-    public enum DisplayMode
-    {
-        Renderer,
-        RawImage
-    }
-    
     [Header("顯示設定")]
-    public DisplayMode displayMode = DisplayMode.Renderer;
     public Renderer targetRenderer;
-    public RawImage targetRawImage;
     public Material screenMaterial;
     
     [Header("性能設定")]
@@ -34,32 +25,16 @@ public class ScreenCaptureHandler : MonoBehaviour
     
     void Start()
     {
+        // WebSocket 模式作為降級方案
+        // 初始禁用，等 WebRTC 失敗時啟用
+        this.enabled = false;
+        
         // 訂閱事件
         GyroscopeReceiver.OnScreenCaptureReceived += HandleScreenFrame;
         
-        // 根據顯示模式初始化
-        if (displayMode == DisplayMode.RawImage)
-        {
-            if (targetRawImage == null)
-            {
-                GameObject screenDisplay = GameObject.Find("ScreenCaptureDisplay");
-                if (screenDisplay != null)
-                {
-                    targetRawImage = screenDisplay.GetComponent<RawImage>();
-                    if (targetRawImage != null)
-                    {
-                        Debug.Log("✅ ScreenCaptureHandler RawImage 模式已設置");
-                        targetRawImage.color = Color.white;
-                    }
-                }
-            }
-        }
-        else
-        {
-            // 初始化
-            if (targetRenderer == null)
-                targetRenderer = GetComponent<Renderer>();
-        }
+        // 初始化
+        if (targetRenderer == null)
+            targetRenderer = GetComponent<Renderer>();
             
         if (screenMaterial == null)
         {
@@ -69,7 +44,7 @@ public class ScreenCaptureHandler : MonoBehaviour
         
         adaptiveInterval = baseUpdateInterval;
         
-        Debug.Log("📺 ScreenCaptureHandler 已初始化");
+        Debug.Log("📺 ScreenCaptureHandler 已初始化（WebSocket 降級模式）");
     }
     
     void HandleScreenFrame(GyroscopeReceiver.ScreenFrame frame)
@@ -122,25 +97,9 @@ public class ScreenCaptureHandler : MonoBehaviour
             // 載入圖像（標記為不可讀，減少記憶體使用）
             if (screenTexture.LoadImage(frame.data, true))
             {
-                // 根據顯示模式應用紋理
-                if (displayMode == DisplayMode.RawImage)
-                {
-                    if (targetRawImage != null)
-                    {
-                        targetRawImage.texture = screenTexture;
-                        targetRawImage.color = Color.white;
-                        
-                        // 強制刷新UI
-                        targetRawImage.SetMaterialDirty();
-                        targetRawImage.SetVerticesDirty();
-                    }
-                }
-                else
-                {
-                    // 應用到材質
-                    screenMaterial.mainTexture = screenTexture;
-                    targetRenderer.material = screenMaterial;
-                }
+                // 應用到材質
+                screenMaterial.mainTexture = screenTexture;
+                targetRenderer.material = screenMaterial;
                 
                 frameCount++;
                 Debug.Log($"📺 處理螢幕幀 #{frameCount} (ClientId: {frame.clientId}, Size: {frame.size} bytes)");

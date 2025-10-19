@@ -1,146 +1,76 @@
-using System.Collections;
-using UnityEngine;
 using Unity.WebRTC;
-using System;
-using UnityEngine.UI;
+using UnityEngine;
+using System.Collections;
 
 public class WebRTCScreenReceiver : MonoBehaviour
 {
-    public enum DisplayMode
-    {
-        Renderer,
-        RawImage
-    }
+    [Header("WebRTC 設定")]
+    public Renderer targetRenderer;
+    public string roomId = "default-room";
+    public float connectionTimeout = 18f;
     
-    [Header("WebRTC 設置")]
-    [SerializeField] private DisplayMode displayMode = DisplayMode.Renderer;
-    [SerializeField] private MeshRenderer targetRenderer;
-    [SerializeField] private RawImage targetRawImage;
-    [SerializeField] private GyroscopeReceiver gyroscopeReceiver;
-    
-    [Header("STUN 服務器")]
-    [SerializeField] private string[] stunServers = {
-        "stun:stun.l.google.com:19302",
-        "stun:stun1.l.google.com:19302",
-        "stun:stun2.l.google.com:19302"
-    };
+    [Header("狀態顯示")]
+    public bool showDebugInfo = true;
     
     private RTCPeerConnection peerConnection;
     private RTCConfiguration config;
-    private bool isWebRTCConnected = false;
+    private VideoStreamTrack remoteVideoTrack;
+    private Texture2D remoteTexture;
+    private bool isWebRTCMode = false;
+    private bool isConnected = false;
+    private GyroscopeReceiver gyroscopeReceiver;
     
     void Start()
     {
-        Debug.Log("🚀 WebRTC 準備就緒");
-        
-        // 根據顯示模式設置目標
-        if (displayMode == DisplayMode.RawImage)
-        {
-            if (targetRawImage == null)
-            {
-                GameObject screenDisplay = GameObject.Find("ScreenCaptureDisplay");
-                if (screenDisplay != null)
-                {
-                    targetRawImage = screenDisplay.GetComponent<RawImage>();
-                    if (targetRawImage != null)
-                    {
-                        Debug.Log("✅ RawImage 模式已設置: ScreenCaptureDisplay");
-                        // 確保RawImage顏色為白色
-                        targetRawImage.color = Color.white;
-                    }
-                    else
-                    {
-                        Debug.LogError("❌ ScreenCaptureDisplay 物件沒有 RawImage 組件！");
-                    }
-                }
-                else
-                {
-                    Debug.LogError("❌ 找不到 ScreenCaptureDisplay 物件！請確保場景中有名為 'ScreenCaptureDisplay' 的物件");
-                }
-            }
-        }
-        else
-        {
-            // 自動尋找 ScreenDisplay 物件
-            if (targetRenderer == null)
-            {
-                GameObject screenDisplay = GameObject.Find("ScreenDisplay");
-                if (screenDisplay != null)
-                {
-                    targetRenderer = screenDisplay.GetComponent<MeshRenderer>();
-                    if (targetRenderer != null)
-                    {
-                        Debug.Log("✅ targetRenderer 已設置: ScreenDisplay");
-                    }
-                    else
-                    {
-                        Debug.LogError("❌ ScreenDisplay 物件沒有 MeshRenderer 組件！");
-                    }
-                }
-                else
-                {
-                    Debug.LogError("❌ 找不到 ScreenDisplay 物件！請確保場景中有名為 'ScreenDisplay' 的物件");
-                }
-            }
-        }
-        
-        // 配置 STUN 服務器
+        // ICE 配置
         config = new RTCConfiguration
         {
-            iceServers = new RTCIceServer[]
-            {
-                new RTCIceServer { urls = stunServers }
-            },
-            iceCandidatePoolSize = 10
+            iceServers = new[] { 
+                new RTCIceServer { urls = new[] { "stun:stun.l.google.com:19302" } }
+            }
         };
         
-        Debug.Log("📺 WebRTCScreenReceiver 已初始化");
-        
-        // 訂閱 WebRTC 信令事件
-        GyroscopeReceiver.OnWebRTCSignaling += HandleSignaling;
-    }
-    
-    void Update()
-    {
-        WebRTC.Update();
-    }
-    
-    void OnDestroy()
-    {
-        // 清理 WebRTC 連接
-        if (peerConnection != null)
+        // 獲取 GyroscopeReceiver
+        gyroscopeReceiver = FindFirstObjectByType<GyroscopeReceiver>();
+        if (gyroscopeReceiver == null)
         {
-            peerConnection.Close();
-            peerConnection.Dispose();
+            Debug.LogError("❌ 找不到 GyroscopeReceiver");
+            return;
         }
         
-        // 取消訂閱事件
-        GyroscopeReceiver.OnWebRTCSignaling -= HandleSignaling;
+        // 訂閱信令事件
+        GyroscopeReceiver.OnWebRTCSignaling += HandleSignaling;
+        GyroscopeReceiver.OnRawMessage += HandleSignalingText;
+        
+        Debug.Log("📺 WebRTCScreenReceiver 已初始化");
     }
     
-    void HandleSignalingText(string message)
+    
+    void HandleSignalingText(string text)
     {
         try
         {
-            Debug.Log($"📡 收到信令: {message}");
-            
-            if (message.Contains("\"type\":\"ready\""))
+            var msg = JsonUtility.FromJson<SignalingBase>(text);
+            if (msg.type == "offer")
             {
-                Debug.Log("🤝 房間準備就緒，等待 WebRTC offer");
-                return;
-            }
-            
-            if (message.Contains("\"type\":\"offer\""))
-            {
+                var offer = JsonUtility.FromJson<OfferMessage>(text);
                 Debug.Log("📩 收到 Offer");
-                StartCoroutine(AcceptOffer(message));
-                return;
+                StartCoroutine(AcceptOffer(offer.sdp));
             }
-            
-            if (message.Contains("\"type\":\"candidate\""))
+            else if (msg.type == "candidate")
             {
-                Debug.Log("✅ 添加 ICE 候選者");
-                return;
+                var cand = JsonUtility.FromJson<CandidateMessage>(text);
+                if (peerConnection != null && cand.candidate != null)
+                {
+                    var candidate = new RTCIceCandidate(new RTCIceCandidateInit
+                    {
+                        candidate = cand.candidate.candidate,
+                        sdpMid = cand.candidate.sdpMid,
+                        sdpMLineIndex = cand.candidate.sdpMLineIndex
+                    });
+                    peerConnection.AddIceCandidate(candidate);
+                    Debug.Log("✅ 添加 ICE 候選者");
+                }
             }
         }
         catch (System.Exception e)
@@ -153,33 +83,10 @@ public class WebRTCScreenReceiver : MonoBehaviour
     {
         try
         {
-            Debug.Log($"📡 收到 WebRTC 信令: {msg.type}");
-            
-            if (msg.type == "ready")
-            {
-                Debug.Log("🤝 WebRTC 信令：房間準備就緒");
-                return;
-            }
-            else if (msg.type == "offer")
+            if (msg.type == "offer")
             {
                 Debug.Log("📩 收到 Offer");
-                
-                // 檢查 SDP
-                if (string.IsNullOrEmpty(msg.sdp))
-                {
-                    Debug.LogError("❌ Offer SDP 為空！檢查伺服器轉發格式");
-                    Debug.Log($"🔍 完整訊息: {JsonUtility.ToJson(msg)}");
-                    return;
-                }
-                
-                Debug.Log($"📄 收到 Offer SDP 長度: {msg.sdp.Length}");
-                Debug.Log($"📄 SDP 前50字符: {msg.sdp.Substring(0, Math.Min(50, msg.sdp.Length))}...");
-                
-                StartCoroutine(AcceptOffer(msg.sdp));
-            }
-            else if (msg.type == "answer")
-            {
-                Debug.Log("📩 收到 Answer（理論上不該 Unity 收到）");
+                HandleOffer(msg.sdp);
             }
             else if (msg.type == "candidate")
             {
@@ -199,73 +106,61 @@ public class WebRTCScreenReceiver : MonoBehaviour
         catch (System.Exception e)
         {
             Debug.LogError($"❌ 處理信令錯誤: {e.Message}");
-            Debug.LogError($"🔍 錯誤堆疊: {e.StackTrace}");
         }
     }
     
-    System.Collections.IEnumerator AcceptOffer(string sdp)
+    void HandleOffer(string sdp)
     {
-        Debug.Log($"🎯 開始處理 Offer SDP: {sdp.Substring(0, Math.Min(30, sdp.Length))}...");
-        
-        // 清理舊連接
-        if (peerConnection != null)
-        {
-            peerConnection.Close();
-            peerConnection.Dispose();
-        }
-        
-        // 創建新的 PeerConnection
+        // 創建 PeerConnection
         peerConnection = new RTCPeerConnection(ref config);
         
-        // 設置事件處理器
-        peerConnection.OnIceConnectionChange = state =>
+        // ICE 候選者處理
+        peerConnection.OnIceCandidate = (candidate) =>
+        {
+            gyroscopeReceiver.SendRaw(JsonUtility.ToJson(new
+            {
+                type = "candidate",
+                candidate = new
+                {
+                    candidate = candidate.Candidate,
+                    sdpMid = candidate.SdpMid,
+                    sdpMLineIndex = candidate.SdpMLineIndex
+                }
+            }));
+            Debug.Log("📤 發送 ICE 候選者");
+        };
+        
+        // ICE 連接狀態監控
+        peerConnection.OnIceConnectionChange = (state) =>
         {
             Debug.Log($"🔌 ICE 狀態: {state}");
             if (state == RTCIceConnectionState.Connected || state == RTCIceConnectionState.Completed)
             {
-                Debug.Log("🎉 WebRTC 連接成功！");
-                isWebRTCConnected = true;
+                isConnected = true;
+                isWebRTCMode = true;
+                StopCoroutine("ConnectionTimeoutCheck");
                 
-                // 禁用螢幕捕獲處理器（如果存在）
-                var screenCaptureHandler = FindFirstObjectByType<ScreenCaptureHandler>();
-                if (screenCaptureHandler != null)
-                {
-                    screenCaptureHandler.enabled = false;
-                }
+                // 停用 WebSocket 模式
+                var handler = GetComponent<ScreenCaptureHandler>();
+                if (handler) handler.enabled = false;
             }
-            else if (state == RTCIceConnectionState.Failed)
+            else if (state == RTCIceConnectionState.Failed || state == RTCIceConnectionState.Disconnected)
             {
-                Debug.LogError("❌ ICE 連接失敗");
-                isWebRTCConnected = false;
+                Debug.LogWarning("⚠️ ICE 連接失敗，降級到 WebSocket");
+                FallbackToWebSocket();
             }
         };
         
-        // ICE 候選者處理
-        peerConnection.OnIceCandidate = candidate =>
+        // 接收遠端軌道
+        peerConnection.OnTrack = (RTCTrackEvent e) =>
         {
-            if (candidate == null) return;
-            
-            var candidateDto = new GyroscopeReceiver.SignalingDTO
+            if (e.Track is VideoStreamTrack vtrack)
             {
-                type = "candidate",
-                candidate = new GyroscopeReceiver.IceCandidateDTO
-                {
-                    candidate = candidate.Candidate,
-                    sdpMid = candidate.SdpMid,
-                    sdpMLineIndex = candidate.SdpMLineIndex ?? 0
-                }
-            };
-            gyroscopeReceiver.SendSignaling(candidateDto);
-            Debug.Log("📤 發送 ICE 候選者");
-        };
-        
-        // 視頻軌道處理
-        peerConnection.OnTrack = evt =>
-        {
-            Debug.Log("📺 收到視頻軌道");
-            if (evt.Track is VideoStreamTrack videoTrack)
-            {
-                videoTrack.OnVideoReceived += OnVideoReceived;
+                Debug.Log("📺 收到視頻軌道");
+                remoteVideoTrack = vtrack;
+                
+                // 直接使用 VideoStreamTrack 的 Texture 屬性
+                remoteTexture = vtrack.Texture as Texture2D;
             }
         };
         
@@ -275,92 +170,184 @@ public class WebRTCScreenReceiver : MonoBehaviour
             type = RTCSdpType.Offer,
             sdp = sdp
         };
-        var op = peerConnection.SetRemoteDescription(ref offer);
-        yield return op;
+        peerConnection.SetRemoteDescription(ref offer);
         
-        if (op.IsError)
+        // 創建 Answer
+        var answerOp = peerConnection.CreateAnswer();
+        var answer = answerOp.Desc;
+        
+        // 設置本地描述
+        peerConnection.SetLocalDescription(ref answer);
+        
+        // 發送 Answer
+        gyroscopeReceiver.SendRaw(JsonUtility.ToJson(new
         {
-            Debug.LogError($"❌ 設置遠端描述失敗: {op.Error.message}");
-            yield break;
-        }
+            type = "answer",
+            sdp = answer.sdp
+        }));
         
-        Debug.Log("✅ 已設置遠端描述");
+        Debug.Log("📤 已發送 Answer");
+        
+        // 啟動超時檢查
+        StartCoroutine(ConnectionTimeoutCheck());
+    }
+    
+    IEnumerator ConnectionTimeoutCheck()
+    {
+        yield return new WaitForSeconds(connectionTimeout);
+        
+        if (!isConnected)
+        {
+            Debug.LogWarning("⚠️ WebRTC 連接超時，降級到 WebSocket");
+            FallbackToWebSocket();
+        }
+    }
+    
+    void FallbackToWebSocket()
+    {
+        isWebRTCMode = false;
+        
+        // 清理 WebRTC 資源
+        CleanupWebRTC();
+        
+        // 啟用 WebSocket 模式
+        var handler = GetComponent<ScreenCaptureHandler>();
+        if (handler) handler.enabled = true;
+    }
+    
+    void CleanupWebRTC()
+    {
+        remoteVideoTrack?.Dispose(); 
+        remoteVideoTrack = null;
+        remoteTexture = null;
+        peerConnection?.Close(); 
+        peerConnection?.Dispose(); 
+        peerConnection = null;
+    }
+    
+    void Update()
+    {
+        // 持續更新材質（如果使用 WebRTC）
+        if (remoteTexture != null && targetRenderer != null)
+        {
+            if (targetRenderer.material.mainTexture != remoteTexture)
+                targetRenderer.material.mainTexture = remoteTexture;
+        }
+    }
+    
+    void OnGUI()
+    {
+        if (showDebugInfo && Application.isPlaying)
+        {
+            GUILayout.BeginArea(new Rect(10, 400, 300, 150));
+            GUILayout.Label($"WebRTC 模式: {isWebRTCMode}");
+            GUILayout.Label($"連接狀態: {isConnected}");
+            if (peerConnection != null)
+            {
+                GUILayout.Label($"ICE 狀態: {peerConnection.IceConnectionState}");
+                GUILayout.Label($"連接狀態: {peerConnection.ConnectionState}");
+            }
+            GUILayout.EndArea();
+        }
+    }
+    
+    // 數據結構
+    [System.Serializable]
+    public class SignalingBase
+    {
+        public string type;
+    }
+    
+    [System.Serializable]
+    public class OfferMessage
+    {
+        public string type;
+        public string sdp;
+    }
+    
+    [System.Serializable]
+    public class CandidateMessage
+    {
+        public string type;
+        public IceCandidateData candidate;
+    }
+    
+    [System.Serializable]
+    public class IceCandidateData
+    {
+        public string candidate;
+        public string sdpMid;
+        public int sdpMLineIndex;
+    }
+    
+    // 接受 Offer 的協程
+    System.Collections.IEnumerator AcceptOffer(string sdp)
+    {
+        // 創建 PeerConnection
+        peerConnection = new RTCPeerConnection(ref config);
+        
+        // ICE 候選者處理
+        peerConnection.OnIceCandidate = candidate =>
+        {
+            if (candidate == null) return;
+            gyroscopeReceiver.SendJson(new { 
+                type = "candidate", 
+                candidate = new {
+                    candidate = candidate.Candidate, 
+                    sdpMid = candidate.SdpMid, 
+                    sdpMLineIndex = candidate.SdpMLineIndex
+                }
+            });
+        };
+
+        // ICE 連接狀態改變
+        peerConnection.OnIceConnectionChange = state =>
+        {
+            iceConnectionState = state.ToString();
+            Debug.Log($"🔌 ICE 連接狀態改變: {state}");
+            if (state == RTCIceConnectionState.Failed || state == RTCIceConnectionState.Disconnected)
+            {
+                Debug.LogWarning("⚠️ ICE 連接失敗，降級到 WebSocket");
+                FallbackToWebSocket();
+            }
+        };
+        
+        // 接收遠端軌道
+        peerConnection.OnTrack = (RTCTrackEvent e) =>
+        {
+            if (e.Track is VideoStreamTrack vtrack)
+            {
+                Debug.Log("📺 收到視頻軌道");
+                remoteVideoTrack = vtrack;
+                
+                // 直接使用 VideoStreamTrack 的 Texture 屬性
+                remoteTexture = vtrack.Texture as Texture2D;
+            }
+        };
+        
+        // 設置遠端描述
+        var desc = new RTCSessionDescription { type = RTCSdpType.Offer, sdp = sdp };
+        var setOp = peerConnection.SetRemoteDescription(ref desc);
+        yield return setOp;
         
         // 創建 Answer
         var answerOp = peerConnection.CreateAnswer();
         yield return answerOp;
-        
-        if (answerOp.IsError)
-        {
-            Debug.LogError($"❌ 創建 Answer 失敗: {answerOp.Error.message}");
-            yield break;
-        }
-        
         var answer = answerOp.Desc;
-        Debug.Log("✅ 已創建 Answer");
         
         // 設置本地描述
-        var setLocalDescOp = peerConnection.SetLocalDescription(ref answer);
-        yield return setLocalDescOp;
-        
-        if (setLocalDescOp.IsError)
-        {
-            Debug.LogError($"❌ 設置本地描述失敗: {setLocalDescOp.Error.message}");
-            yield break;
-        }
-        
-        Debug.Log("✅ 已設置本地描述");
+        var setLocalOp = peerConnection.SetLocalDescription(ref answer);
+        yield return setLocalOp;
         
         // 發送 Answer
-        var answerDto = new GyroscopeReceiver.SignalingDTO
-        {
-            type = "answer",
-            sdp = answer.sdp
-        };
-        gyroscopeReceiver.SendSignaling(answerDto);
+        gyroscopeReceiver.SendJson(new { type = "answer", sdp = answer.sdp });
         Debug.Log("📤 已發送 Answer");
     }
     
-    private void OnVideoReceived(Texture texture)
+    void OnDestroy()
     {
-        if (!isWebRTCConnected)
-        {
-            Debug.LogWarning("⚠️ WebRTC 未連接，忽略視頻幀");
-            return;
-        }
-        
-        Debug.Log("📺 收到視頻幀");
-        
-        // 根據顯示模式應用紋理
-        if (displayMode == DisplayMode.RawImage)
-        {
-            if (targetRawImage != null && texture != null)
-            {
-                targetRawImage.texture = texture;
-                targetRawImage.color = Color.white;
-                
-                // 強制刷新UI
-                targetRawImage.SetMaterialDirty();
-                targetRawImage.SetVerticesDirty();
-                
-                Debug.Log("✅ RawImage 已更新");
-            }
-            else
-            {
-                Debug.LogWarning($"⚠️ 無法設定RawImage - targetRawImage: {targetRawImage}, texture: {texture}");
-            }
-        }
-        else
-        {
-            if (targetRenderer != null && texture != null)
-            {
-                targetRenderer.material.mainTexture = texture;
-                Debug.Log("✅ 材質已更新");
-            }
-            else
-            {
-                Debug.LogWarning($"⚠️ 無法設定材質 - targetRenderer: {targetRenderer}, texture: {texture}");
-            }
-        }
+        GyroscopeReceiver.OnWebRTCSignaling -= HandleSignaling;
+        GyroscopeReceiver.OnRawMessage -= HandleSignalingText;
+        CleanupWebRTC();
     }
 }

@@ -9,6 +9,9 @@ const server = http.createServer(app);
 // 靜態檔案服務 - 指向TestHtml資料夾
 app.use(express.static(path.join(__dirname, 'TestHtml')));
 
+// 實例識別（用於診斷是否多實例）
+const INSTANCE = process.env.RAILWAY_STATIC_URL || process.env.HOSTNAME || String(process.pid);
+
 // 根路徑重導向到index.html
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'TestHtml', 'index.html'));
@@ -20,36 +23,173 @@ const wss = new WebSocket.Server({ server });
 // 儲存所有連接的客戶端
 const clients = new Set();
 
+// 房間管理
+const rooms = new Map(); // roomId -> Set<WebSocket>
+
 // 連接統計
 const stats = {
     totalConnections: 0,
     activeConnections: 0,
     totalMessages: 0,
+    screenCaptureMessages: 0,
+    gyroscopeMessages: 0,
+    shakeMessages: 0,
+    rooms: 0,
+    webrtcOffers: 0,
+    webrtcAnswers: 0,
+    webrtcCandidates: 0,
+    webrtcFallbacks: 0,
     startTime: Date.now()
 };
 
 wss.on('connection', (ws, req) => {
-    console.log('🔌 新的WebSocket連接來自:', req.socket.remoteAddress);
+    console.log('🔌 新的WebSocket連接來自:', req.socket.remoteAddress, 'instance=', INSTANCE);
     clients.add(ws);
     stats.totalConnections++;
     stats.activeConnections = clients.size;
+    
+    // 設置心跳保活
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
     
     // 發送歡迎訊息
     ws.send(JSON.stringify({
         type: 'connection',
         message: 'WebSocket連接已建立',
         timestamp: Date.now(),
-        clientId: stats.totalConnections
+        clientId: stats.totalConnections,
+        instance: INSTANCE
     }));
     
-    ws.on('message', (message) => {
+    // ws@8+ 使用 (data, isBinary) 簽名；文字常為 Buffer，但 isBinary=false
+    ws.on('message', (data, isBinary) => {
         try {
-            const msg = JSON.parse(message);
+            // 二進位數據：僅用於螢幕捕獲幀
+            if (isBinary) {
+                // 處理二進位螢幕捕獲數據
+                if (ws.screenCaptureHeader) {
+                    const header = ws.screenCaptureHeader;
+                    const bytes = Buffer.isBuffer(data) ? new Uint8Array(data) : new Uint8Array();
+                    const imageData = Array.from(bytes);
+                    
+                    stats.screenCaptureMessages++;
+                    console.log('📺 收到螢幕捕獲二進位數據:', {
+                        size: header.size,
+                        timestamp: header.timestamp,
+                        clientId: header.clientId,
+                        dataLength: imageData.length
+                    });
+                    
+                    const out = {
+                        type: 'screen_capture',
+                        clientId: header.clientId,
+                        timestamp: header.timestamp,
+                        size: header.size,
+                        image: imageData
+                    };
+                    
+                    // 廣播給所有客戶端（包含發送者，以便偵錯）
+                    clients.forEach(client => {
+                        if (client.readyState === WebSocket.OPEN) {
+                            try {
+                                client.send(JSON.stringify(out));
+                            } catch (e) {
+                                console.error('❌ 廣播失敗:', e);
+                            }
+                        }
+                    });
+                    console.log('📣 廣播訊息: screen_capture → clients:', clients.size, 'size=', out.size, 'instance=', INSTANCE);
+                    
+                    // 清除header
+                    delete ws.screenCaptureHeader;
+                }
+                return;
+            }
+            
+            // 文字數據：轉字串再解析
+            const text = (typeof data === 'string') ? data : data.toString('utf8');
+            const msg = JSON.parse(text);
             stats.totalMessages++;
             
+            // 房間加入
+            if (msg.type === 'join') {
+                const { room, role } = msg; // role: 'web-sender' / 'unity-receiver'
+                ws.room = room;
+                ws.role = role;
+                
+                // 檢查房間限制
+                const peers = rooms.get(room) || new Set();
+                const sameRole = Array.from(peers).find(p => p.role === role);
+                if (sameRole) {
+                    // 踢掉舊的或拒絕新的
+                    sameRole.close(1000, 'Replaced by new peer');
+                }
+                
+                peers.add(ws);
+                rooms.set(room, peers);
+                stats.rooms = rooms.size;
+                
+                ws.send(JSON.stringify({ 
+                    type: 'joined', 
+                    room, 
+                    role,
+                    peers: Array.from(peers).filter(p => p !== ws).map(p => p.role)
+                }));
+                
+                console.log(`✅ ${role} joined room: ${room}, peers: ${peers.size}`);
+                
+                // 檢查房間是否已滿（2個 peer）
+                if (peers.size === 2) {
+                    console.log(`🤝 Room ${room} has both peers ready, notifying all`);
+                    
+                    // 通知所有同房 peer 準備就緒
+                    for (const peer of peers) {
+                        if (peer.readyState === WebSocket.OPEN) {
+                            peer.send(JSON.stringify({
+                                type: 'ready',
+                                room: room,
+                                message: 'Both peers joined, WebRTC can start'
+                            }));
+                        }
+                    }
+                }
+                
+                return;
+            }
+            
+            // WebRTC 原生三型別轉發
+            if (['offer', 'answer', 'candidate'].includes(msg.type)) {
+                if (!ws.room) return;
+                
+                const peers = rooms.get(ws.room) || new Set();
+                for (const peer of peers) {
+                    if (peer !== ws && peer.readyState === WebSocket.OPEN) {
+                        peer.send(data);
+                    }
+                }
+                
+                // 更新統計
+                if (msg.type === 'offer') stats.webrtcOffers++;
+                else if (msg.type === 'answer') stats.webrtcAnswers++;
+                else if (msg.type === 'candidate') stats.webrtcCandidates++;
+                
+                console.log(`📡 轉發 ${msg.type} from ${ws.role} to room ${ws.room}`);
+                return;
+            }
+            
             let out;
-            if (msg.type === 'shake') {
+            if (msg.type === 'screen_capture_header') {
+                // 儲存螢幕捕獲header，等待二進位數據
+                ws.screenCaptureHeader = msg;
+                console.log('📺 收到螢幕捕獲header:', {
+                    clientId: msg.clientId,
+                    size: msg.size,
+                    timestamp: msg.timestamp
+                });
+                return; // 不廣播，等待二進位數據
+            } else if (msg.type === 'shake') {
                 // 處理搖晃數據
+                stats.shakeMessages++;
                 console.log('📳 收到搖晃數據:', {
                     count: msg.data?.count,
                     intensity: msg.data?.intensity,
@@ -65,6 +205,7 @@ wss.on('connection', (ws, req) => {
                 };
             } else {
                 // 預設當作陀螺儀角度（向後相容）
+                stats.gyroscopeMessages++;
                 console.log('📱 收到陀螺儀數據:', {
                     alpha: msg.alpha,
                     beta: msg.beta,
@@ -88,12 +229,17 @@ wss.on('connection', (ws, req) => {
                 };
             }
             
-            // 廣播給所有其他客戶端（包括Unity）
+            // 廣播給所有客戶端（包括Unity，含發送者以便偵錯）
             clients.forEach(client => {
-                if (client !== ws && client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify(out));
+                if (client.readyState === WebSocket.OPEN) {
+                    try {
+                        client.send(JSON.stringify(out));
+                    } catch (e) {
+                        console.error('❌ 廣播失敗:', e);
+                    }
                 }
             });
+            console.log('📣 廣播訊息:', out.type, '→ clients:', clients.size, 'instance=', INSTANCE);
             
             // 回應發送者確認收到
             ws.send(JSON.stringify({
@@ -117,6 +263,18 @@ wss.on('connection', (ws, req) => {
         console.log('🔌 WebSocket連接關閉:', code, reason.toString());
         clients.delete(ws);
         stats.activeConnections = clients.size;
+        
+        // 清理房間
+        if (ws.room) {
+            const peers = rooms.get(ws.room);
+            if (peers) {
+                peers.delete(ws);
+                if (peers.size === 0) {
+                    rooms.delete(ws.room);
+                    stats.rooms = rooms.size;
+                }
+            }
+        }
     });
     
     ws.on('error', (error) => {
@@ -136,7 +294,12 @@ app.get('/health', (req, res) => {
             active: stats.activeConnections,
             total: stats.totalConnections
         },
-        messages: stats.totalMessages,
+        messages: {
+            total: stats.totalMessages,
+            gyroscope: stats.gyroscopeMessages,
+            shake: stats.shakeMessages,
+            screenCapture: stats.screenCaptureMessages
+        },
         timestamp: Date.now()
     });
 });
@@ -147,18 +310,33 @@ app.get('/api/status', (req, res) => {
     const memoryUsage = process.memoryUsage();
     
     res.json({
-        service: 'Gyroscope WebSocket Server',
-        version: '1.0.0',
+        service: 'Gyroscope & Screen Capture WebSocket Server',
+        version: '2.1.0',
         uptime: Math.floor(uptime / 1000),
         connections: {
             active: stats.activeConnections,
             total: stats.totalConnections
         },
-        messages: stats.totalMessages,
+        messages: {
+            total: stats.totalMessages,
+            gyroscope: stats.gyroscopeMessages,
+            shake: stats.shakeMessages,
+            screenCapture: stats.screenCaptureMessages,
+            webrtcOffers: stats.webrtcOffers,
+            webrtcAnswers: stats.webrtcAnswers,
+            webrtcCandidates: stats.webrtcCandidates
+        },
+        rooms: stats.rooms,
         memory: {
             used: Math.round(memoryUsage.heapUsed / 1024 / 1024),
             total: Math.round(memoryUsage.heapTotal / 1024 / 1024),
             external: Math.round(memoryUsage.external / 1024 / 1024)
+        },
+        features: {
+            gyroscope: true,
+            shakeDetection: true,
+            screenCapture: true,
+            webrtcSignaling: true
         },
         timestamp: Date.now()
     });
@@ -172,6 +350,15 @@ app.get('/api/ping', (req, res) => {
         uptime: Math.floor((Date.now() - stats.startTime) / 1000)
     });
 });
+
+// 心跳保活
+setInterval(() => {
+    wss.clients.forEach(ws => {
+        if (!ws.isAlive) return ws.terminate();
+        ws.isAlive = false;
+        ws.ping();
+    });
+}, 25000);
 
 // 定期清理無效連接
 setInterval(() => {
@@ -192,16 +379,18 @@ setInterval(() => {
 setInterval(() => {
     const uptime = Math.floor((Date.now() - stats.startTime) / 1000);
     console.log(`📊 服務狀態: 運行時間 ${uptime}s, 活躍連接 ${clients.size}, 總訊息 ${stats.totalMessages}`);
+    console.log(`📱 數據統計: 陀螺儀 ${stats.gyroscopeMessages}, 搖晃 ${stats.shakeMessages}, 螢幕捕獲 ${stats.screenCaptureMessages}`);
 }, 60000); // 每分鐘報告一次
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-    console.log('🚀 陀螺儀WebSocket伺服器啟動成功!');
+    console.log('🚀 陀螺儀 & 螢幕捕獲 WebSocket伺服器啟動成功!');
     console.log(`📱 靜態檔案服務: http://localhost:${PORT}`);
     console.log(`🔌 WebSocket端點: ws://localhost:${PORT}`);
     console.log(`❤️ 健康檢查: http://localhost:${PORT}/health`);
     console.log(`📊 狀態監控: http://localhost:${PORT}/api/status`);
     console.log(`🏓 保持活躍: http://localhost:${PORT}/api/ping`);
+    console.log(`📺 支援功能: 陀螺儀、搖晃偵測、螢幕捕獲串流`);
 });
 
 // 優雅關閉
