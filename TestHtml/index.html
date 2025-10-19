@@ -458,6 +458,52 @@
         </div>
         
         <div class="cube-feature" style="border-left-color: #4ECDC4;">
+            <h3>📺 螢幕捕獲功能</h3>
+            
+            <div class="cube-preview">
+                <div class="cube-mini" style="animation: none; background: linear-gradient(135deg, #667eea, #764ba2); display: flex; align-items: center; justify-content: center; font-size: 1.5em;">
+                    📺
+                </div>
+                
+                <div class="cube-info">
+                    <h4>即時螢幕捕獲與傳輸</h4>
+                    <p>使用WebRTC技術進行即時螢幕捕獲</p>
+                    <p>支援WebSocket降級模式</p>
+                    <p>即時傳輸到Unity進行顯示</p>
+                    <button id="startScreenCapture" class="cube-link" style="background: linear-gradient(45deg, #4ECDC4, #45B7D1); border: none; cursor: pointer; margin-top: 10px;">
+                        🚀 開始螢幕捕獲
+                    </button>
+                    <button id="stopScreenCapture" class="cube-link" style="background: linear-gradient(45deg, #FF6B6B, #FF8E8E); border: none; cursor: pointer; margin-top: 10px; display: none;">
+                        ⏹️ 停止捕獲
+                    </button>
+                </div>
+            </div>
+            
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <span class="icon">📱</span>
+                    <h5>WebRTC</h5>
+                    <p>即時低延遲傳輸</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">🔌</span>
+                    <h5>WebSocket</h5>
+                    <p>降級備用方案</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">🎮</span>
+                    <h5>Unity顯示</h5>
+                    <p>RawImage/Renderer</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">⚡</span>
+                    <h5>即時傳輸</h5>
+                    <p>毫秒級延遲</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="cube-feature" style="border-left-color: #4ECDC4;">
             <h3>🎲 3D 陀螺儀立方體</h3>
             
             <div class="cube-preview">
@@ -676,6 +722,14 @@
                 this.ws = null;
                 this.isConnected = false;
                 this.onConnectedCallback = null;
+                this.peerConnection = null;
+                this.localStream = null;
+                this.isScreenCapturing = false;
+                this.screenCaptureCanvas = null;
+                this.screenCaptureCtx = null;
+                this.screenCaptureVideo = null;
+                this.screenCaptureFrameCount = 0;
+                this.screenCaptureTotalDataSize = 0;
             }
             
             connect() {
@@ -745,6 +799,152 @@
             
             setOnConnectedCallback(callback) {
                 this.onConnectedCallback = callback;
+            }
+            
+            // 螢幕捕獲相關方法
+            async startScreenCapture() {
+                try {
+                    console.log('🎬 開始螢幕捕獲...');
+                    
+                    // 請求螢幕捕獲權限
+                    this.localStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            frameRate: { ideal: 30 }
+                        },
+                        audio: false
+                    });
+                    
+                    console.log('✅ 螢幕捕獲權限已獲得');
+                    
+                    // 創建video元素來顯示捕獲的螢幕
+                    this.screenCaptureVideo = document.createElement('video');
+                    this.screenCaptureVideo.srcObject = this.localStream;
+                    this.screenCaptureVideo.autoplay = true;
+                    this.screenCaptureVideo.style.display = 'none';
+                    document.body.appendChild(this.screenCaptureVideo);
+                    
+                    // 創建canvas用於捕獲幀
+                    this.screenCaptureCanvas = document.createElement('canvas');
+                    this.screenCaptureCanvas.width = 1280;
+                    this.screenCaptureCanvas.height = 720;
+                    this.screenCaptureCtx = this.screenCaptureCanvas.getContext('2d');
+                    
+                    // 開始捕獲幀
+                    this.isScreenCapturing = true;
+                    this.captureScreenFrames();
+                    
+                    // 更新UI
+                    document.getElementById('startScreenCapture').style.display = 'none';
+                    document.getElementById('stopScreenCapture').style.display = 'inline-block';
+                    
+                    console.log('🎬 螢幕捕獲已開始');
+                    
+                } catch (error) {
+                    console.error('❌ 螢幕捕獲失敗:', error);
+                    alert('螢幕捕獲失敗: ' + error.message);
+                }
+            }
+            
+            stopScreenCapture() {
+                console.log('⏹️ 停止螢幕捕獲...');
+                
+                this.isScreenCapturing = false;
+                
+                if (this.localStream) {
+                    this.localStream.getTracks().forEach(track => track.stop());
+                    this.localStream = null;
+                }
+                
+                if (this.screenCaptureVideo) {
+                    this.screenCaptureVideo.remove();
+                    this.screenCaptureVideo = null;
+                }
+                
+                // 更新UI
+                document.getElementById('startScreenCapture').style.display = 'inline-block';
+                document.getElementById('stopScreenCapture').style.display = 'none';
+                
+                console.log('⏹️ 螢幕捕獲已停止');
+            }
+            
+            captureScreenFrames() {
+                if (!this.isScreenCapturing) return;
+                
+                const video = this.screenCaptureVideo;
+                
+                // 確保video可播放且尺寸正確
+                if (video.readyState < 2) {
+                    console.warn('⚠️ Video not ready, skipping frame');
+                    setTimeout(() => this.captureScreenFrames(), 66);
+                    return;
+                }
+                
+                if (!video.videoWidth || !video.videoHeight) {
+                    console.warn('⚠️ Video dimensions not available, skipping frame');
+                    setTimeout(() => this.captureScreenFrames(), 66);
+                    return;
+                }
+                
+                // 使用正確的繪製方式，保持比例
+                const videoWidth = video.videoWidth;
+                const videoHeight = video.videoHeight;
+                const canvasWidth = this.screenCaptureCanvas.width;
+                const canvasHeight = this.screenCaptureCanvas.height;
+                
+                // 計算縮放比例，保持寬高比
+                const scaleX = canvasWidth / videoWidth;
+                const scaleY = canvasHeight / videoHeight;
+                const scale = Math.min(scaleX, scaleY);
+                
+                const drawWidth = videoWidth * scale;
+                const drawHeight = videoHeight * scale;
+                const offsetX = (canvasWidth - drawWidth) / 2;
+                const offsetY = (canvasHeight - drawHeight) / 2;
+                
+                // 清除畫布
+                this.screenCaptureCtx.fillStyle = '#000000';
+                this.screenCaptureCtx.fillRect(0, 0, canvasWidth, canvasHeight);
+                
+                // 繪製視頻幀
+                this.screenCaptureCtx.drawImage(video, 
+                    offsetX, offsetY, drawWidth, drawHeight);
+                
+                // 添加調試信息
+                if (this.screenCaptureFrameCount % 30 === 0) { // 每30幀輸出一次
+                    console.log(`📺 Canvas捕獲: ${canvasWidth}x${canvasHeight}, Video: ${videoWidth}x${videoHeight}, Scale: ${scale.toFixed(2)}`);
+                }
+                
+                // 轉換為JPEG並發送
+                this.screenCaptureCanvas.toBlob((blob) => {
+                    if (blob && this.isConnected) {
+                        blob.arrayBuffer().then(buffer => {
+                            const imageData = new Uint8Array(buffer);
+                            this.sendScreenCaptureData(imageData, buffer.byteLength);
+                            
+                            // 更新統計數據
+                            this.screenCaptureTotalDataSize += buffer.byteLength;
+                            this.screenCaptureFrameCount++;
+                        });
+                    }
+                }, 'image/jpeg', 0.7); // 70%品質的JPEG
+                
+                // 15fps (每66ms一幀)
+                setTimeout(() => this.captureScreenFrames(), 66);
+            }
+            
+            sendScreenCaptureData(imageData, size) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        type: 'screen_capture',
+                        clientId: 1,
+                        timestamp: Date.now(),
+                        size: size,
+                        image: Array.from(imageData)
+                    };
+                    this.ws.send(JSON.stringify(data));
+                }
             }
         }
         
@@ -1001,7 +1201,18 @@
         }
         
         // 頁面載入時檢查支援
-        window.addEventListener('load', checkSensorSupport);
+        window.addEventListener('load', () => {
+            checkSensorSupport();
+            
+            // 添加螢幕捕獲按鈕事件監聽器
+            document.getElementById('startScreenCapture').addEventListener('click', () => {
+                gyroWS.startScreenCapture();
+            });
+            
+            document.getElementById('stopScreenCapture').addEventListener('click', () => {
+                gyroWS.stopScreenCapture();
+            });
+        });
         
         // 處理視窗大小改變
         window.addEventListener('resize', function() {
