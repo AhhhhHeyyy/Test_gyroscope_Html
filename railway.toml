@@ -1,12 +1,14 @@
 [build]
 builder = "nixpacks"
+buildCommand = "npm ci --only=production"
 
 [deploy]
 startCommand = "npm start"
 healthcheckPath = "/health"
-healthcheckTimeout = 100
+healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
 [env]
 NODE_ENV = "production"
+NIXPACKS_NO_CACHE = "false"
