@@ -5,15 +5,11 @@
 ## ✨ 功能特色
 
 - 🔄 **即時數據傳輸**：手機陀螺儀數據即時傳送到Unity
-- 📳 **搖晃偵測**：基於加速度感測器的智能搖晃偵測功能
-- 📺 **螢幕捕獲**：WebRTC P2P 優先，WebSocket 降級備用
 - 🌐 **跨平台支援**：支援iOS、Android、桌面平台
 - 🎮 **Unity整合**：完整的Unity C#腳本和組件
 - ☁️ **雲端部署**：使用Railway進行雲端部署
 - 📊 **即時監控**：完整的連接狀態和數據監控
 - 🎨 **美觀界面**：現代化的網頁界面設計
-- 🔧 **調試界面**：整合搖晃狀態顯示到Unity調試界面
-- ⚡ **性能優化**：自適應幀率和記憶體管理
 
 ## 🏗️ 專案架構
 
@@ -23,33 +19,15 @@ Project1141/
 ├── package.json                 # Node.js依賴配置
 ├── railway.toml                 # Railway部署配置
 ├── TestHtml/                    # 網頁端檔案
-│   ├── index.html              # 主頁面（帶WebSocket功能 + 搖晃偵測 + 螢幕捕獲）
+│   ├── index.html              # 主頁面（帶WebSocket功能）
 │   ├── gyroscope.html          # 陀螺儀測試頁面
 │   └── gyroscope-cube.html     # 3D立方體展示頁面
 └── UnityWebsocket0927/         # Unity專案
     └── Assets/Scripts/         # Unity C#腳本
-        ├── GyroscopeReceiver.cs    # WebSocket接收器（支援搖晃數據 + 螢幕捕獲）
-        ├── GyroscopeController.cs  # 陀螺儀控制器（整合搖晃顯示）
-        ├── GyroscopeDebugger.cs    # 調試工具
-        ├── ScreenCaptureHandler.cs # 螢幕捕獲處理器（WebSocket 降級）
-        ├── WebRTCScreenReceiver.cs # WebRTC 接收器（新增）
-        ├── ShakeData.cs            # 搖晃數據結構
-        └── ShakeDisplay.cs         # 搖晃狀態顯示（獨立組件）
+        ├── GyroscopeReceiver.cs    # WebSocket接收器
+        ├── GyroscopeController.cs  # 陀螺儀控制器
+        └── GyroscopeDebugger.cs    # 調試工具
 ```
-
-## 🌿 分支說明
-
-### 📱 main 分支
-- **用途**：網站部署和生產環境
-- **內容**：包含完整的WebSocket伺服器和網頁端檔案
-- **部署**：自動部署到Railway雲端平台
-- **URL**：`https://testgyroscopehtml-production.up.railway.app`
-
-### 🎮 Unity 分支
-- **用途**：Unity專案開發和同步
-- **內容**：包含Unity C#腳本、場景檔案和專案配置
-- **特色**：與前端網頁端保持同步更新
-- **功能**：支援陀螺儀、搖晃偵測、螢幕捕獲等完整功能
 
 ## 🚀 快速開始
 
@@ -103,17 +81,14 @@ railway up
 
 ### 手機端操作
 1. 在手機瀏覽器中訪問：`https://testgyroscopehtml-production.up.railway.app/`
-2. 允許瀏覽器存取裝置方向感應器和加速度感測器權限
+2. 允許瀏覽器存取裝置方向感應器權限
 3. 旋轉手機，觀察即時陀螺儀數據
-4. 搖晃手機，觀察搖晃偵測狀態
-5. 數據會自動傳送到Unity
+4. 數據會自動傳送到Unity
 
 ### Unity端操作
 1. 運行Unity場景
-2. 在GyroscopeController中勾選「Show Debug Info」
-3. 觀察Console日誌確認連接狀態
-4. 移動手機，Unity中的GameObject會相應旋轉
-5. 搖晃手機，觀察左上角調試界面的搖晃狀態顯示
+2. 觀察Console日誌確認連接狀態
+3. 移動手機，Unity中的GameObject會相應旋轉
 
 ## 🔧 技術細節
 
@@ -123,13 +98,10 @@ railway up
 - **訊息類型**：
   - `connection`：連接確認
   - `gyroscope`：陀螺儀數據
-  - `shake`：搖晃偵測數據
   - `ack`：數據接收確認
   - `error`：錯誤訊息
 
 ### 數據結構
-
-#### 陀螺儀數據
 ```json
 {
   "type": "gyroscope",
@@ -143,35 +115,6 @@ railway up
 }
 ```
 
-#### 搖晃數據
-```json
-{
-  "type": "shake",
-  "data": {
-    "count": 5,                    // 搖晃次數
-    "intensity": 12.34,            // 搖晃強度 (m/s²)
-    "shakeType": "strong",         // 搖晃類型: normal/strong/intense
-    "acceleration": {              // 加速度向量
-      "x": 1.2,
-      "y": -0.8,
-      "z": 9.8
-    },
-    "timestamp": 1759179307274
-  }
-}
-```
-
-#### 螢幕捕獲數據 (新增)
-```json
-{
-  "type": "screen_capture",
-  "clientId": 1,
-  "timestamp": 1759179307274,
-  "size": 245760,                  // 圖像數據大小 (bytes)
-  "image": [255, 128, 64, ...]     // Base64編碼的圖像數據
-}
-```
-
 ### Unity組件說明
 
 #### GyroscopeReceiver
@@ -180,30 +123,13 @@ railway up
   - `ConnectToServer()`：連接到伺服器
   - `GetLatestData()`：獲取最新數據
   - `Disconnect()`：斷開連接
-- **新增功能**：
-  - 支援螢幕捕獲數據接收
-  - 搖晃數據事件處理
-  - 多種消息類型解析
 
 #### GyroscopeController
-- **功能**：將陀螺儀數據轉換為Unity物件旋轉 + 搖晃狀態顯示
+- **功能**：將陀螺儀數據轉換為Unity物件旋轉
 - **可調參數**：
   - 旋轉靈敏度
   - 平滑設定
   - 旋轉限制
-  - 調試界面顯示（包含搖晃狀態）
-
-#### ScreenCaptureHandler (新增)
-- **功能**：螢幕捕獲數據處理和顯示
-- **特色**：
-  - 自適應幀率調整
-  - 記憶體優化
-  - 即時螢幕顯示
-  - 性能監控
-- **可調參數**：
-  - 最大佇列大小
-  - 更新間隔
-  - 目標材質
 
 #### GyroscopeDebugger
 - **功能**：調試和監控工具
@@ -211,20 +137,6 @@ railway up
   - 連接狀態
   - 數據數值
   - 佇列長度
-
-#### ShakeData
-- **功能**：搖晃數據結構定義
-- **包含欄位**：
-  - 搖晃次數、強度、類型
-  - 加速度向量
-  - 時間戳
-
-#### ShakeDisplay
-- **功能**：獨立的搖晃狀態顯示組件
-- **特色**：
-  - 即時狀態更新
-  - 視覺效果反饋
-  - 自動重置功能
 
 ## 📊 API端點
 
@@ -294,36 +206,6 @@ railway logs
 
 ## 🔄 版本歷史
 
-### v3.0.0 (最新)
-- 🚀 **WebRTC P2P 螢幕捕捉**：低延遲點對點視頻傳輸（100-300ms）
-- 🔄 **智能降級機制**：WebRTC 失敗時自動切換到 WebSocket
-- 📊 **即時性能監控**：位元率、幀率、RTT、候選者類型顯示
-- 🏠 **房間制度**：支援多對端連接和角色管理
-- ⚡ **性能優化**：自適應幀率調整和記憶體管理
-- 🔧 **技術改進**：優化信令處理和資源管理
-- 🛠️ **穩定性提升**：完整的錯誤處理和重連機制
-
-### v2.3.1
-- 📺 **新增螢幕捕獲功能**：即時螢幕捕獲並傳輸到Unity顯示
-- ⚡ **性能優化**：自適應幀率調整和記憶體管理
-- 🔧 **技術改進**：優化WebSocket消息處理和數據解析
-- 📊 **監控增強**：新增螢幕捕獲性能監控界面
-- 🎮 **Unity整合**：ScreenCaptureHandler組件完整整合
-- 🛠️ **穩定性提升**：修復連接狀態同步問題
-
-### v2.2.0
-- ✨ **新增搖晃偵測功能**：基於加速度感測器的智能搖晃偵測
-- 🔄 **即時數據傳輸**：搖晃數據透過WebSocket即時傳輸到Unity
-- 🎮 **Unity整合**：搖晃狀態顯示整合到GyroscopeController調試界面
-- 🛠️ **技術改進**：統一消息格式、修復三端協調、優化偵測演算法
-- 📊 **狀態顯示**：支援搖晃狀態、次數、強度、類型即時顯示
-- ⏰ **自動重置**：2秒後自動恢復為靜止狀態
-
-### v2.0.0
-- 新增搖晃偵測功能（網頁端）
-- 優化陀螺儀數據傳輸
-- 改進用戶界面設計
-
 ### v1.0.0
 - 初始版本發布
 - 基本WebSocket連接功能
@@ -347,12 +229,10 @@ railway logs
 - **問題回報**：[GitHub Issues](https://github.com/your-username/your-repo/issues)
 - **功能建議**：[GitHub Discussions](https://github.com/your-username/your-repo/discussions)
 - **技術文檔**：[TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-- **WebRTC 設置**：[WEBRTC_SETUP.md](WEBRTC_SETUP.md)
 
 ## 🙏 致謝
 
 - [NativeWebSocket](https://github.com/endel/NativeWebSocket) - Unity WebSocket套件
-- [Unity WebRTC](https://docs.unity3d.com/Packages/com.unity.webrtc@latest/) - Unity WebRTC套件
 - [Railway](https://railway.app/) - 雲端部署平台
 - [Unity](https://unity.com/) - 遊戲引擎
 

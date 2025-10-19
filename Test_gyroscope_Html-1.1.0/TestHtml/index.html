@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手機陀螺儀偵測器</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .status {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .status.supported {
+            background: rgba(76, 175, 80, 0.3);
+            border: 2px solid #4CAF50;
+        }
+        
+        .status.not-supported {
+            background: rgba(244, 67, 54, 0.3);
+            border: 2px solid #f44336;
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .data-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .data-card h3 {
+            margin: 0 0 15px 0;
+            font-size: 1.3em;
+            color: #FFD700;
+        }
+        
+        .data-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 10px 0;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        
+        .unit {
+            font-size: 0.8em;
+            opacity: 0.8;
+        }
+        
+        .chart-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .chart {
+            width: 100%;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .chart-line {
+            position: absolute;
+            height: 2px;
+            background: linear-gradient(90deg, #FF6B6B, #4ECDC4, #45B7D1);
+            transition: all 0.1s ease;
+        }
+        
+        .instructions {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            border-left: 4px solid #FFD700;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #FFD700;
+        }
+        
+        .instructions ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            margin: 8px 0;
+            line-height: 1.5;
+        }
+        
+        .deploy-info {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .deploy-info h3 {
+            margin-top: 0;
+            color: #4CAF50;
+        }
+        
+        .url-box {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 1.1em;
+            word-break: break-all;
+        }
+
+        /* 立方體功能區塊 */
+        .cube-feature {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            border-left: 4px solid #FF6B6B;
+        }
+
+        .cube-feature h3 {
+            margin-top: 0;
+            color: #FF6B6B;
+            font-size: 1.5em;
+            margin-bottom: 15px;
+        }
+
+        .cube-preview {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .cube-mini {
+            width: 80px;
+            height: 80px;
+            position: relative;
+            transform-style: preserve-3d;
+            animation: miniRotate 4s infinite linear;
+        }
+
+        .cube-mini .face {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+
+        .cube-mini .face.front { background: linear-gradient(135deg, #FF6B6B, #FF8E8E); transform: translateZ(40px); }
+        .cube-mini .face.back { background: linear-gradient(135deg, #4ECDC4, #7EDDDD); transform: translateZ(-40px) rotateY(180deg); }
+        .cube-mini .face.right { background: linear-gradient(135deg, #45B7D1, #6BC5D8); transform: rotateY(90deg) translateZ(40px); }
+        .cube-mini .face.left { background: linear-gradient(135deg, #96CEB4, #B8E6B8); transform: rotateY(-90deg) translateZ(40px); }
+        .cube-mini .face.top { background: linear-gradient(135deg, #FFEAA7, #FFF2CC); transform: rotateX(90deg) translateZ(40px); }
+        .cube-mini .face.bottom { background: linear-gradient(135deg, #DDA0DD, #E6B8E6); transform: rotateX(-90deg) translateZ(40px); }
+
+        @keyframes miniRotate {
+            from { transform: rotateX(0deg) rotateY(0deg); }
+            to { transform: rotateX(360deg) rotateY(360deg); }
+        }
+
+        .cube-info {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .cube-info h4 {
+            color: #FFD700;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+
+        .cube-info p {
+            margin: 8px 0;
+            line-height: 1.5;
+            opacity: 0.9;
+        }
+
+        .cube-link {
+            display: inline-block;
+            background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+            color: white;
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-weight: bold;
+            margin-top: 15px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .cube-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+
+        .feature-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .feature-item .icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .feature-item h5 {
+            color: #4ECDC4;
+            margin-bottom: 8px;
+        }
+
+        .feature-item p {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            .data-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .cube-preview {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .cube-mini {
+                margin: 0 auto 20px auto;
+            }
+            
+            .feature-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .cube-link {
+                display: block;
+                text-align: center;
+                margin: 20px auto 0 auto;
+                max-width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 手機陀螺儀偵測器</h1>
+        
+        <div id="status" class="status">
+            正在檢查陀螺儀支援...
+        </div>
+        
+        <div class="data-grid">
+            <div class="data-card">
+                <h3>X 軸 (Alpha)</h3>
+                <div id="alpha" class="data-value">0.00</div>
+                <div class="unit">度 (0-360)</div>
+            </div>
+            
+            <div class="data-card">
+                <h3>Y 軸 (Beta)</h3>
+                <div id="beta" class="data-value">0.00</div>
+                <div class="unit">度 (-180 到 180)</div>
+            </div>
+            
+            <div class="data-card">
+                <h3>Z 軸 (Gamma)</h3>
+                <div id="gamma" class="data-value">0.00</div>
+                <div class="unit">度 (-90 到 90)</div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <h3 style="text-align: center; margin-top: 0; color: #FFD700;">即時數據圖表</h3>
+            <div class="chart" id="chart">
+                <div class="chart-line" id="alpha-line" style="top: 33%; background: #FF6B6B;"></div>
+                <div class="chart-line" id="beta-line" style="top: 50%; background: #4ECDC4;"></div>
+                <div class="chart-line" id="gamma-line" style="top: 66%; background: #45B7D1;"></div>
+            </div>
+        </div>
+        
+        <div class="cube-feature">
+            <h3>🎲 3D 陀螺儀立方體</h3>
+            
+            <div class="cube-preview">
+                <div class="cube-mini">
+                    <div class="face front">前</div>
+                    <div class="face back">後</div>
+                    <div class="face right">右</div>
+                    <div class="face left">左</div>
+                    <div class="face top">上</div>
+                    <div class="face bottom">下</div>
+                </div>
+                
+                <div class="cube-info">
+                    <h4>體驗互動式3D立方體</h4>
+                    <p>使用手機陀螺儀控制一個六面不同顏色的3D立方體</p>
+                    <p>每個面都有獨特的漸層色彩和文字標識</p>
+                    <p>即時響應手機的旋轉動作，創造沉浸式3D體驗</p>
+                    <a href="gyroscope-cube.html" class="cube-link">🚀 立即體驗</a>
+                </div>
+            </div>
+            
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <span class="icon">🎨</span>
+                    <h5>六面彩色</h5>
+                    <p>每個面都有獨特的漸層色彩</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">📱</span>
+                    <h5>陀螺儀控制</h5>
+                    <p>即時響應手機旋轉動作</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">🎯</span>
+                    <h5>精準追蹤</h5>
+                    <p>三軸旋轉數據即時更新</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">✨</span>
+                    <h5>視覺效果</h5>
+                    <p>3D透視和動畫效果</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="deploy-info">
+            <h3>🚀 快速部署方案</h3>
+            <p><strong>方案一：Netlify（推薦）</strong></p>
+            <ol>
+                <li>前往 <a href="https://netlify.com" target="_blank" style="color: #4CAF50;">netlify.com</a></li>
+                <li>註冊/登入帳號</li>
+                <li>將此資料夾拖拽到 "Deploy manually" 區域</li>
+                <li>獲得 HTTPS 網址，例如：<span class="url-box">https://your-site-name.netlify.app</span></li>
+            </ol>
+            
+            <p><strong>方案二：Vercel</strong></p>
+            <ol>
+                <li>前往 <a href="https://vercel.com" target="_blank" style="color: #4CAF50;">vercel.com</a></li>
+                <li>註冊/登入帳號</li>
+                <li>上傳此資料夾</li>
+                <li>獲得 HTTPS 網址</li>
+            </ol>
+            
+            <p><strong>方案三：GitHub Pages</strong></p>
+            <ol>
+                <li>建立 GitHub 儲存庫</li>
+                <li>上傳檔案到儲存庫</li>
+                <li>在設定中啟用 GitHub Pages</li>
+                <li>獲得網址：<span class="url-box">https://your-username.github.io/your-repo-name</span></li>
+            </ol>
+        </div>
+        
+        <div class="instructions">
+            <h3>📋 使用說明</h3>
+            <ul>
+                <li>請在手機上開啟此網頁</li>
+                <li>允許瀏覽器存取裝置方向感應器</li>
+                <li>旋轉手機以查看即時陀螺儀數據</li>
+                <li>X軸 (Alpha): 手機繞Z軸旋轉 (0-360度)</li>
+                <li>Y軸 (Beta): 手機前後傾斜 (-180到180度)</li>
+                <li>Z軸 (Gamma): 手機左右傾斜 (-90到90度)</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // 檢查陀螺儀支援
+        function checkGyroscopeSupport() {
+            const statusElement = document.getElementById('status');
+            
+            if (typeof DeviceOrientationEvent !== 'undefined') {
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    // iOS 13+ 需要請求權限
+                    statusElement.innerHTML = '點擊任意處以請求陀螺儀權限...';
+                    statusElement.className = 'status not-supported';
+                    
+                    document.addEventListener('click', requestPermission, { once: true });
+                } else {
+                    // 其他瀏覽器直接支援
+                    statusElement.innerHTML = '✅ 陀螺儀支援已啟用';
+                    statusElement.className = 'status supported';
+                    startGyroscope();
+                }
+            } else {
+                statusElement.innerHTML = '❌ 此瀏覽器不支援陀螺儀功能';
+                statusElement.className = 'status not-supported';
+            }
+        }
+        
+        // 請求權限 (iOS)
+        async function requestPermission() {
+            try {
+                const permission = await DeviceOrientationEvent.requestPermission();
+                const statusElement = document.getElementById('status');
+                
+                if (permission === 'granted') {
+                    statusElement.innerHTML = '✅ 陀螺儀權限已授予';
+                    statusElement.className = 'status supported';
+                    startGyroscope();
+                } else {
+                    statusElement.innerHTML = '❌ 陀螺儀權限被拒絕';
+                    statusElement.className = 'status not-supported';
+                }
+            } catch (error) {
+                console.error('權限請求失敗:', error);
+                document.getElementById('status').innerHTML = '❌ 權限請求失敗';
+                document.getElementById('status').className = 'status not-supported';
+            }
+        }
+        
+        // WebSocket連接管理
+        class GyroscopeWebSocket {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.onConnectedCallback = null;
+            }
+            
+            connect() {
+                const wsUrl = 'wss://testgyroscopehtml-production.up.railway.app';
+                console.log('嘗試連接WebSocket:', wsUrl);
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    console.log('✅ WebSocket連接已建立');
+                    this.isConnected = true;
+                    if (this.onConnectedCallback) {
+                        this.onConnectedCallback();
+                    }
+                };
+                
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'ack') {
+                            console.log('✅ 數據已成功發送');
+                        }
+                    } catch (error) {
+                        console.error('解析WebSocket訊息錯誤:', error);
+                    }
+                };
+                
+                this.ws.onclose = (event) => {
+                    console.log('❌ WebSocket連接已關閉:', event.code, event.reason);
+                    this.isConnected = false;
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('❌ WebSocket錯誤:', error);
+                };
+            }
+            
+            sendGyroscopeData(alpha, beta, gamma) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        alpha: alpha,
+                        beta: beta,
+                        gamma: gamma,
+                        timestamp: Date.now()
+                    };
+                    console.log('📤 發送數據:', data);
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+            
+            setOnConnectedCallback(callback) {
+                this.onConnectedCallback = callback;
+            }
+        }
+        
+        // 建立WebSocket實例
+        const gyroWS = new GyroscopeWebSocket();
+        
+        // 開始陀螺儀監聽
+        function startGyroscope() {
+            // 連接WebSocket
+            gyroWS.connect();
+            
+            // 設置連接成功後的回調
+            gyroWS.setOnConnectedCallback(() => {
+                console.log('🎯 WebSocket連接成功，開始陀螺儀監聽');
+            });
+            
+            let dataHistory = [];
+            const maxHistory = 100;
+            
+            window.addEventListener('deviceorientation', function(event) {
+                // 更新數值顯示
+                updateDisplay(event.alpha, event.beta, event.gamma);
+                
+                // 更新圖表
+                updateChart(event.alpha, event.beta, event.gamma);
+                
+                // 透過WebSocket發送數據
+                gyroWS.sendGyroscopeData(event.alpha, event.beta, event.gamma);
+                
+                // 儲存歷史數據
+                dataHistory.push({
+                    alpha: event.alpha,
+                    beta: event.beta,
+                    gamma: event.gamma,
+                    timestamp: Date.now()
+                });
+                
+                // 限制歷史數據長度
+                if (dataHistory.length > maxHistory) {
+                    dataHistory.shift();
+                }
+            });
+        }
+        
+        // 更新顯示數值
+        function updateDisplay(alpha, beta, gamma) {
+            document.getElementById('alpha').textContent = formatValue(alpha);
+            document.getElementById('beta').textContent = formatValue(beta);
+            document.getElementById('gamma').textContent = formatValue(gamma);
+        }
+        
+        // 格式化數值
+        function formatValue(value) {
+            if (value === null) return 'N/A';
+            return value.toFixed(2);
+        }
+        
+        // 更新圖表
+        function updateChart(alpha, beta, gamma) {
+            const chartWidth = document.getElementById('chart').offsetWidth;
+            
+            // 將角度轉換為圖表位置 (0-100%)
+            const alphaPos = ((alpha || 0) / 360) * 100;
+            const betaPos = (((beta || 0) + 180) / 360) * 100;
+            const gammaPos = (((gamma || 0) + 90) / 180) * 100;
+            
+            // 更新線條位置
+            document.getElementById('alpha-line').style.left = Math.max(0, Math.min(100, alphaPos)) + '%';
+            document.getElementById('beta-line').style.left = Math.max(0, Math.min(100, betaPos)) + '%';
+            document.getElementById('gamma-line').style.left = Math.max(0, Math.min(100, gammaPos)) + '%';
+        }
+        
+        // 頁面載入時檢查支援
+        window.addEventListener('load', checkGyroscopeSupport);
+        
+        // 處理視窗大小改變
+        window.addEventListener('resize', function() {
+            // 重新計算圖表位置
+            const alpha = parseFloat(document.getElementById('alpha').textContent);
+            const beta = parseFloat(document.getElementById('beta').textContent);
+            const gamma = parseFloat(document.getElementById('gamma').textContent);
+            
+            if (!isNaN(alpha) && !isNaN(beta) && !isNaN(gamma)) {
+                updateChart(alpha, beta, gamma);
+            }
+        });
+    </script>
+</body>
+</html>
