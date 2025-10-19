@@ -531,6 +531,8 @@
                     <p>WebRTC P2P 優先，WebSocket 降級備用</p>
                     <button id="startScreenCapture" class="cube-link" style="border: none; cursor: pointer;">🎬 開始捕獲</button>
                     <button id="stopScreenCapture" class="cube-link" style="border: none; cursor: pointer; background: linear-gradient(45deg, #f44336, #da190b); display: none;">⏹️ 停止捕獲</button>
+                    <button id="startColorTest" class="cube-link" style="border: none; cursor: pointer; background: linear-gradient(45deg, #9C27B0, #E91E63); margin-left: 10px;">🎨 彩色測試</button>
+                    <button id="stopColorTest" class="cube-link" style="border: none; cursor: pointer; background: linear-gradient(45deg, #f44336, #da190b); display: none;">⏹️ 停止測試</button>
                     
                     <div class="webrtc-stats" style="margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.9em;">
                         <h4 style="margin: 0 0 10px 0; color: #FFD700;">傳輸狀態</h4>
@@ -1184,6 +1186,13 @@
         let screenCaptureLastTime = Date.now();
         let screenCaptureTotalDataSize = 0;
         
+        // 彩色測試相關變數
+        let colorTestCanvas = null;
+        let colorTestCtx = null;
+        let colorTestStream = null;
+        let isColorTesting = false;
+        let colorTestAnimationId = null;
+        
         // WebRTC 相關變數
         let webrtcCapture = null;
         let isUsingWebSocket = false;
@@ -1762,16 +1771,211 @@
             document.getElementById('captureDataSize').textContent = `${sizeInKB} KB`;
         }
         
+        // 彩色測試功能
+        function startColorTest() {
+            if (isColorTesting) return;
+            
+            console.log('🎨 開始彩色測試');
+            isColorTesting = true;
+            
+            // 創建彩色測試Canvas
+            colorTestCanvas = document.createElement('canvas');
+            colorTestCanvas.width = 1280;
+            colorTestCanvas.height = 720;
+            colorTestCtx = colorTestCanvas.getContext('2d', { alpha: false });
+            
+            // 創建測試流
+            colorTestStream = colorTestCanvas.captureStream(30);
+            
+            // 顯示在預覽中
+            const video = document.getElementById('screenCaptureVideo');
+            video.srcObject = colorTestStream;
+            video.play();
+            
+            // 開始繪製彩色條紋
+            drawColorBars();
+            
+            // 更新UI
+            document.getElementById('startColorTest').style.display = 'none';
+            document.getElementById('stopColorTest').style.display = 'inline-block';
+            document.getElementById('screenCapturePreview').style.display = 'block';
+            document.getElementById('captureStatus').textContent = '彩色測試中';
+            
+            // 如果WebRTC已連接，發送測試流
+            if (webrtcCapture && webrtcCapture.peerConnection) {
+                const videoTrack = colorTestStream.getVideoTracks()[0];
+                webrtcCapture.peerConnection.addTrack(videoTrack, colorTestStream);
+                console.log('🎨 彩色測試流已添加到WebRTC');
+            } else {
+                // 如果WebRTC未連接，嘗試啟動WebRTC
+                console.log('🎨 WebRTC未連接，嘗試啟動WebRTC進行彩色測試');
+                startWebRTCForColorTest();
+            }
+            
+            console.log('✅ 彩色測試已開始');
+        }
+        
+        function stopColorTest() {
+            console.log('⏹️ 停止彩色測試');
+            isColorTesting = false;
+            
+            if (colorTestAnimationId) {
+                cancelAnimationFrame(colorTestAnimationId);
+                colorTestAnimationId = null;
+            }
+            
+            if (colorTestStream) {
+                colorTestStream.getTracks().forEach(track => track.stop());
+                colorTestStream = null;
+            }
+            
+            // 清除預覽
+            const video = document.getElementById('screenCaptureVideo');
+            video.srcObject = null;
+            
+            // 更新UI
+            document.getElementById('startColorTest').style.display = 'inline-block';
+            document.getElementById('stopColorTest').style.display = 'none';
+            document.getElementById('screenCapturePreview').style.display = 'none';
+            document.getElementById('captureStatus').textContent = '未開始';
+            
+            console.log('✅ 彩色測試已停止');
+        }
+        
+        function drawColorBars() {
+            if (!isColorTesting) return;
+            
+            const time = Date.now() * 0.001; // 轉換為秒
+            const cols = 8;
+            
+            // 清除畫布
+            colorTestCtx.fillStyle = '#000000';
+            colorTestCtx.fillRect(0, 0, colorTestCanvas.width, colorTestCanvas.height);
+            
+            // 繪製8條彩色豎條
+            for (let i = 0; i < cols; i++) {
+                const hue = (i / cols) * 360 + (time * 50) % 360; // 隨時間旋轉色彩
+                const saturation = 100;
+                const lightness = 50;
+                
+                colorTestCtx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                const x = (i * colorTestCanvas.width) / cols;
+                const width = colorTestCanvas.width / cols;
+                colorTestCtx.fillRect(x, 0, width, colorTestCanvas.height);
+            }
+            
+            // 添加時間戳文字
+            colorTestCtx.fillStyle = '#FFFFFF';
+            colorTestCtx.font = '24px Arial';
+            colorTestCtx.textAlign = 'center';
+            colorTestCtx.fillText(`Color Test: ${time.toFixed(1)}s`, colorTestCanvas.width / 2, 50);
+            colorTestCtx.fillText(`Unity RawImage Test`, colorTestCanvas.width / 2, 80);
+            
+            // 繼續下一幀
+            colorTestAnimationId = requestAnimationFrame(drawColorBars);
+        }
+        
+        // 為彩色測試啟動WebRTC
+        async function startWebRTCForColorTest() {
+            try {
+                console.log('🎨 為彩色測試啟動WebRTC...');
+                
+                // 等待WebSocket連接
+                await waitForWebSocketReady();
+                
+                // 加入房間
+                const roomId = 'default-room';
+                gyroWS.joinRoom(roomId, 'web-sender');
+                
+                // 等待房間配對
+                await waitForRoomReady();
+                
+                // 創建WebRTC連接
+                webrtcCapture = new WebRTCScreenCapture(gyroWS.ws, roomId);
+                gyroWS.webrtcCapture = webrtcCapture;
+                
+                // 修改WebRTC啟動邏輯，使用彩色測試流
+                const originalStart = webrtcCapture.start.bind(webrtcCapture);
+                webrtcCapture.start = async function() {
+                    try {
+                        console.log('🎨 使用彩色測試流啟動WebRTC');
+                        
+                        // 使用現有的彩色測試流
+                        this.localStream = colorTestStream;
+                        
+                        // 創建PeerConnection
+                        this.peerConnection = new RTCPeerConnection(this.rtcConfig);
+                        
+                        // 添加視頻軌道
+                        const videoTrack = this.localStream.getVideoTracks()[0];
+                        this.peerConnection.addTrack(videoTrack, this.localStream);
+                        
+                        // ICE候選者處理
+                        this.peerConnection.onicecandidate = (event) => {
+                            if (event.candidate) {
+                                this.signalingWS.send(JSON.stringify({
+                                    type: 'candidate',
+                                    candidate: event.candidate
+                                }));
+                            }
+                        };
+                        
+                        // ICE連接狀態監控
+                        this.peerConnection.oniceconnectionstatechange = () => {
+                            const state = this.peerConnection.iceConnectionState;
+                            console.log('🔌 ICE 狀態:', state);
+                            
+                            if (state === 'connected' || state === 'completed') {
+                                this.iceOk = true;
+                                this.updateUI('WebRTC 彩色測試', 'connected');
+                            }
+                        };
+                        
+                        // 創建Offer
+                        const offer = await this.peerConnection.createOffer();
+                        await this.peerConnection.setLocalDescription(offer);
+                        
+                        // 發送Offer
+                        this.signalingWS.send(JSON.stringify({
+                            type: 'offer',
+                            sdp: offer.sdp
+                        }));
+                        
+                        console.log('✅ 彩色測試WebRTC Offer已發送');
+                        
+                    } catch (error) {
+                        console.error('❌ 彩色測試WebRTC啟動失敗:', error);
+                    }
+                };
+                
+                // 啟動WebRTC
+                await webrtcCapture.start();
+                
+                console.log('✅ 彩色測試WebRTC已啟動');
+                
+            } catch (error) {
+                console.error('❌ 彩色測試WebRTC啟動失敗:', error);
+            }
+        }
+        
         // 添加螢幕捕獲按鈕事件監聽器
         document.addEventListener('DOMContentLoaded', function() {
             const startBtn = document.getElementById('startScreenCapture');
             const stopBtn = document.getElementById('stopScreenCapture');
+            const startColorBtn = document.getElementById('startColorTest');
+            const stopColorBtn = document.getElementById('stopColorTest');
             
             if (startBtn) {
                 startBtn.addEventListener('click', startScreenCapture);
             }
             if (stopBtn) {
                 stopBtn.addEventListener('click', stopScreenCapture);
+            }
+            if (startColorBtn) {
+                startColorBtn.addEventListener('click', startColorTest);
+            }
+            if (stopColorBtn) {
+                stopColorBtn.addEventListener('click', stopColorTest);
             }
             
             // 開始統計更新
