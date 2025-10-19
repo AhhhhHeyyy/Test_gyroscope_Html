@@ -283,6 +283,20 @@ public class GyroscopeReceiver : MonoBehaviour
                             Debug.Log($"✅ 確認: {serverMessage.message}");
                             break;
                             
+                        case "offer":
+                        case "answer":
+                        case "candidate":
+                            // 處理 WebRTC 信令消息
+                            Debug.Log($"📡 收到 WebRTC 信令: {serverMessage.type}");
+                            var signalingMessage = new SignalingMessage
+                            {
+                                type = serverMessage.type,
+                                sdp = serverMessage.sdp,
+                                candidate = serverMessage.candidate
+                            };
+                            OnWebRTCSignaling?.Invoke(signalingMessage);
+                            break;
+                            
                         case "error":
                             Debug.LogError($"❌ 服務器錯誤: {serverMessage.message}");
                             OnError?.Invoke(serverMessage.message);
