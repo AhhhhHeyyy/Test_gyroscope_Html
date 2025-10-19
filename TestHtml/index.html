@@ -1650,8 +1650,47 @@
             
             const video = document.getElementById('screenCaptureVideo');
             
-            // 繪製當前幀到Canvas
-            screenCaptureCtx.drawImage(video, 0, 0, screenCaptureCanvas.width, screenCaptureCanvas.height);
+            // 🔧 修复：确保video可播放且尺寸正确
+            if (video.readyState < 2) {
+                console.warn('⚠️ Video not ready, skipping frame');
+                setTimeout(() => captureScreenFrames(), 66);
+                return;
+            }
+            
+            if (!video.videoWidth || !video.videoHeight) {
+                console.warn('⚠️ Video dimensions not available, skipping frame');
+                setTimeout(() => captureScreenFrames(), 66);
+                return;
+            }
+            
+            // 🔧 修复：使用正确的绘制方式，保持比例
+            const videoWidth = video.videoWidth;
+            const videoHeight = video.videoHeight;
+            const canvasWidth = screenCaptureCanvas.width;
+            const canvasHeight = screenCaptureCanvas.height;
+            
+            // 计算缩放比例，保持宽高比
+            const scaleX = canvasWidth / videoWidth;
+            const scaleY = canvasHeight / videoHeight;
+            const scale = Math.min(scaleX, scaleY);
+            
+            const drawWidth = videoWidth * scale;
+            const drawHeight = videoHeight * scale;
+            const offsetX = (canvasWidth - drawWidth) / 2;
+            const offsetY = (canvasHeight - drawHeight) / 2;
+            
+            // 清除画布
+            screenCaptureCtx.fillStyle = '#000000';
+            screenCaptureCtx.fillRect(0, 0, canvasWidth, canvasHeight);
+            
+            // 绘制视频帧
+            screenCaptureCtx.drawImage(video, 
+                offsetX, offsetY, drawWidth, drawHeight);
+            
+            // 🔧 添加调试信息
+            if (screenCaptureFrameCount % 30 === 0) { // 每30帧输出一次
+                console.log(`📺 Canvas捕获: ${canvasWidth}x${canvasHeight}, Video: ${videoWidth}x${videoHeight}, Scale: ${scale.toFixed(2)}`);
+            }
             
             // 轉換為JPEG並發送
             screenCaptureCanvas.toBlob((blob) => {

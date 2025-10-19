@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>彩色测试条 - WebRTC传送端诊断</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .test-area {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .canvas-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .canvas-container h3 {
+            margin: 0 0 15px 0;
+            color: #FFD700;
+        }
+        
+        #testCanvas {
+            border: 2px solid #4CAF50;
+            border-radius: 10px;
+            background: #000;
+        }
+        
+        .controls {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .controls h3 {
+            margin: 0 0 15px 0;
+            color: #FFD700;
+        }
+        
+        .status {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .status.ready {
+            background: rgba(76, 175, 80, 0.3);
+            border: 2px solid #4CAF50;
+        }
+        
+        .status.connected {
+            background: rgba(33, 150, 243, 0.3);
+            border: 2px solid #2196F3;
+        }
+        
+        .status.error {
+            background: rgba(244, 67, 54, 0.3);
+            border: 2px solid #f44336;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .info-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .info-card h4 {
+            margin: 0 0 10px 0;
+            color: #FFD700;
+        }
+        
+        .info-card .value {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 彩色测试条 - WebRTC传送端诊断</h1>
+        
+        <div class="status" id="status">准备中...</div>
+        
+        <div class="test-area">
+            <div class="canvas-container">
+                <h3>测试Canvas (1280x720)</h3>
+                <canvas id="testCanvas" width="640" height="360"></canvas>
+                <p style="margin-top: 10px; font-size: 0.9em; opacity: 0.8;">
+                    实际尺寸: 1280x720 (显示缩放)
+                </p>
+            </div>
+            
+            <div class="controls">
+                <h3>控制面板</h3>
+                <button id="startTest" onclick="startColorTest()">🎬 开始测试</button>
+                <button id="stopTest" onclick="stopColorTest()" disabled>⏹️ 停止测试</button>
+                <button id="connectUnity" onclick="connectToUnity()" disabled>🔗 连接Unity</button>
+                
+                <div class="info-grid">
+                    <div class="info-card">
+                        <h4>Canvas状态</h4>
+                        <div class="value" id="canvasStatus">未开始</div>
+                    </div>
+                    <div class="info-card">
+                        <h4>WebRTC状态</h4>
+                        <div class="value" id="webrtcStatus">未连接</div>
+                    </div>
+                    <div class="info-card">
+                        <h4>帧率</h4>
+                        <div class="value" id="fps">0 fps</div>
+                    </div>
+                    <div class="info-card">
+                        <h4>流状态</h4>
+                        <div class="value" id="streamStatus">无</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="background: rgba(255, 255, 255, 0.1); border-radius: 15px; padding: 20px; margin-top: 20px;">
+            <h3 style="color: #FFD700; margin-top: 0;">诊断说明</h3>
+            <p><strong>目的：</strong>生成彩色动态条纹，通过WebRTC发送到Unity，用于诊断RawImage显示问题。</p>
+            <p><strong>测试步骤：</strong></p>
+            <ol>
+                <li>点击"开始测试"生成彩色条纹</li>
+                <li>点击"连接Unity"建立WebRTC连接</li>
+                <li>观察Unity中的RawImage是否显示彩色条纹</li>
+            </ol>
+            <p><strong>预期结果：</strong></p>
+            <ul>
+                <li>✅ 如果Unity显示彩色条纹 → 传送端OK，问题在原始屏幕捕获流程</li>
+                <li>❌ 如果Unity仍然灰色 → 问题在Unity接收/显示端</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let testCanvas = null;
+        let testCtx = null;
+        let testStream = null;
+        let isTestRunning = false;
+        let animationId = null;
+        let frameCount = 0;
+        let lastTime = Date.now();
+        let fps = 0;
+        
+        // WebRTC相关
+        let peerConnection = null;
+        let ws = null;
+        let isConnected = false;
+        
+        // 初始化
+        window.addEventListener('load', function() {
+            console.log('🎨 彩色测试条页面加载完成');
+            initializeCanvas();
+            updateStatus('ready', '准备就绪');
+        });
+        
+        function initializeCanvas() {
+            testCanvas = document.getElementById('testCanvas');
+            testCtx = testCanvas.getContext('2d', { alpha: false });
+            
+            // 设置实际Canvas尺寸为1280x720
+            testCanvas.width = 1280;
+            testCanvas.height = 720;
+            
+            // 设置显示尺寸（保持比例）
+            testCanvas.style.width = '640px';
+            testCanvas.style.height = '360px';
+            
+            console.log('✅ Canvas初始化完成:', testCanvas.width, 'x', testCanvas.height);
+            updateCanvasStatus('已初始化');
+        }
+        
+        function startColorTest() {
+            if (isTestRunning) return;
+            
+            console.log('🎬 开始彩色测试条生成');
+            isTestRunning = true;
+            frameCount = 0;
+            lastTime = Date.now();
+            
+            // 启用按钮
+            document.getElementById('startTest').disabled = true;
+            document.getElementById('stopTest').disabled = false;
+            document.getElementById('connectUnity').disabled = false;
+            
+            // 开始动画循环
+            drawColorBars();
+            
+            // 创建测试流
+            try {
+                testStream = testCanvas.captureStream(30);
+                console.log('✅ 测试流创建成功:', testStream.getVideoTracks()[0].getSettings());
+                updateStreamStatus('已创建');
+                updateStatus('ready', '彩色条纹生成中...');
+            } catch (error) {
+                console.error('❌ 创建测试流失败:', error);
+                updateStatus('error', '创建测试流失败: ' + error.message);
+            }
+        }
+        
+        function drawColorBars() {
+            if (!isTestRunning) return;
+            
+            const time = Date.now() * 0.001; // 转换为秒
+            const cols = 8;
+            
+            // 清除画布
+            testCtx.fillStyle = '#000000';
+            testCtx.fillRect(0, 0, testCanvas.width, testCanvas.height);
+            
+            // 绘制8条彩色竖条
+            for (let i = 0; i < cols; i++) {
+                const hue = (i / cols) * 360 + (time * 50) % 360; // 随时间旋转色彩
+                const saturation = 100;
+                const lightness = 50;
+                
+                testCtx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+                const x = (i * testCanvas.width) / cols;
+                const width = testCanvas.width / cols;
+                testCtx.fillRect(x, 0, width, testCanvas.height);
+            }
+            
+            // 添加时间戳文字
+            testCtx.fillStyle = '#FFFFFF';
+            testCtx.font = '24px Arial';
+            testCtx.textAlign = 'center';
+            testCtx.fillText(`Time: ${time.toFixed(1)}s`, testCanvas.width / 2, 50);
+            testCtx.fillText(`Frame: ${frameCount}`, testCanvas.width / 2, 80);
+            
+            // 计算FPS
+            frameCount++;
+            const currentTime = Date.now();
+            if (currentTime - lastTime >= 1000) {
+                fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                frameCount = 0;
+                lastTime = currentTime;
+                updateFPS(fps);
+            }
+            
+            // 继续下一帧
+            animationId = requestAnimationFrame(drawColorBars);
+        }
+        
+        function stopColorTest() {
+            console.log('⏹️ 停止彩色测试');
+            isTestRunning = false;
+            
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            
+            // 停止测试流
+            if (testStream) {
+                testStream.getTracks().forEach(track => track.stop());
+                testStream = null;
+            }
+            
+            // 清除Canvas
+            if (testCtx) {
+                testCtx.fillStyle = '#000000';
+                testCtx.fillRect(0, 0, testCanvas.width, testCanvas.height);
+            }
+            
+            // 更新按钮状态
+            document.getElementById('startTest').disabled = false;
+            document.getElementById('stopTest').disabled = true;
+            document.getElementById('connectUnity').disabled = true;
+            
+            updateCanvasStatus('已停止');
+            updateStreamStatus('无');
+            updateStatus('ready', '已停止');
+        }
+        
+        async function connectToUnity() {
+            if (!testStream) {
+                alert('请先开始测试生成彩色条纹！');
+                return;
+            }
+            
+            try {
+                console.log('🔗 开始连接Unity...');
+                updateStatus('ready', '连接Unity中...');
+                
+                // 连接WebSocket
+                await connectWebSocket();
+                
+                // 创建WebRTC连接
+                await createWebRTCConnection();
+                
+                // 发送测试流
+                await sendTestStream();
+                
+                updateStatus('connected', '已连接到Unity，发送彩色条纹中...');
+                
+            } catch (error) {
+                console.error('❌ 连接Unity失败:', error);
+                updateStatus('error', '连接失败: ' + error.message);
+            }
+        }
+        
+        async function connectWebSocket() {
+            return new Promise((resolve, reject) => {
+                const wsUrl = 'wss://testgyroscopehtml-production.up.railway.app';
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('✅ WebSocket连接成功');
+                    resolve();
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('❌ WebSocket连接失败:', error);
+                    reject(error);
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log('📨 收到消息:', data.type);
+                        
+                        if (data.type === 'ready') {
+                            console.log('🤝 房间配对完成');
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ 解析消息失败:', e);
+                    }
+                };
+            });
+        }
+        
+        async function createWebRTCConnection() {
+            const config = {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
+            };
+            
+            peerConnection = new RTCPeerConnection(config);
+            
+            // 添加ICE候选者
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    console.log('📤 发送ICE候选者');
+                    ws.send(JSON.stringify({
+                        type: 'candidate',
+                        candidate: {
+                            candidate: event.candidate.candidate,
+                            sdpMid: event.candidate.sdpMid,
+                            sdpMLineIndex: event.candidate.sdpMLineIndex
+                        }
+                    }));
+                }
+            };
+            
+            // 连接状态变化
+            peerConnection.onconnectionstatechange = () => {
+                console.log('🔌 WebRTC连接状态:', peerConnection.connectionState);
+                updateWebRTCStatus(peerConnection.connectionState);
+            };
+        }
+        
+        async function sendTestStream() {
+            // 添加视频轨道
+            const videoTrack = testStream.getVideoTracks()[0];
+            peerConnection.addTrack(videoTrack, testStream);
+            
+            console.log('📺 添加测试视频轨道:', videoTrack.getSettings());
+            
+            // 创建Offer
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            // 发送Offer
+            ws.send(JSON.stringify({
+                type: 'offer',
+                sdp: offer.sdp
+            }));
+            
+            console.log('📤 发送WebRTC Offer');
+        }
+        
+        // UI更新函数
+        function updateStatus(type, message) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + type;
+        }
+        
+        function updateCanvasStatus(status) {
+            document.getElementById('canvasStatus').textContent = status;
+        }
+        
+        function updateWebRTCStatus(status) {
+            document.getElementById('webrtcStatus').textContent = status;
+        }
+        
+        function updateStreamStatus(status) {
+            document.getElementById('streamStatus').textContent = status;
+        }
+        
+        function updateFPS(fps) {
+            document.getElementById('fps').textContent = fps + ' fps';
+        }
+        
+        // 页面卸载时清理
+        window.addEventListener('beforeunload', function() {
+            stopColorTest();
+            if (ws) ws.close();
+            if (peerConnection) peerConnection.close();
+        });
+    </script>
+</body>
+</html>
