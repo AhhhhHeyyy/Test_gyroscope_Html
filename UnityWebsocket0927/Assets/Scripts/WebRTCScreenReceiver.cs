@@ -6,7 +6,6 @@ using UnityEngine.UI;
 
 public class WebRTCScreenReceiver : MonoBehaviour
 {
-    [Header("顯示模式")]
     public enum DisplayMode
     {
         Renderer,

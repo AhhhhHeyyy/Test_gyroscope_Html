@@ -5,7 +5,6 @@ using UnityEngine.UI;
 
 public class ScreenCaptureHandler : MonoBehaviour
 {
-    [Header("顯示模式")]
     public enum DisplayMode
     {
         Renderer,
