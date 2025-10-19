@@ -59,14 +59,7 @@ public class WebRTCScreenReceiver : MonoBehaviour
         Debug.Log("📺 WebRTCScreenReceiver 已初始化");
         
         // 訂閱 WebRTC 信令事件
-        if (gyroscopeReceiver != null)
-        {
-            gyroscopeReceiver.OnWebRTCSignaling += HandleSignaling;
-        }
-        else
-        {
-            Debug.LogError("❌ GyroscopeReceiver 未設置！");
-        }
+        GyroscopeReceiver.OnWebRTCSignaling += HandleSignaling;
     }
     
     void Update()
@@ -84,10 +77,7 @@ public class WebRTCScreenReceiver : MonoBehaviour
         }
         
         // 取消訂閱事件
-        if (gyroscopeReceiver != null)
-        {
-            gyroscopeReceiver.OnWebRTCSignaling -= HandleSignaling;
-        }
+        GyroscopeReceiver.OnWebRTCSignaling -= HandleSignaling;
     }
     
     void HandleSignalingText(string message)
@@ -295,6 +285,12 @@ public class WebRTCScreenReceiver : MonoBehaviour
     
     private void OnVideoReceived(Texture texture)
     {
+        if (!isWebRTCConnected)
+        {
+            Debug.LogWarning("⚠️ WebRTC 未連接，忽略視頻幀");
+            return;
+        }
+        
         Debug.Log("📺 收到視頻幀");
         
         if (targetRenderer != null && texture != null)

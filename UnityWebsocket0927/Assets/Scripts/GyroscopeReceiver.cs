@@ -115,7 +115,7 @@ public class GyroscopeReceiver : MonoBehaviour
     public static event Action<string> OnError;
     
     // WebRTC 信令事件
-    public event Action<SignalingMessage> OnWebRTCSignaling;
+    public static event Action<SignalingMessage> OnWebRTCSignaling;
     
     void Start()
     {
