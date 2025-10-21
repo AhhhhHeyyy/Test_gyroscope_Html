@@ -85,6 +85,15 @@ public class GyroscopeReceiver : MonoBehaviour
         public long timestamp;
     }
     
+    [System.Serializable]
+    public class SpinMessage
+    {
+        public string type;
+        public bool triggered;
+        public float angle;
+        public long timestamp;
+    }
+    
     // 事件 - 新增搖晃事件和螢幕捕獲事件
     public static event Action<GyroscopeData> OnGyroscopeDataReceived;
     public static event Action<ShakeData> OnShakeDataReceived; // 新增搖晃事件
@@ -294,11 +303,13 @@ public class GyroscopeReceiver : MonoBehaviour
                             Debug.Log($"🎯 收到旋转事件: {message}");
                             try
                             {
+                                // 直接解析spin消息，因为数据结构不同
+                                var spinMessage = JsonUtility.FromJson<SpinMessage>(message);
                                 var spinData = new SpinData
                                 {
-                                    triggered = true,
-                                    angle = serverMessage.data?.alpha ?? 0f,
-                                    timestamp = serverMessage.timestamp
+                                    triggered = spinMessage.triggered,
+                                    angle = spinMessage.angle,
+                                    timestamp = spinMessage.timestamp
                                 };
                                 
                                 spinTriggered = true;

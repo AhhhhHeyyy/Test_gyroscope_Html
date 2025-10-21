@@ -941,6 +941,8 @@
             }
             
             sendSpinEvent(angle, timestamp) {
+                console.log('🎯 sendSpinEvent 被调用:', { angle, timestamp, isConnected: this.isConnected, wsState: this.ws?.readyState });
+                
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     const data = {
                         type: 'spin',
@@ -950,6 +952,11 @@
                     };
                     console.log('📤 发送旋转事件:', data);
                     this.ws.send(JSON.stringify(data));
+                } else {
+                    console.warn('⚠️ WebSocket未连接，无法发送旋转事件:', {
+                        isConnected: this.isConnected,
+                        wsState: this.ws?.readyState
+                    });
                 }
             }
             
@@ -1912,6 +1919,7 @@
                             spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
                             
                             // 发送旋转事件到Unity
+                            console.log('🎯 准备发送旋转事件，角度:', targetAngle);
                             gyroWS.sendSpinEvent(targetAngle);
                             
                             // 稍微延迟震动，让声音先开始播放
@@ -1951,6 +1959,7 @@
                             spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
                             
                             // 发送旋转事件到Unity
+                            console.log('🎯 准备发送旋转事件（onDragEnd），角度:', finalAngle);
                             gyroWS.sendSpinEvent(finalAngle);
                             
                             // 稍微延迟震动，让声音先开始
