@@ -46,6 +46,10 @@ public class GyroscopeReceiver : MonoBehaviour
         public float intensity;
         public string shakeType;
         public AccelerationData acceleration;
+        
+        // 旋转数据字段（当 type 为 "spin" 时使用）
+        public bool triggered;
+        public float angle;
     }
     
     [System.Serializable]
@@ -85,14 +89,6 @@ public class GyroscopeReceiver : MonoBehaviour
         public long timestamp;
     }
     
-    [System.Serializable]
-    public class SpinMessage
-    {
-        public string type;
-        public bool triggered;
-        public float angle;
-        public long timestamp;
-    }
     
     // 事件 - 新增搖晃事件和螢幕捕獲事件
     public static event Action<GyroscopeData> OnGyroscopeDataReceived;
@@ -299,17 +295,16 @@ public class GyroscopeReceiver : MonoBehaviour
                             break;
                             
                         case "spin":
-                            // 處理旋转事件
+                            // 處理旋转事件 - 使用與陀螺儀和搖晃相同的結構
                             Debug.Log($"🎯 收到旋转事件: {message}");
                             try
                             {
-                                // 直接解析spin消息，因为数据结构不同
-                                var spinMessage = JsonUtility.FromJson<SpinMessage>(message);
+                                // 使用與陀螺儀和搖晃相同的解析方式
                                 var spinData = new SpinData
                                 {
-                                    triggered = spinMessage.triggered,
-                                    angle = spinMessage.angle,
-                                    timestamp = spinMessage.timestamp
+                                    triggered = serverMessage.data.triggered,
+                                    angle = serverMessage.data.angle,
+                                    timestamp = serverMessage.data.timestamp
                                 };
                                 
                                 spinTriggered = true;

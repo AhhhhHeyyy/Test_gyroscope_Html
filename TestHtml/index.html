@@ -946,9 +946,11 @@
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     const data = {
                         type: 'spin',
-                        triggered: true,
-                        angle: angle,
-                        timestamp: timestamp || Date.now()
+                        data: {
+                            triggered: true,
+                            angle: angle,
+                            timestamp: timestamp || Date.now()
+                        }
                     };
                     console.log('📤 发送旋转事件:', data);
                     this.ws.send(JSON.stringify(data));
