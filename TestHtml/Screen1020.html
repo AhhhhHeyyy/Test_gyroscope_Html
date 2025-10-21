@@ -133,58 +133,20 @@
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
-      // --- ✨ 只保留 VP8，移除所有其他 codec ---
-      let lines = offer.sdp.split("\r\n");
-      let mLineIndex = lines.findIndex(line => line.startsWith("m=video"));
-
-      if (mLineIndex !== -1) {
-        // 找出 VP8 payload type（通常是96）
-        const vp8Line = lines.find(line => line.includes("VP8/90000"));
-        const payload = vp8Line ? vp8Line.match(/a=rtpmap:(\d+)/)[1] : "96";
-
-        // 重新組合 m=video 行，只保留 VP8 payload
-        lines[mLineIndex] = `m=video 9 UDP/TLS/RTP/SAVPF ${payload}`;
-
-        // 刪掉所有不是該 payload 的行
-        lines = lines.filter(l =>
-          !(
-            l.startsWith("a=rtpmap:") && !l.includes("VP8/90000")
-          ) &&
-          !(
-            l.startsWith("a=fmtp:") && !l.includes(payload)
-          ) &&
-          !(
-            l.startsWith("a=rtcp-fb:") && !l.includes(payload)
-          )
-        );
-      }
-
-      // --- (可選) 加入起始碼率設定 ---
-      lines.push("a=fmtp:96 x-google-start-bitrate=1500");
-      lines.push("a=fmtp:96 x-google-min-bitrate=500");
-      lines.push("a=fmtp:96 x-google-max-bitrate=4000");
-
-      const finalSdp = lines.join("\r\n");
-      console.log("📤 最終 SDP:\n", finalSdp);
-
-      log("📤 發送 VP8 Offer 給 Unity");
-      ws.send(JSON.stringify({
-        type: "offer",
-        room: ROOM_ID,
+      log("📤 發送 Offer 給 Unity");
+      ws.send(JSON.stringify({ 
+        type: "offer", 
+        room: ROOM_ID, 
         from: "web-sender",
-        sdp: finalSdp
+        sdp: offer.sdp 
       }));
     }
 
     async function startScreenShare() {
       try {
-        localStream = await navigator.mediaDevices.getDisplayMedia({ 
-          video: { frameRate: 30, width: 1280, height: 720 },
-          audio: false 
-        });
+        localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         videoEl.srcObject = localStream;
-        log("🖥️ 已啟動螢幕分享 (30fps, 1280x720)");
+        log("🖥️ 已啟動螢幕分享");
         
         // ✅ 取得螢幕流後立即建立並發送 Offer
         await createOffer();
@@ -197,12 +159,9 @@
 
     async function startCamera() {
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { frameRate: 30, width: 1280, height: 720 },
-          audio: false 
-        });
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         videoEl.srcObject = localStream;
-        log("📷 已啟動攝影機 (30fps, 1280x720)");
+        log("📷 已啟動攝影機");
         
         // ✅ 取得攝影機流後立即建立並發送 Offer
         await createOffer();
