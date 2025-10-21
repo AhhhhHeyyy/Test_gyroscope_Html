@@ -374,7 +374,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8376c908399cabe429b1dcfc6879879c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gyroReceiver: {fileID: 0}
+  gyroReceiver: {fileID: 1054834765}
   enableRotation: 1
   enablePosition: 0
   rotationSensitivity: 1

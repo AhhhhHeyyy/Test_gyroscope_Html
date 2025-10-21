@@ -77,12 +77,20 @@ public class GyroscopeReceiver : MonoBehaviour
         public int size;
     }
     
+    [System.Serializable]
+    public class SpinData
+    {
+        public bool triggered;
+        public float angle;
+        public long timestamp;
+    }
+    
     // 事件 - 新增搖晃事件和螢幕捕獲事件
     public static event Action<GyroscopeData> OnGyroscopeDataReceived;
     public static event Action<ShakeData> OnShakeDataReceived; // 新增搖晃事件
     public static event Action<ScreenFrame> OnScreenCaptureReceived; // 新增螢幕捕獲事件
+    public static event Action<SpinData> OnSpinDataReceived; // 新增旋转事件
     public static event Action<SignalingMessage> OnWebRTCSignaling; // 新增 WebRTC 信令事件
-    public static event Action<SpinData> OnSpinDataReceived; // 新增旋轉事件
     public static event Action<string> OnRawMessage; // 新增原始訊息事件
     public static event Action OnConnected;
     public static event Action OnDisconnected;
@@ -102,14 +110,6 @@ public class GyroscopeReceiver : MonoBehaviour
         public string candidate;
         public string sdpMid;
         public int? sdpMLineIndex;
-    }
-    
-    [System.Serializable]
-    public class SpinData
-    {
-        public bool triggered;
-        public float angle;
-        public long timestamp;
     }
     
     void Start()
@@ -193,39 +193,7 @@ public class GyroscopeReceiver : MonoBehaviour
                     // 觸發原始訊息事件
                     OnRawMessage?.Invoke(message);
                     
-                    // 首先嘗試解析為直接的陀螺儀數據格式（來自網頁端）
-                    if (message.Contains("\"type\":\"gyroscope\""))
-                    {
-                        try
-                        {
-                            // 嘗試解析為直接的陀螺儀數據格式
-                            var directGyroData = JsonUtility.FromJson<GyroscopeData>(message);
-                            if (directGyroData != null && directGyroData.alpha != 0 && directGyroData.beta != 0 && directGyroData.gamma != 0)
-                            {
-                                Debug.Log($"🎯 收到直接陀螺儀數據: Alpha={directGyroData.alpha}, Beta={directGyroData.beta}, Gamma={directGyroData.gamma}");
-                                
-                                // 更新數據
-                                alpha = directGyroData.alpha;
-                                beta = directGyroData.beta;
-                                gamma = directGyroData.gamma;
-                                
-                                // 加入佇列
-                                dataQueue.Enqueue(directGyroData);
-                                
-                                // 觸發事件
-                                OnGyroscopeDataReceived?.Invoke(directGyroData);
-                                
-                                Debug.Log($"📊 更新後陀螺儀數據: Alpha={alpha:F2}, Beta={beta:F2}, Gamma={gamma:F2}");
-                                return; // 成功處理，直接返回
-                            }
-                        }
-                        catch (System.Exception e)
-                        {
-                            Debug.LogWarning($"⚠️ 無法解析為直接陀螺儀數據格式: {e.Message}");
-                        }
-                    }
-                    
-                    // 如果直接解析失敗，嘗試解析為服務器消息格式
+                    // 解析服務器消息格式
                     var serverMessage = JsonUtility.FromJson<ServerMessage>(message);
                     Debug.Log($"🔍 解析後的消息類型: {serverMessage.type}");
                     Debug.Log($"🔍 消息內容: {JsonUtility.ToJson(serverMessage, true)}");
@@ -238,7 +206,7 @@ public class GyroscopeReceiver : MonoBehaviour
                             break;
                             
                         case "gyroscope":
-                            // 處理陀螺儀數據（服務器格式）
+                            // 處理陀螺儀數據
                             Debug.Log($"🎯 收到陀螺儀消息，數據是否為空: {serverMessage.data == null}");
                             if (serverMessage.data != null)
                             {
@@ -321,6 +289,35 @@ public class GyroscopeReceiver : MonoBehaviour
                             }
                             break;
                             
+                        case "spin":
+                            // 處理旋转事件
+                            Debug.Log($"🎯 收到旋转事件: {message}");
+                            try
+                            {
+                                var spinData = new SpinData
+                                {
+                                    triggered = true,
+                                    angle = serverMessage.data?.alpha ?? 0f,
+                                    timestamp = serverMessage.timestamp
+                                };
+                                
+                                spinTriggered = true;
+                                lastSpinAngle = spinData.angle;
+                                spinCount++;
+                                
+                                Debug.Log($"🎯 旋转触发! Count={spinCount}, Angle={spinData.angle:F2}");
+                                
+                                OnSpinDataReceived?.Invoke(spinData);
+                                
+                                // 0.5秒后重置状态
+                                StartCoroutine(ResetSpinStatus());
+                            }
+                            catch (System.Exception e)
+                            {
+                                Debug.LogError($"❌ 解析旋转数据错误: {e.Message}");
+                            }
+                            break;
+                            
                         case "offer":
                         case "answer":
                         case "candidate":
@@ -337,34 +334,6 @@ public class GyroscopeReceiver : MonoBehaviour
                         case "ready":
                             Debug.Log($"🚀 房間準備就緒: {serverMessage.message}");
                             Debug.Log($"🚀 等待前端發送WebRTC offer");
-                            break;
-                            
-                        case "spin":
-                            Debug.Log($"🎯 收到旋轉事件: {message}");
-                            try
-                            {
-                                var spinData = new SpinData
-                                {
-                                    triggered = true,
-                                    angle = serverMessage.data?.alpha ?? 0f,
-                                    timestamp = serverMessage.timestamp
-                                };
-                                
-                                spinTriggered = true;
-                                lastSpinAngle = spinData.angle;
-                                spinCount++;
-                                
-                                Debug.Log($"🎯 旋轉觸發! Count={spinCount}, Angle={spinData.angle:F2}");
-                                
-                                OnSpinDataReceived?.Invoke(spinData);
-                                
-                                // 0.5秒後重置狀態
-                                StartCoroutine(ResetSpinStatus());
-                            }
-                            catch (System.Exception e)
-                            {
-                                Debug.LogError($"❌ 解析旋轉數據錯誤: {e.Message}");
-                            }
                             break;
                             
                         case "ack":
@@ -536,17 +505,15 @@ public class GyroscopeReceiver : MonoBehaviour
     {
         if (Application.isPlaying)
         {
-            GUILayout.BeginArea(new Rect(10, 10, 300, 250));
+            GUILayout.BeginArea(new Rect(10, 10, 300, 200));
             GUILayout.Label($"連接狀態: {connectionStatus}");
             GUILayout.Label($"Alpha: {alpha:F2}");
             GUILayout.Label($"Beta: {beta:F2}");
             GUILayout.Label($"Gamma: {gamma:F2}");
             GUILayout.Label($"佇列數據: {dataQueue.Count}");
-            
-            GUILayout.Space(10);
-            GUILayout.Label($"旋轉狀態: {(spinTriggered ? "已觸發" : "未觸發")}");
-            GUILayout.Label($"旋轉次數: {spinCount}");
-            GUILayout.Label($"最後角度: {lastSpinAngle:F2}°");
+            GUILayout.Label($"旋转状态: {(spinTriggered ? "已触发" : "未触发")}");
+            GUILayout.Label($"旋转次数: {spinCount}");
+            GUILayout.Label($"最后角度: {lastSpinAngle:F2}°");
             
             if (!isConnected && GUILayout.Button("重新連接"))
             {
