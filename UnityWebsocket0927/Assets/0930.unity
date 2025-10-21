@@ -336,6 +336,7 @@ GameObject:
   - component: {fileID: 1054834763}
   - component: {fileID: 1054834762}
   - component: {fileID: 1054834765}
+  - component: {fileID: 1054834766}
   m_Layer: 0
   m_Name: GameObject
   m_TagString: Untagged
@@ -416,11 +417,37 @@ MonoBehaviour:
   serverUrl: wss://testgyroscopehtml-production.up.railway.app
   autoConnect: 1
   reconnectInterval: 5
+  roomId: default-room
+  role: unity-receiver
   alpha: 0
   beta: 0
   gamma: 0
+  spinTriggered: 0
+  lastSpinAngle: 0
+  spinCount: 0
   isConnected: 0
   connectionStatus: "\u672A\u9023\u63A5"
+--- !u!114 &1054834766
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1054834760}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9a6ed9a0777ad6543baa8c6629263ddf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  shakeStatusText: {fileID: 0}
+  shakeCountText: {fileID: 0}
+  shakeIntensityText: {fileID: 0}
+  shakeTypeText: {fileID: 0}
+  currentShakeStatus: "\u975C\u6B62"
+  shakeCount: 0
+  shakeIntensity: 0
+  shakeType: normal
+  showDebugInfo: 1
 --- !u!1 &1793696212
 GameObject:
   m_ObjectHideFlags: 0
