@@ -19,6 +19,11 @@ public class GyroscopeReceiver : MonoBehaviour
     [SerializeField] private float beta = 0f;
     [SerializeField] private float gamma = 0f;
     
+    [Header("旋转控制数据")]
+    [SerializeField] private bool spinTriggered = false;
+    [SerializeField] private float lastSpinAngle = 0f;
+    [SerializeField] private int spinCount = 0;
+    
     [Header("連接狀態")]
     [SerializeField] public bool isConnected = false;
     [SerializeField] public string connectionStatus = "未連接";
@@ -77,6 +82,7 @@ public class GyroscopeReceiver : MonoBehaviour
     public static event Action<ShakeData> OnShakeDataReceived; // 新增搖晃事件
     public static event Action<ScreenFrame> OnScreenCaptureReceived; // 新增螢幕捕獲事件
     public static event Action<SignalingMessage> OnWebRTCSignaling; // 新增 WebRTC 信令事件
+    public static event Action<SpinData> OnSpinDataReceived; // 新增旋轉事件
     public static event Action<string> OnRawMessage; // 新增原始訊息事件
     public static event Action OnConnected;
     public static event Action OnDisconnected;
@@ -96,6 +102,14 @@ public class GyroscopeReceiver : MonoBehaviour
         public string candidate;
         public string sdpMid;
         public int? sdpMLineIndex;
+    }
+    
+    [System.Serializable]
+    public class SpinData
+    {
+        public bool triggered;
+        public float angle;
+        public long timestamp;
     }
     
     void Start()
@@ -288,6 +302,39 @@ public class GyroscopeReceiver : MonoBehaviour
                             Debug.Log($"✅ 已加入房間");
                             break;
                             
+                        case "ready":
+                            Debug.Log($"🚀 房間準備就緒: {serverMessage.message}");
+                            Debug.Log($"🚀 等待前端發送WebRTC offer");
+                            break;
+                            
+                        case "spin":
+                            Debug.Log($"🎯 收到旋轉事件: {message}");
+                            try
+                            {
+                                var spinData = new SpinData
+                                {
+                                    triggered = true,
+                                    angle = serverMessage.data?.alpha ?? 0f,
+                                    timestamp = serverMessage.timestamp
+                                };
+                                
+                                spinTriggered = true;
+                                lastSpinAngle = spinData.angle;
+                                spinCount++;
+                                
+                                Debug.Log($"🎯 旋轉觸發! Count={spinCount}, Angle={spinData.angle:F2}");
+                                
+                                OnSpinDataReceived?.Invoke(spinData);
+                                
+                                // 0.5秒後重置狀態
+                                StartCoroutine(ResetSpinStatus());
+                            }
+                            catch (System.Exception e)
+                            {
+                                Debug.LogError($"❌ 解析旋轉數據錯誤: {e.Message}");
+                            }
+                            break;
+                            
                         case "ack":
                             Debug.Log($"✅ 確認: {serverMessage.message}");
                             break;
@@ -438,6 +485,12 @@ public class GyroscopeReceiver : MonoBehaviour
         reconnectCoroutine = null;
     }
     
+    private System.Collections.IEnumerator ResetSpinStatus()
+    {
+        yield return new WaitForSeconds(0.5f);
+        spinTriggered = false;
+    }
+    
     private async void OnApplicationQuit()
     {
         if (websocket != null)
@@ -451,12 +504,17 @@ public class GyroscopeReceiver : MonoBehaviour
     {
         if (Application.isPlaying)
         {
-            GUILayout.BeginArea(new Rect(10, 10, 300, 200));
+            GUILayout.BeginArea(new Rect(10, 10, 300, 250));
             GUILayout.Label($"連接狀態: {connectionStatus}");
             GUILayout.Label($"Alpha: {alpha:F2}");
             GUILayout.Label($"Beta: {beta:F2}");
             GUILayout.Label($"Gamma: {gamma:F2}");
             GUILayout.Label($"佇列數據: {dataQueue.Count}");
+            
+            GUILayout.Space(10);
+            GUILayout.Label($"旋轉狀態: {(spinTriggered ? "已觸發" : "未觸發")}");
+            GUILayout.Label($"旋轉次數: {spinCount}");
+            GUILayout.Label($"最後角度: {lastSpinAngle:F2}°");
             
             if (!isConnected && GUILayout.Button("重新連接"))
             {

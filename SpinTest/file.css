@@ -9,4 +9,16 @@ body {
     min-height: 100vh;                /* 最小高度為整個視窗高度 */
     flex-direction: column;           /* 設定為垂直排列（按鈕在上，旋鈕在下） */
 }
+
+/* 角度顯示區域樣式 */
+#angleDisplay {
+    font-size: 24px;                 /* 字體大小 */
+    font-weight: bold;               /* 粗體 */
+    color: #333;                     /* 文字顏色 */
+    margin-bottom: 20px;             /* 下方間距 */
+    padding: 10px 20px;              /* 內邊距 */
+    background-color: #f0f0f0;       /* 背景顏色 */
+    border-radius: 10px;             /* 圓角 */
+    border: 2px solid #ccc;          /* 邊框 */
+}
   

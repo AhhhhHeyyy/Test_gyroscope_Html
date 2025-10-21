@@ -1,11 +1,14 @@
 using UnityEngine;
+using UnityEngine.UI;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 
 public class ScreenCaptureHandler : MonoBehaviour
 {
     [Header("顯示設定")]
+    public DisplayMode displayMode = DisplayMode.RawImage;
     public Renderer targetRenderer;
+    public RawImage targetRawImage;
     public Material screenMaterial;
     
     [Header("性能設定")]
@@ -32,14 +35,15 @@ public class ScreenCaptureHandler : MonoBehaviour
         // 訂閱事件
         GyroscopeReceiver.OnScreenCaptureReceived += HandleScreenFrame;
         
-        // 初始化
-        if (targetRenderer == null)
+        // 檢查顯示目標設置
+        if (displayMode == DisplayMode.Renderer && targetRenderer == null)
             targetRenderer = GetComponent<Renderer>();
             
-        if (screenMaterial == null)
+        if (displayMode == DisplayMode.Renderer && screenMaterial == null)
         {
             screenMaterial = new Material(Shader.Find("Standard"));
-            targetRenderer.material = screenMaterial;
+            if (targetRenderer != null)
+                targetRenderer.material = screenMaterial;
         }
         
         adaptiveInterval = baseUpdateInterval;
@@ -97,9 +101,22 @@ public class ScreenCaptureHandler : MonoBehaviour
             // 載入圖像（標記為不可讀，減少記憶體使用）
             if (screenTexture.LoadImage(frame.data, true))
             {
-                // 應用到材質
-                screenMaterial.mainTexture = screenTexture;
-                targetRenderer.material = screenMaterial;
+                // 根據顯示模式應用紋理
+                if (displayMode == DisplayMode.RawImage && targetRawImage != null)
+                {
+                    targetRawImage.texture = screenTexture;
+                    Debug.Log($"📺 RawImage 模式：已設置螢幕紋理到 {targetRawImage.name}");
+                }
+                else if (displayMode == DisplayMode.Renderer && targetRenderer != null && screenMaterial != null)
+                {
+                    screenMaterial.mainTexture = screenTexture;
+                    targetRenderer.material = screenMaterial;
+                    Debug.Log($"📺 Renderer 模式：已設置螢幕紋理到材質");
+                }
+                else
+                {
+                    Debug.LogWarning($"⚠️ 顯示目標未設置或模式不匹配！模式: {displayMode}, Renderer: {targetRenderer != null}, RawImage: {targetRawImage != null}");
+                }
                 
                 frameCount++;
                 Debug.Log($"📺 處理螢幕幀 #{frameCount} (ClientId: {frame.clientId}, Size: {frame.size} bytes)");

@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>手機陀螺儀偵測器 v2.0 - 搖晃偵測版</title>
+    <!-- 引入 GSAP 核心庫 - 用於動畫效果 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <!-- 引入 GSAP Draggable 插件 - 用於拖拽功能 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/Draggable.min.js"></script>
+    <!-- 引入 jQuery 庫 - 用於 DOM 操作 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -319,6 +325,33 @@
             opacity: 0.8;
         }
         
+        /* SpinTest 旋转控制器样式 */
+        .spin-knob-container {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            margin: 0 auto;
+        }
+        
+        .spin-knob-container img {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+            transition: transform 0.1s ease;
+        }
+        
+        .spin-knob-container img:active {
+            cursor: grabbing;
+        }
+        
+        .spin-angle-display {
+            font-size: 1.2em;
+            color: #FFD700;
+            margin-top: 10px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
         @media (max-width: 600px) {
             .container {
                 padding: 15px;
@@ -350,6 +383,11 @@
                 text-align: center;
                 margin: 20px auto 0 auto;
                 max-width: 200px;
+            }
+            
+            .spin-knob-container {
+                width: 150px;
+                height: 150px;
             }
         }
     </style>
@@ -586,6 +624,48 @@
                         <div style="color: #4ECDC4; font-weight: bold;">數據大小</div>
                         <div id="captureDataSize">0 KB</div>
                     </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="cube-feature" style="border-left-color: #9C27B0;">
+            <h3>🎯 旋转控制器</h3>
+            
+            <div class="cube-preview">
+                <div class="spin-knob-container">
+                    <img id="spinKnob" src="https://i.postimg.cc/mr45tyXJ/Hi-Paint-1760323869267.png" alt="旋转控制器">
+                </div>
+                
+                <div class="cube-info">
+                    <h4>拖拽旋转控制</h4>
+                    <p>拖拽旋钮超过45度触发90度旋转</p>
+                    <p>触发时播放音效并震动反馈</p>
+                    <div id="spinAngleDisplay" class="spin-angle-display">
+                        当前角度: 0°
+                    </div>
+                </div>
+            </div>
+            
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <span class="icon">🎯</span>
+                    <h5>精确控制</h5>
+                    <p>45度触发，90度限制</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">🔊</span>
+                    <h5>音效反馈</h5>
+                    <p>触发时播放音效</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">📳</span>
+                    <h5>震动反馈</h5>
+                    <p>移动设备震动</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">📡</span>
+                    <h5>实时传输</h5>
+                    <p>WebSocket发送到Unity</p>
                 </div>
             </div>
         </div>
@@ -888,6 +968,19 @@
                         size: size, 
                         timestamp: header.timestamp 
                     });
+                }
+            }
+            
+            sendSpinEvent(angle, timestamp) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        type: 'spin',
+                        triggered: true,
+                        angle: angle,
+                        timestamp: timestamp || Date.now()
+                    };
+                    console.log('📤 發送旋轉事件:', data);
+                    this.ws.send(JSON.stringify(data));
                 }
             }
             
@@ -1761,6 +1854,167 @@
             if (!isNaN(alpha) && !isNaN(beta) && !isNaN(gamma)) {
                 updateChart(alpha, beta, gamma);
             }
+        });
+        
+        // ========== SpinTest 旋转控制器功能 ==========
+        
+        // 創建音效對象
+        const spinSoundEffect = new Audio('se_door_hanekaeri.mp3');
+        
+        // 創建震動函數
+        function triggerSpinVibration(pattern = [100, 50, 100]) {
+            console.log("嘗試觸發旋轉震動，模式:", pattern);
+            
+            if ("vibrate" in navigator) {
+                try {
+                    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                    console.log("檢測到移動設備:", isMobile);
+                    
+                    if (isMobile) {
+                        navigator.vibrate(pattern);
+                        console.log("移動設備旋轉震動觸發:", pattern);
+                    } else {
+                        console.log("桌面設備，震動功能不可用");
+                    }
+                } catch (error) {
+                    console.log("旋轉震動執行失敗:", error);
+                }
+            } else {
+                console.log("此設備或瀏覽器不支援震動功能");
+            }
+        }
+        
+        // 更新旋轉角度顯示
+        function updateSpinAngleDisplay() {
+            const currentRotation = gsap.getProperty("#spinKnob", "rotation");
+            $("#spinAngleDisplay").text("當前角度: " + currentRotation.toFixed(1) + "°");
+        }
+        
+        // 初始化旋轉控制器
+        function initializeSpinController() {
+            console.log("開始初始化旋轉控制器...");
+            
+            // 檢查必要的庫是否已載入
+            if (typeof gsap === 'undefined') {
+                console.error("GSAP 未載入！");
+                return;
+            }
+            
+            if (typeof Draggable === 'undefined') {
+                console.error("Draggable 插件未載入！");
+                return;
+            }
+            
+            // 檢查旋鈕元素是否存在
+            const knobElement = document.getElementById("spinKnob");
+            if (!knobElement) {
+                console.error("找不到 #spinKnob 元素！");
+                return;
+            }
+            
+            console.log("開始創建旋轉 Draggable...");
+            
+            // 創建可拖拽的旋鈕
+            const spinDraggable = Draggable.create("#spinKnob", {
+                type: "rotation",
+                inertia: true,
+                onDragStart: function() {
+                    // 記錄開始拖拽時的角度
+                    this.startAngle = this.rotation;
+                    console.log("開始拖拽旋轉，起始角度:", this.startAngle);
+                },
+                onDrag: function() {
+                    let currentAngle = this.rotation;
+                    let rotationDelta = currentAngle - this.startAngle;
+                    
+                    // 實時更新角度顯示
+                    updateSpinAngleDisplay();
+                    
+                    // 限制旋轉增量在 90 度以內
+                    if (Math.abs(rotationDelta) > 45) {
+                        // 如果旋轉超過 45 度，就限制到 90 度
+                        let targetAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
+                        
+                        // 強制設定到限制的角度，使用回彈動畫
+                        gsap.to(this.target, {
+                            rotation: targetAngle,
+                            duration: 0.4,
+                            ease: "elastic.out(1, 0.4)"
+                        });
+                        
+                        // 播放回彈音效
+                        spinSoundEffect.currentTime = 0; // 重置音效到開始位置
+                        spinSoundEffect.play().catch(e => console.log("旋轉音效播放失敗:", e));
+                        
+                        // 發送旋轉事件到Unity
+                        gyroWS.sendSpinEvent(targetAngle);
+                        
+                        // 稍微延遲震動，讓聲音先開始播放
+                        setTimeout(() => {
+                            triggerSpinVibration(200); // 設備震動200毫秒
+                        }, 50); // 延遲50ms讓聲音先開始
+                        
+                        console.log(`旋轉被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
+                    } else {
+                        console.log("拖拽中，旋轉角度:", this.rotation, "增量:", rotationDelta.toFixed(1));
+                    }
+                },
+                onDragEnd: function() {
+                    // 拖拽結束時進行最終吸附
+                    let currentAngle = this.rotation;
+                    let rotationDelta = currentAngle - this.startAngle;
+                    
+                    // 計算最終角度（限制在 90 度增量內）
+                    let finalAngle = this.startAngle;
+                    if (Math.abs(rotationDelta) > 45) {
+                        finalAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
+                    } else {
+                        // 如果增量小於 45 度，回到起始角度
+                        finalAngle = this.startAngle;
+                    }
+                    
+                    // 使用強烈的回彈動畫吸附到最終角度
+                    gsap.to(this.target, {
+                        rotation: finalAngle,
+                        duration: 0.6,
+                        ease: "elastic.out(1, 0.3)"
+                    });
+
+                    // 如果最終角度與起始角度不同，播放回彈音效和震動
+                    if (finalAngle !== this.startAngle) {
+                        spinSoundEffect.currentTime = 0; // 重置音效到開始位置
+                        spinSoundEffect.play().catch(e => console.log("旋轉音效播放失敗:", e));
+                        
+                        // 發送旋轉事件到Unity
+                        gyroWS.sendSpinEvent(finalAngle);
+                        
+                        // 稍微延遲震動，讓聲音先開始播放
+                        setTimeout(() => {
+                            triggerSpinVibration(200); // 設備震動200毫秒
+                        }, 0); // 延遲50ms讓聲音先開始
+                    }
+
+                    console.log(`拖拽結束，最終角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
+                    
+                    // 更新最終角度顯示
+                    updateSpinAngleDisplay();
+                }
+            });
+            
+            console.log("旋轉 Draggable 創建成功:", spinDraggable);
+            
+            // 初始化角度顯示
+            updateSpinAngleDisplay();
+            
+            console.log("旋轉控制器初始化完成！");
+        }
+        
+        // 等待頁面完全載入後初始化旋轉控制器
+        $(document).ready(function() {
+            // 延遲初始化，確保其他功能先載入
+            setTimeout(() => {
+                initializeSpinController();
+            }, 1000);
         });
     </script>
 </body>

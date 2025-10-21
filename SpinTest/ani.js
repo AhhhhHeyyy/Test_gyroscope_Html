@@ -69,6 +69,9 @@ $(document).ready(function() {
       let currentAngle = this.rotation;
       let rotationDelta = currentAngle - this.startAngle;
       
+      // 實時更新角度顯示
+      updateAngleDisplay();
+      
       // 限制旋轉增量在 90 度以內
       if (Math.abs(rotationDelta) > 45) {
         // 如果旋轉超過 45 度，就限制到 90 度
@@ -128,16 +131,22 @@ $(document).ready(function() {
       }
 
       console.log(`拖拽結束，最終角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
+      
+      // 更新最終角度顯示
+      updateAngleDisplay();
     }
   });
   
   console.log("Draggable 創建成功:", draggable);
   
-  // 綁定按鈕點擊事件
-  $("#rotation").click(function() {
-    gsap.to("#knob", { rotation: "+=90", duration: 1, ease: "power2.inOut" });
-    console.log("按鈕被點擊，旋轉 90 度");
-  });
+  // 更新角度顯示的函數
+  function updateAngleDisplay() {
+    const currentRotation = gsap.getProperty("#knob", "rotation");
+    $("#angleDisplay").text("當前角度: " + currentRotation.toFixed(1) + "°");
+  }
+  
+  // 初始化角度顯示
+  updateAngleDisplay();
   
   // 綁定震動測試按鈕
   $("#vibrateTest").click(function() {

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SimpleWebRTC 连接测试 - 端口 8081</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .log { background: #f5f5f5; padding: 10px; border: 1px solid #ddd; height: 300px; overflow-y: auto; }
+        button { padding: 10px 20px; margin: 5px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>SimpleWebRTC 连接测试 - 端口 8081</h1>
+    
+    <div class="status disconnected" id="status">未连接</div>
+    
+    <button onclick="connect()">连接 WebSocket (8081)</button>
+    <button onclick="disconnect()">断开连接</button>
+    <button onclick="sendJoin()">发送 Join 消息</button>
+    <button onclick="clearLog()">清空日志</button>
+    
+    <h3>连接日志</h3>
+    <div class="log" id="log"></div>
+
+    <script>
+        let ws = null;
+        
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('log');
+            logDiv.innerHTML += `[${time}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function updateStatus(status, className) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = status;
+            statusDiv.className = `status ${className}`;
+        }
+        
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log("⚠️ 已经连接");
+                return;
+            }
+            
+            updateStatus("连接中...", "disconnected");
+            ws = new WebSocket('ws://localhost:8081');
+            
+            ws.onopen = () => {
+                log("✅ WebSocket 连接已建立 (端口 8081)");
+                updateStatus("已连接", "connected");
+            };
+            
+            ws.onmessage = (event) => {
+                log(`📨 收到消息: ${event.data}`);
+                try {
+                    const msg = JSON.parse(event.data);
+                    log(`📋 消息类型: ${msg.type}`);
+                    if (msg.type === 'joined') {
+                        log(`✅ 成功加入房间: ${msg.room} (角色: ${msg.role})`);
+                    }
+                    if (msg.type === 'ready') {
+                        log(`📢 房间已就绪: ${msg.room}`);
+                    }
+                    if (msg.type === 'error') {
+                        log(`❌ 服务器错误: ${msg.message}`);
+                    }
+                } catch (e) {
+                    log(`❌ 消息解析失败: ${e.message}`);
+                }
+            };
+            
+            ws.onclose = () => {
+                log("❌ WebSocket 连接已关闭");
+                updateStatus("已断开", "disconnected");
+            };
+            
+            ws.onerror = (error) => {
+                log(`❌ WebSocket 错误: ${error}`);
+                updateStatus("连接错误", "disconnected");
+            };
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+        
+        function sendJoin() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log("❌ 请先连接 WebSocket");
+                return;
+            }
+            
+            const joinMsg = {
+                type: "join",
+                room: "default-room",
+                role: "web-sender"
+            };
+            
+            ws.send(JSON.stringify(joinMsg));
+            log("📤 已发送 join 消息");
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        // 页面加载时自动连接
+        window.addEventListener('load', () => {
+            log("🚀 页面加载完成，可以开始测试");
+            log("📋 测试步骤:");
+            log("1. 点击 '连接 WebSocket (8081)'");
+            log("2. 点击 '发送 Join 消息'");
+            log("3. 观察服务器日志");
+        });
+    </script>
+</body>
+</html>

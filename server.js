@@ -26,6 +26,79 @@ const clients = new Set();
 // 房間管理
 const rooms = new Map(); // roomId -> Set<WebSocket>
 
+// SimpleWebRTC 消息格式转换函数 - 使用管道分隔格式
+function convertToSimpleWebRTCFormat(msg, senderRole) {
+    const senderPeerId = msg.from || senderRole;
+    const receiverPeerId = msg.to || "ALL";
+    const connectionCount = clients.size;
+    const isVideoAudioSender = senderRole === 'web-sender';
+
+    switch (msg.type) {
+        case 'offer':
+            return `${msg.type.toUpperCase()}|${senderPeerId}|${receiverPeerId}|${msg.sdp}|${connectionCount}|${isVideoAudioSender}`;
+        case 'answer':
+            return `${msg.type.toUpperCase()}|${senderPeerId}|${receiverPeerId}|${msg.sdp}|${connectionCount}|${isVideoAudioSender}`;
+        case 'candidate':
+            const candidateData = JSON.stringify({
+                candidate: msg.candidate,
+                sdpMLineIndex: msg.sdpMLineIndex,
+                sdpMid: msg.sdpMid
+            });
+            return `CANDIDATE|${senderPeerId}|${receiverPeerId}|${candidateData}|${connectionCount}|${isVideoAudioSender}`;
+        case 'join':
+            return `NEWPEER|${senderPeerId}|${receiverPeerId}|${JSON.stringify({room: msg.room, role: msg.role})}|${connectionCount}|${isVideoAudioSender}`;
+        case 'ready':
+            return `OTHER|${senderPeerId}|${receiverPeerId}|${JSON.stringify({type: 'ready', room: msg.room})}|${connectionCount}|${isVideoAudioSender}`;
+        default:
+            return `OTHER|${senderPeerId}|${receiverPeerId}|${JSON.stringify(msg)}|${connectionCount}|${isVideoAudioSender}`;
+    }
+}
+
+// 解析 SimpleWebRTC 管道分隔格式消息
+function parseSimpleWebRTCMessage(messageString) {
+    const parts = messageString.split('|');
+    if (parts.length < 6) return null;
+    
+    return {
+        type: parts[0],
+        senderPeerId: parts[1],
+        receiverPeerId: parts[2],
+        message: parts[3],
+        connectionCount: parseInt(parts[4]),
+        isVideoAudioSender: parts[5] === 'true'
+    };
+}
+
+// 格式转换器：确保所有消息都符合 SimpleWebRTC 标准格式
+function adaptToSimpleWebRTC(msg) {
+    // 1) 若已是标准格式，直接返回
+    if (["join", "leave", "offer", "answer", "candidate", "broadcast", 
+         "peer-joined", "peer-left"].includes(msg.type)) {
+        return msg;
+    }
+
+    // 2) 兼容旧格式转换
+    if (msg.action === "join" && msg.id) {
+        return { type: "join", from: msg.id };
+    }
+
+    if (msg.signal === "offer" && msg.sender && msg.target && msg.sdp) {
+        return { type: "offer", from: msg.sender, to: msg.target, sdp: msg.sdp };
+    }
+
+    if (msg.signal === "answer" && msg.sender && msg.target && msg.sdp) {
+        return { type: "answer", from: msg.sender, to: msg.target, sdp: msg.sdp };
+    }
+
+    if (msg.ice && msg.sender && msg.target) {
+        return { type: "candidate", from: msg.sender, to: msg.target, candidate: msg.ice };
+    }
+
+    // 3) 丢弃不兼容的消息，避免发送 type:"error" 给 Unity
+    console.log(`⚠️ 丢弃不兼容的消息: ${JSON.stringify(msg)}`);
+    return null;
+}
+
 // 連接統計
 const stats = {
     totalConnections: 0,
@@ -108,12 +181,107 @@ wss.on('connection', (ws, req) => {
             
             // 文字數據：轉字串再解析
             const text = (typeof data === 'string') ? data : data.toString('utf8');
-            const msg = JSON.parse(text);
+            
+            // 检查是否为 SimpleWebRTC 管道分隔格式
+            if (text.includes('|') && text.split('|').length >= 6) {
+                const simpleMsg = parseSimpleWebRTCMessage(text);
+                if (simpleMsg) {
+                    console.log(`📨 收到 SimpleWebRTC 消息: ${simpleMsg.type} from ${simpleMsg.senderPeerId}`);
+                    
+                    // 处理 SimpleWebRTC 格式的消息
+                    if (simpleMsg.type === 'NEWPEER') {
+                        // 处理加入房间
+                        const joinData = JSON.parse(simpleMsg.message);
+                        const { room, role } = joinData;
+                        ws.room = room;
+                        ws.role = role;
+                        
+                        const peers = rooms.get(room) || new Set();
+                        const sameRole = Array.from(peers).find(p => p.role === role);
+                        if (sameRole) {
+                            sameRole.close(1000, 'Replaced by new peer');
+                        }
+                        
+                        peers.add(ws);
+                        rooms.set(room, peers);
+                        stats.rooms = rooms.size;
+                        
+                        // 发送 SimpleWebRTC 格式的确认
+                        ws.send(convertToSimpleWebRTCFormat({
+                            type: 'join',
+                            room: room,
+                            role: role
+                        }, role));
+                        
+                        // 发送标准格式的 peer-joined 通知
+                        for (const peer of peers) {
+                            if (peer !== ws && peer.readyState === WebSocket.OPEN) {
+                                peer.send(JSON.stringify({
+                                    type: 'peer-joined',
+                                    from: role
+                                }));
+                            }
+                        }
+                        
+                        console.log(`✅ ${role} joined room: ${room}, peers: ${peers.size}`);
+                        
+                        // 检查房间是否已满
+                        if (peers.size === 2) {
+                            console.log(`🤝 Room ${room} has both peers ready, notifying all`);
+                            for (const peer of peers) {
+                                if (peer.readyState === WebSocket.OPEN) {
+                                    const readyMsg = convertToSimpleWebRTCFormat({
+                                        type: 'ready',
+                                        room: room
+                                    }, peer.role);
+                                    peer.send(readyMsg);
+                                }
+                            }
+                        }
+                        return;
+                    }
+                    
+                    // 处理 WebRTC 信令消息
+                    if (['OFFER', 'ANSWER', 'CANDIDATE'].includes(simpleMsg.type)) {
+                        if (!ws.room) return;
+                        
+                        const peers = rooms.get(ws.room) || new Set();
+                        
+                        for (const peer of peers) {
+                            if (peer !== ws && peer.readyState === WebSocket.OPEN) {
+                                if (simpleMsg.receiverPeerId !== 'ALL' && peer.role !== simpleMsg.receiverPeerId) {
+                                    continue;
+                                }
+                                peer.send(text); // 直接转发原始消息
+                            }
+                        }
+                        
+                        console.log(`📡 轉發 ${simpleMsg.type} from ${simpleMsg.senderPeerId} to room ${ws.room}`);
+                        return;
+                    }
+                }
+            }
+            
+            // 尝试解析为 JSON 格式（传统格式）
+            let msg;
+            try {
+                msg = JSON.parse(text);
+            } catch (e) {
+                console.log(`⚠️ JSON 解析失败，丢弃消息: ${text.substring(0, 100)}...`);
+                return; // 丢弃无法解析的消息
+            }
+            
+            // 使用格式转换器，确保符合 SimpleWebRTC 标准
+            const adaptedMsg = adaptToSimpleWebRTC(msg);
+            if (!adaptedMsg) {
+                return; // 丢弃不兼容的消息，避免发送 type:"error" 给 Unity
+            }
+            
             stats.totalMessages++;
             
             // 房間加入
-            if (msg.type === 'join') {
-                const { room, role } = msg; // role: 'web-sender' / 'unity-receiver'
+            if (adaptedMsg.type === 'join') {
+                const { room, role } = adaptedMsg; // role: 'web-sender' / 'unity-receiver'
                 ws.room = room;
                 ws.role = role;
                 
@@ -129,6 +297,16 @@ wss.on('connection', (ws, req) => {
                 rooms.set(room, peers);
                 stats.rooms = rooms.size;
                 
+                // 发送 SimpleWebRTC 格式的加入确认
+                const joinConfirm = convertToSimpleWebRTCFormat({
+                    type: 'join',
+                    room: room,
+                    role: role
+                }, role);
+                
+                ws.send(joinConfirm);
+                
+                // 发送传统格式的确认（向后兼容）
                 ws.send(JSON.stringify({ 
                     type: 'joined', 
                     room, 
@@ -145,6 +323,14 @@ wss.on('connection', (ws, req) => {
                     // 通知所有同房 peer 準備就緒
                     for (const peer of peers) {
                         if (peer.readyState === WebSocket.OPEN) {
+                            // 发送 SimpleWebRTC 格式的就绪消息
+                            const readyMsg = convertToSimpleWebRTCFormat({
+                                type: 'ready',
+                                room: room
+                            }, peer.role);
+                            peer.send(readyMsg);
+                            
+                            // 发送传统格式的就绪消息（向后兼容）
                             peer.send(JSON.stringify({
                                 type: 'ready',
                                 room: room,
@@ -158,48 +344,68 @@ wss.on('connection', (ws, req) => {
             }
             
             // WebRTC 原生三型別轉發
-            if (['offer', 'answer', 'candidate'].includes(msg.type)) {
+            if (['offer', 'answer', 'candidate'].includes(adaptedMsg.type)) {
                 if (!ws.room) return;
                 
                 const peers = rooms.get(ws.room) || new Set();
+                
+                // 转换消息格式为 SimpleWebRTC 兼容格式
+                const simpleWebRTCMsg = convertToSimpleWebRTCFormat(adaptedMsg, ws.role);
+                
+                // 添加传统格式的 from/to 字段（向后兼容）
+                const enhancedMsg = {
+                    ...adaptedMsg,
+                    from: ws.role || 'unknown',
+                    to: adaptedMsg.to || 'all'
+                };
+                
                 for (const peer of peers) {
                     if (peer !== ws && peer.readyState === WebSocket.OPEN) {
-                        peer.send(data);
+                        // 如果指定了 to 字段，只发送给匹配的 peer
+                        if (simpleWebRTCMsg.receiverPeerId !== 'all' && peer.role !== simpleWebRTCMsg.receiverPeerId) {
+                            continue;
+                        }
+                        
+                        // 发送 SimpleWebRTC 格式消息（管道分隔格式）
+                        peer.send(simpleWebRTCMsg);
+                        
+                        // 发送传统格式消息（向后兼容）
+                        peer.send(JSON.stringify(enhancedMsg));
                     }
                 }
                 
                 // 更新統計
-                if (msg.type === 'offer') stats.webrtcOffers++;
-                else if (msg.type === 'answer') stats.webrtcAnswers++;
-                else if (msg.type === 'candidate') stats.webrtcCandidates++;
+                if (adaptedMsg.type === 'offer') stats.webrtcOffers++;
+                else if (adaptedMsg.type === 'answer') stats.webrtcAnswers++;
+                else if (adaptedMsg.type === 'candidate') stats.webrtcCandidates++;
                 
-                console.log(`📡 轉發 ${msg.type} from ${ws.role} to room ${ws.room}`);
+                console.log(`📡 轉發 ${adaptedMsg.type} from ${ws.role} to room ${ws.room} (SimpleWebRTC格式)`);
                 return;
             }
             
             let out;
-            if (msg.type === 'screen_capture_header') {
+            if (adaptedMsg.type === 'screen_capture_header') {
                 // 儲存螢幕捕獲header，等待二進位數據
-                ws.screenCaptureHeader = msg;
+                ws.screenCaptureHeader = adaptedMsg;
                 console.log('📺 收到螢幕捕獲header:', {
-                    clientId: msg.clientId,
-                    size: msg.size,
-                    timestamp: msg.timestamp
+                    clientId: adaptedMsg.clientId,
+                    size: adaptedMsg.size,
+                    timestamp: adaptedMsg.timestamp
                 });
                 return; // 不廣播，等待二進位數據
-            } else if (msg.type === 'shake') {
+            } else if (adaptedMsg.type === 'shake') {
                 // 處理搖晃數據
                 stats.shakeMessages++;
                 console.log('📳 收到搖晃數據:', {
-                    count: msg.data?.count,
-                    intensity: msg.data?.intensity,
-                    shakeType: msg.data?.shakeType,
+                    count: adaptedMsg.data?.count,
+                    intensity: adaptedMsg.data?.intensity,
+                    shakeType: adaptedMsg.data?.shakeType,
                     clientId: stats.totalConnections
                 });
                 
                 out = { 
                     type: 'shake', 
-                    data: msg.data, 
+                    data: adaptedMsg.data, 
                     timestamp: Date.now(),
                     clientId: stats.totalConnections
                 };
@@ -207,17 +413,17 @@ wss.on('connection', (ws, req) => {
                 // 預設當作陀螺儀角度（向後相容）
                 stats.gyroscopeMessages++;
                 console.log('📱 收到陀螺儀數據:', {
-                    alpha: msg.alpha,
-                    beta: msg.beta,
-                    gamma: msg.gamma,
+                    alpha: adaptedMsg.alpha,
+                    beta: adaptedMsg.beta,
+                    gamma: adaptedMsg.gamma,
                     clientId: stats.totalConnections
                 });
                 
                 const gyroData = {
-                    alpha: msg.alpha,
-                    beta: msg.beta,
-                    gamma: msg.gamma,
-                    timestamp: msg.timestamp,
+                    alpha: adaptedMsg.alpha,
+                    beta: adaptedMsg.beta,
+                    gamma: adaptedMsg.gamma,
+                    timestamp: adaptedMsg.timestamp,
                     clientId: stats.totalConnections
                 };
                 
@@ -382,7 +588,7 @@ setInterval(() => {
     console.log(`📱 數據統計: 陀螺儀 ${stats.gyroscopeMessages}, 搖晃 ${stats.shakeMessages}, 螢幕捕獲 ${stats.screenCaptureMessages}`);
 }, 60000); // 每分鐘報告一次
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 8081;
 server.listen(PORT, () => {
     console.log('🚀 陀螺儀 & 螢幕捕獲 WebSocket伺服器啟動成功!');
     console.log(`📱 靜態檔案服務: http://localhost:${PORT}`);

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>Unity WebRTC Sender</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background-color: #121212;
+      color: #fff;
+      text-align: center;
+      padding: 30px;
+    }
+    video {
+      width: 80%;
+      border: 2px solid #00bcd4;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+    button {
+      background-color: #00bcd4;
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      font-size: 16px;
+      margin: 8px;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+    button:hover {
+      background-color: #0097a7;
+    }
+    #log {
+      margin-top: 20px;
+      text-align: left;
+      max-width: 800px;
+      margin-inline: auto;
+      background: #1e1e1e;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 13px;
+      overflow-y: auto;
+      height: 200px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎥 Unity WebRTC 發送端</h1>
+  <p>此頁面將捕獲畫面並透過 WebRTC 傳送給 Unity。</p>
+  <button id="screenBtn">分享螢幕</button>
+  <button id="cameraBtn">啟用攝影機</button>
+  <video id="preview" autoplay playsinline></video>
+
+  <div id="log"></div>
+
+  <script>
+    const SIGNAL_URL = "ws://localhost:8081"; // ← 本地测试服务器
+    const ROOM_ID = "default-room";
+
+    const ws = new WebSocket(SIGNAL_URL);
+    let pc, localStream;
+    const logBox = document.getElementById("log");
+    const videoEl = document.getElementById("preview");
+
+    function log(msg) {
+      console.log(msg);
+      logBox.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    ws.onopen = () => {
+      log("✅ 已連接至信令伺服器");
+      ws.send(JSON.stringify({ type: "join", room: ROOM_ID, role: "web-sender" }));
+    };
+
+    ws.onerror = (error) => {
+      log("❌ WebSocket 连接错误: " + error);
+    };
+
+    ws.onclose = () => {
+      log("⚠️ WebSocket 连接已断开");
+    };
+
+    ws.onmessage = async (event) => {
+      const msg = JSON.parse(event.data);
+      switch (msg.type) {
+        case "joined":
+          log("👋 已加入房間: " + msg.room);
+          break;
+        case "ready":
+          log("📡 房間就緒，等待媒體流...");
+          // ✅ 不再在這裡調用 createOffer()，因為會在 startScreenShare/startCamera 中自動調用
+          break;
+        case "error":
+          log("❌ 服务器错误: " + msg.message);
+          break;
+        case "answer":
+          log("✅ 收到 Unity Answer");
+          await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
+          break;
+        case "candidate":
+          log("📨 收到遠端 ICE 候選");
+          await pc.addIceCandidate(msg.candidate);
+          break;
+        default:
+          log("⚠️ 未知訊息: " + event.data);
+      }
+    };
+
+    async function createPeerConnection() {
+      pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          ws.send(JSON.stringify({ 
+            type: "candidate", 
+            room: ROOM_ID, 
+            from: "web-sender",
+            candidate: event.candidate 
+          }));
+        }
+      };
+
+      localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+      log("🎞️ 已將影像軌道加入 RTCPeerConnection");
+    }
+
+    async function createOffer() {
+      if (!pc) await createPeerConnection();
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      // --- ✨ 只保留 VP8，移除所有其他 codec ---
+      let lines = offer.sdp.split("\r\n");
+      let mLineIndex = lines.findIndex(line => line.startsWith("m=video"));
+
+      if (mLineIndex !== -1) {
+        // 找出 VP8 payload type（通常是96）
+        const vp8Line = lines.find(line => line.includes("VP8/90000"));
+        const payload = vp8Line ? vp8Line.match(/a=rtpmap:(\d+)/)[1] : "96";
+
+        // 重新組合 m=video 行，只保留 VP8 payload
+        lines[mLineIndex] = `m=video 9 UDP/TLS/RTP/SAVPF ${payload}`;
+
+        // 刪掉所有不是該 payload 的行
+        lines = lines.filter(l =>
+          !(
+            l.startsWith("a=rtpmap:") && !l.includes("VP8/90000")
+          ) &&
+          !(
+            l.startsWith("a=fmtp:") && !l.includes(payload)
+          ) &&
+          !(
+            l.startsWith("a=rtcp-fb:") && !l.includes(payload)
+          )
+        );
+      }
+
+      // --- (可選) 加入起始碼率設定 ---
+      lines.push("a=fmtp:96 x-google-start-bitrate=1500");
+      lines.push("a=fmtp:96 x-google-min-bitrate=500");
+      lines.push("a=fmtp:96 x-google-max-bitrate=4000");
+
+      const finalSdp = lines.join("\r\n");
+      console.log("📤 最終 SDP:\n", finalSdp);
+
+      log("📤 發送 VP8 Offer 給 Unity");
+      ws.send(JSON.stringify({
+        type: "offer",
+        room: ROOM_ID,
+        from: "web-sender",
+        sdp: finalSdp
+      }));
+    }
+
+    async function startScreenShare() {
+      try {
+        localStream = await navigator.mediaDevices.getDisplayMedia({ 
+          video: { frameRate: 30, width: 1280, height: 720 },
+          audio: false 
+        });
+        videoEl.srcObject = localStream;
+        log("🖥️ 已啟動螢幕分享 (30fps, 1280x720)");
+        
+        // ✅ 取得螢幕流後立即建立並發送 Offer
+        await createOffer();
+        
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ready", room: ROOM_ID }));
+      } catch (e) {
+        log("❌ 螢幕分享失敗: " + e);
+      }
+    }
+
+    async function startCamera() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { frameRate: 30, width: 1280, height: 720 },
+          audio: false 
+        });
+        videoEl.srcObject = localStream;
+        log("📷 已啟動攝影機 (30fps, 1280x720)");
+        
+        // ✅ 取得攝影機流後立即建立並發送 Offer
+        await createOffer();
+        
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ready", room: ROOM_ID }));
+      } catch (e) {
+        log("❌ 攝影機啟動失敗: " + e);
+      }
+    }
+
+    document.getElementById("screenBtn").onclick = startScreenShare;
+    document.getElementById("cameraBtn").onclick = startCamera;
+  </script>
+</body>
+</html>
