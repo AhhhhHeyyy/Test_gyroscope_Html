@@ -193,7 +193,39 @@ public class GyroscopeReceiver : MonoBehaviour
                     // 觸發原始訊息事件
                     OnRawMessage?.Invoke(message);
                     
-                    // 解析服務器消息格式
+                    // 首先嘗試解析為直接的陀螺儀數據格式（來自網頁端）
+                    if (message.Contains("\"type\":\"gyroscope\""))
+                    {
+                        try
+                        {
+                            // 嘗試解析為直接的陀螺儀數據格式
+                            var directGyroData = JsonUtility.FromJson<GyroscopeData>(message);
+                            if (directGyroData != null && directGyroData.alpha != 0 && directGyroData.beta != 0 && directGyroData.gamma != 0)
+                            {
+                                Debug.Log($"🎯 收到直接陀螺儀數據: Alpha={directGyroData.alpha}, Beta={directGyroData.beta}, Gamma={directGyroData.gamma}");
+                                
+                                // 更新數據
+                                alpha = directGyroData.alpha;
+                                beta = directGyroData.beta;
+                                gamma = directGyroData.gamma;
+                                
+                                // 加入佇列
+                                dataQueue.Enqueue(directGyroData);
+                                
+                                // 觸發事件
+                                OnGyroscopeDataReceived?.Invoke(directGyroData);
+                                
+                                Debug.Log($"📊 更新後陀螺儀數據: Alpha={alpha:F2}, Beta={beta:F2}, Gamma={gamma:F2}");
+                                return; // 成功處理，直接返回
+                            }
+                        }
+                        catch (System.Exception e)
+                        {
+                            Debug.LogWarning($"⚠️ 無法解析為直接陀螺儀數據格式: {e.Message}");
+                        }
+                    }
+                    
+                    // 如果直接解析失敗，嘗試解析為服務器消息格式
                     var serverMessage = JsonUtility.FromJson<ServerMessage>(message);
                     Debug.Log($"🔍 解析後的消息類型: {serverMessage.type}");
                     Debug.Log($"🔍 消息內容: {JsonUtility.ToJson(serverMessage, true)}");
@@ -206,7 +238,7 @@ public class GyroscopeReceiver : MonoBehaviour
                             break;
                             
                         case "gyroscope":
-                            // 處理陀螺儀數據
+                            // 處理陀螺儀數據（服務器格式）
                             Debug.Log($"🎯 收到陀螺儀消息，數據是否為空: {serverMessage.data == null}");
                             if (serverMessage.data != null)
                             {
