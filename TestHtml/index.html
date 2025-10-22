@@ -361,17 +361,17 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>📱 手機陀螺儀偵測器 v2.1</h1>
-        <div style="text-align: center; margin-bottom: 20px; font-size: 1.2em; color: #FFD700;">
-            🆕 搖晃偵測 + 螢幕捕獲 | 三軸感測器 | 即時數據傳輸
+    <div class="container" style="background: none; box-shadow: none; border: none; padding: 0; margin: 0; max-width: none; width: 100vw; min-height: 100vh; display: flex; justify-content: center; align-items: center;">
+        <h1 style="display: none;">🎯 旋轉控制器</h1>
+        <div style="display: none; text-align: center; margin-bottom: 20px; font-size: 1.2em; color: #FFD700;">
+            🎮 拖拽旋轉控制 | 音效震動回饋 | Unity 即時同步
         </div>
         
-        <div id="status" class="status">
+        <div id="status" class="status" style="display: none;">
             正在檢查陀螺儀支援...
         </div>
         
-        <div class="data-grid">
+        <div class="data-grid" style="display: none;">
             <div class="data-card">
                 <h3>X 軸 (Alpha)</h3>
                 <div id="alpha" class="data-value">0.00</div>
@@ -415,7 +415,7 @@
             </div>
         </div>
         
-        <div class="chart-container">
+        <div class="chart-container" style="display: none;">
             <h3 style="text-align: center; margin-top: 0; color: #FFD700;">即時數據圖表</h3>
             <div class="chart" id="chart">
                 <div class="chart-line" id="alpha-line" style="top: 33%; background: #FF6B6B;"></div>
@@ -424,7 +424,7 @@
             </div>
         </div>
         
-        <div class="cube-feature">
+        <div class="cube-feature" style="display: none;">
             <h3>🆕 v2.0 新功能：智能搖晃偵測</h3>
             
             <div class="cube-preview">
@@ -471,7 +471,7 @@
             </div>
         </div>
         
-        <div class="cube-feature" style="border-left-color: #4ECDC4;">
+        <div class="cube-feature" style="border-left-color: #4ECDC4; display: none;">
             <h3>🎲 3D 陀螺儀立方體</h3>
             
             <div class="cube-preview">
@@ -517,7 +517,7 @@
             </div>
         </div>
         
-        <div class="cube-feature" style="border-left-color: #FF9800;">
+        <div class="cube-feature" style="border-left-color: #FF9800; display: none;">
             <h3>📺 螢幕捕獲串流</h3>
             
             <div class="cube-preview">
@@ -596,50 +596,19 @@
             </div>
         </div>
         
-        <div class="cube-feature" style="border-left-color: #9C27B0;">
-            <h3>🎯 旋转控制器</h3>
-            
-            <div class="cube-preview">
-                <div style="position: relative; width: 200px; height: 200px;">
+        <div class="cube-feature" style="display: flex; justify-content: center; align-items: center; min-height: 70vh; background: none; box-shadow: none; border-left: none; padding: 0; margin: 0; border: none; border-radius: 0;">
+            <div class="cube-preview" style="display: block; margin: 0 auto;">
+                <div style="position: relative; width: 400px; height: 400px; margin: 0 auto;">
                     <img id="spinKnob" src="https://i.postimg.cc/mr45tyXJ/Hi-Paint-1760323869267.png" 
                          style="width: 100%; height: 100%; cursor: grab;">
                 </div>
-                
-                <div class="cube-info">
-                    <h4>拖拽旋转控制</h4>
-                    <p>拖拽旋钮超过45度触发90度旋转</p>
-                    <p>触发时播放音效并震动反馈</p>
-                    <div id="spinAngleDisplay" style="font-size: 1.2em; color: #FFD700; margin-top: 10px;">
-                        当前角度: 0°
-                    </div>
-                </div>
             </div>
             
-            <div class="feature-grid">
-                <div class="feature-item">
-                    <span class="icon">🎯</span>
-                    <h5>精确控制</h5>
-                    <p>45度触发，90度限制</p>
-                </div>
-                <div class="feature-item">
-                    <span class="icon">🔊</span>
-                    <h5>音效反馈</h5>
-                    <p>触发时播放音效</p>
-                </div>
-                <div class="feature-item">
-                    <span class="icon">📳</span>
-                    <h5>震动反馈</h5>
-                    <p>移动设备震动</p>
-                </div>
-                <div class="feature-item">
-                    <span class="icon">📡</span>
-                    <h5>Unity同步</h5>
-                    <p>实时传输到Unity</p>
-                </div>
-            </div>
+            <div class="cube-info" style="display: none;"></div>
+            <div class="feature-grid" style="display: none;"></div>
         </div>
         
-        <div class="deploy-info">
+        <div class="deploy-info" style="display: none;">
             <h3>🚀 快速部署方案</h3>
             <p><strong>方案一：Netlify（推薦）</strong></p>
             <ol>
@@ -666,7 +635,7 @@
             </ol>
         </div>
         
-        <div class="instructions">
+        <div class="instructions" style="display: none;">
             <h3>📋 v2.0 使用說明</h3>
             <ul>
                 <li><strong>基本操作：</strong>請在手機上開啟此網頁</li>
@@ -686,7 +655,7 @@
             </ul>
         </div>
         
-        <div class="deploy-info" style="border-left-color: #FF6B6B;">
+        <div class="deploy-info" style="border-left-color: #FF6B6B; display: none;">
             <h3>🔧 v2.0 技術規格</h3>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0;">
                 <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 10px;">
