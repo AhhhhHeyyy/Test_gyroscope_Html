@@ -14,10 +14,11 @@
         body {
             font-family: 'Arial', sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 0;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             color: white;
+            overflow: hidden;
         }
         
         .container {
@@ -361,7 +362,7 @@
     </style>
 </head>
 <body>
-    <div class="container" style="background: none; box-shadow: none; border: none; padding: 0; margin: 0; max-width: none; width: 100vw; min-height: 100vh; display: flex; justify-content: center; align-items: center;">
+    <div class="container" style="background: none; box-shadow: none; border: none; padding: 0; margin: 0; max-width: none; width: 100vw; min-height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden;">
         <h1 style="display: none;">🎯 旋轉控制器</h1>
         <div style="display: none; text-align: center; margin-bottom: 20px; font-size: 1.2em; color: #FFD700;">
             🎮 拖拽旋轉控制 | 音效震動回饋 | Unity 即時同步
@@ -598,7 +599,7 @@
         
         <div class="cube-feature" style="display: flex; justify-content: center; align-items: center; min-height: 70vh; background: none; box-shadow: none; border-left: none; padding: 0; margin: 0; border: none; border-radius: 0;">
             <div class="cube-preview" style="display: block; margin: 0 auto;">
-                <div style="position: relative; width: 400px; height: 400px; margin: 0 auto;">
+                <div style="position: relative; width: min(300px, 80vw); height: min(300px, 80vw); margin: 0 auto;">
                     <img id="spinKnob" src="https://i.postimg.cc/mr45tyXJ/Hi-Paint-1760323869267.png" 
                          style="width: 100%; height: 100%; cursor: grab;">
                 </div>
