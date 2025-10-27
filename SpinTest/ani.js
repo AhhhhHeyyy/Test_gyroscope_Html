@@ -2,6 +2,7 @@ console.clear();
 
 // 創建音效對象
 const soundEffect = new Audio('se_door_hanekaeri.mp3');
+const rotateSound = new Audio('cada3.MP3');
 
 // 創建震動函數
 function triggerVibration(pattern = [100, 50, 100]) {
@@ -56,6 +57,10 @@ $(document).ready(function() {
   
   console.log("開始創建 Draggable...");
   
+  // 追蹤已播放的角度區間
+  let lastPlayedAngle = 0;
+  const ROTATE_THRESHOLD = 15; // 每15度觸發一次音效
+  
   // 創建可拖拽的旋鈕
   const draggable = Draggable.create("#knob", {
     type: "rotation",
@@ -63,11 +68,23 @@ $(document).ready(function() {
     onDragStart: function() {
       // 記錄開始拖拽時的角度
       this.startAngle = this.rotation;
+      lastPlayedAngle = this.rotation; // 初始化已播放的角度
       console.log("開始拖拽，起始角度:", this.startAngle);
     },
     onDrag: function() {
       let currentAngle = this.rotation;
       let rotationDelta = currentAngle - this.startAngle;
+      
+      // 檢查是否經過了15度的增量
+      let angleDifference = Math.abs(currentAngle - lastPlayedAngle);
+      
+      // 如果旋轉超過15度，播放音效並更新已播放角度
+      if (angleDifference >= ROTATE_THRESHOLD) {
+        rotateSound.currentTime = 0; // 重置音效
+        rotateSound.play().catch(e => console.log("旋轉音效播放失敗:", e));
+        lastPlayedAngle = currentAngle; // 更新已播放角度
+        console.log(`達到15度增量，播放音效。當前角度: ${currentAngle.toFixed(1)}°`);
+      }
       
       // 實時更新角度顯示
       updateAngleDisplay();
@@ -92,6 +109,8 @@ $(document).ready(function() {
         setTimeout(() => {
           triggerVibration(200); // 設備震動200毫秒
         }, 50); // 延遲50ms讓聲音先開始
+        
+        lastPlayedAngle = targetAngle; // 更新已播放角度
         
         console.log(`旋轉被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
       } else {
@@ -129,6 +148,9 @@ $(document).ready(function() {
           triggerVibration(200); // 設備震動200毫秒
         }, 0); // 延遲50ms讓聲音先開始
       }
+      
+      // 更新已播放角度為最終角度
+      lastPlayedAngle = finalAngle;
 
       console.log(`拖拽結束，最終角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
       
