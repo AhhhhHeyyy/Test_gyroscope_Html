@@ -1808,7 +1808,11 @@
         
         // 创建音效对象
         const spinSoundEffect = new Audio('se_door_hanekaeri.mp3');
-        const rotateSound = new Audio('cada3.MP3'); // 每15度触发音效
+        const rotateSound = new Audio('cada5.MP3'); // 每5度触发震动音效
+        
+        // 预加载音效以减少延迟
+        rotateSound.preload = 'auto';
+        rotateSound.load();
         
         // 创建震动函数
         function triggerSpinVibration(pattern = [100, 50, 100]) {
@@ -1861,7 +1865,9 @@
                 
                 // 追踪已播放的角度区间
                 let lastPlayedAngle = 0;
-                const ROTATE_THRESHOLD = 15; // 每15度触发一次音效
+                const ROTATE_THRESHOLD = 5; // 每5度触发一次震动
+                let lastVibrationTime = 0; // 追踪最后震动时间
+                let isDragging = false; // 追踪是否正在拖拽
                 
                 // 创建可拖拽的旋钮
                 const draggable = Draggable.create("#spinKnob", {
@@ -1871,7 +1877,28 @@
                         // 记录开始拖拽时的角度
                         this.startAngle = this.rotation;
                         lastPlayedAngle = this.rotation; // 初始化已播放的角度
-                        console.log("开始拖拽，起始角度:", this.startAngle);
+                        isDragging = true; // 标记开始拖拽
+                        
+                        // 开始播放音效 - 立即播放，不等待
+                        try {
+                            rotateSound.loop = true; // 设置循环播放
+                            const playPromise = rotateSound.play();
+                            
+                            // 如果浏览器需要用户交互
+                            if (playPromise !== undefined) {
+                                playPromise.catch(error => {
+                                    // 如果自动播放被阻止，尝试立即播放
+                                    console.log("自动播放被阻止，尝试立即播放:", error);
+                                    rotateSound.play();
+                                });
+                            }
+                        } catch(e) {
+                            console.log("音效播放失败:", e);
+                            // 失败时也尝试播放
+                            rotateSound.play();
+                        }
+                        
+                        console.log("开始拖拽，开始播放音效。起始角度:", this.startAngle);
                     },
                     onDrag: function() {
                         let currentAngle = this.rotation;
@@ -1880,16 +1907,20 @@
                         // 检查是否经过了15度的增量
                         let angleDifference = Math.abs(currentAngle - lastPlayedAngle);
                         
-                        // 如果旋转超过15度，播放音效并更新已播放角度
+                        // 如果旋转超过15度，触发震动反馈并更新已播放角度
                         if (angleDifference >= ROTATE_THRESHOLD) {
-                            rotateSound.currentTime = 0; // 重置音效
-                            rotateSound.play().catch(e => console.log("旋转音效播放失败:", e));
+                            // 音效在onDragStart时已开始循环播放，这里只需要触发震动
                             
-                            // 触发震动反馈
-                            triggerSpinVibration(100); // 每15度震动100毫秒
+                            // 触发震动反馈 - 间隔0.5秒
+                            const currentTime = Date.now();
+                            if (currentTime - lastVibrationTime >= 500) { // 0.5秒间隔
+                                triggerSpinVibration([150, 300, 150]); // 震动模式：150ms开启，300ms关闭，150ms开启
+                                lastVibrationTime = currentTime;
+                                console.log(`震动触发：${currentAngle.toFixed(1)}°`);
+                            }
                             
                             lastPlayedAngle = currentAngle; // 更新已播放角度
-                            console.log(`达到15度增量，播放音效并震动。当前角度: ${currentAngle.toFixed(1)}°`);
+                            console.log(`达到15度增量，震动触发。当前角度: ${currentAngle.toFixed(1)}°`);
                         }
                         
                         // 实时更新角度显示
@@ -1928,6 +1959,15 @@
                         }
                     },
                     onDragEnd: function() {
+                        // 标记拖拽结束
+                        isDragging = false;
+                        
+                        // 停止播放音效
+                        rotateSound.pause();
+                        rotateSound.currentTime = 0;
+                        rotateSound.loop = false; // 取消循环
+                        console.log("拖拽结束，音效已停止");
+                        
                         // 拖拽结束时进行最终吸附
                         let currentAngle = this.rotation;
                         let rotationDelta = currentAngle - this.startAngle;
