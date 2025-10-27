@@ -1814,6 +1814,24 @@
         rotateSound.preload = 'auto';
         rotateSound.load();
         
+        // 初始化音效 - 预先加载到内存以减少延迟
+        rotateSound.addEventListener('loadeddata', function() {
+            console.log('cada5音效已加载完成');
+        });
+        
+        // 预播放一小段来预热音效（先静音播放）
+        setTimeout(() => {
+            rotateSound.volume = 0;
+            rotateSound.play().then(() => {
+                rotateSound.pause();
+                rotateSound.currentTime = 0;
+                rotateSound.volume = 1;
+                console.log('音效预热完成');
+            }).catch(() => {
+                rotateSound.volume = 1;
+            });
+        }, 500);
+        
         // 创建震动函数
         function triggerSpinVibration(pattern = [100, 50, 100]) {
             console.log("尝试触发旋转震动，模式:", pattern);
@@ -1988,19 +2006,28 @@
                             ease: "elastic.out(1, 0.3)"
                         });
 
+                        // 检查总旋转角度（从开始到结束）
+                        const totalRotation = Math.abs(rotationDelta);
+                        
                         // 如果最终角度与起始角度不同，播放回弹音效和震动
                         if (finalAngle !== this.startAngle) {
-                            spinSoundEffect.currentTime = 0; // 重置音效到开始位置
-                            spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                            // 如果旋转超过90度，播放se_door_hanekaeri音效并触发大力震动
+                            if (totalRotation >= 90) {
+                                spinSoundEffect.currentTime = 0; // 重置音效
+                                spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                                
+                                // 大力震动一次（三次强力震动）
+                                triggerSpinVibration([300, 100, 300, 100, 300]);
+                                
+                                console.log(`🎉 旋转超过90度！播放停止音效并震动。总旋转: ${totalRotation.toFixed(1)}°`);
+                            } else {
+                                // 小于90度只有轻微震动
+                                triggerSpinVibration(200); // 设备震动200毫秒
+                            }
                             
                             // 发送旋转事件到Unity
                             console.log('🎯 准备发送旋转事件（onDragEnd），角度:', finalAngle);
                             gyroWS.sendSpinEvent(finalAngle);
-                            
-                            // 稍微延迟震动，让声音先开始
-                            setTimeout(() => {
-                                triggerSpinVibration(200); // 设备震动200毫秒
-                            }, 0); // 延迟50ms让声音先开始
                         }
                         
                         // 更新已播放角度为最终角度
