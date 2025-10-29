@@ -1881,12 +1881,11 @@
                 
                 console.log("开始创建旋转控制器...");
                 
-                // 連續旋轉齒輪感：每15°觸發一次
-                const GRID_SIZE = 15; // 每15度觸發一次
+                // 追踪已播放的角度区间
+                let lastPlayedAngle = 0;
+                const ROTATE_THRESHOLD = 5; // 每5度触发一次震动
+                let lastVibrationTime = 0; // 追踪最后震动时间
                 let isDragging = false; // 追踪是否正在拖拽
-                let prevAngle = 0; // 上一幀角度
-                let accumulatedDelta = 0; // 從上次基準累積的角度差
-                let lastStepAngle = 0; // 上次觸發的累積角
                 
                 // 创建可拖拽的旋钮
                 const draggable = Draggable.create("#spinKnob", {
@@ -1895,9 +1894,7 @@
                     onDragStart: function() {
                         // 记录开始拖拽时的角度
                         this.startAngle = this.rotation;
-                        prevAngle = this.rotation;
-                        accumulatedDelta = 0;
-                        lastStepAngle = 0;
+                        lastPlayedAngle = this.rotation; // 初始化已播放的角度
                         isDragging = true; // 标记开始拖拽
                         
                         // 开始播放音效 - 立即播放，不等待
@@ -1924,21 +1921,26 @@
                     onDrag: function() {
                         let currentAngle = this.rotation;
                         let rotationDelta = currentAngle - this.startAngle;
-
-                        // 計算跨幀角度差（修正 -180/180 回繞）並累積
-                        let frameDelta = (currentAngle - prevAngle) % 360;
-                        if (frameDelta > 180) frameDelta -= 360;
-                        if (frameDelta < -180) frameDelta += 360;
-                        accumulatedDelta += frameDelta;
-                        prevAngle = currentAngle;
-
-                        // 每滿 15° 觸發一次小震動（齒輪阻尼感）
-                        while (Math.abs(accumulatedDelta - lastStepAngle) >= GRID_SIZE) {
-                            lastStepAngle += GRID_SIZE * Math.sign(accumulatedDelta - lastStepAngle);
-                            triggerSpinVibration([60, 40, 60]);
-                            console.log(`✅ 小震动觸發，步進到: ${lastStepAngle.toFixed(1)}°`);
+                        
+                        // 检查是否经过了15度的增量
+                        let angleDifference = Math.abs(currentAngle - lastPlayedAngle);
+                        
+                        // 如果旋转超过15度，触发震动反馈并更新已播放角度
+                        if (angleDifference >= ROTATE_THRESHOLD) {
+                            // 音效在onDragStart时已开始循环播放，这里只需要触发震动
+                            
+                            // 触发震动反馈 - 间隔0.5秒
+                            const currentTime = Date.now();
+                            if (currentTime - lastVibrationTime >= 500) { // 0.5秒间隔
+                                triggerSpinVibration([150, 300, 150]); // 震动模式：150ms开启，300ms关闭，150ms开启
+                                lastVibrationTime = currentTime;
+                                console.log(`震动触发：${currentAngle.toFixed(1)}°`);
+                            }
+                            
+                            lastPlayedAngle = currentAngle; // 更新已播放角度
+                            console.log(`达到15度增量，震动触发。当前角度: ${currentAngle.toFixed(1)}°`);
                         }
-
+                        
                         // 实时更新角度显示
                         updateSpinAngleDisplay();
                         
@@ -1962,10 +1964,12 @@
                             console.log('🎯 准备发送旋转事件，角度:', targetAngle);
                             gyroWS.sendSpinEvent(targetAngle);
                             
-                            // 對齊步進基準，避免吸附後誤觸發
-                            prevAngle = targetAngle;
-                            accumulatedDelta = 0;
-                            lastStepAngle = 0;
+                            // 稍微延迟震动，让声音先开始播放
+                            setTimeout(() => {
+                                triggerSpinVibration(200); // 设备震动200毫秒
+                            }, 50); // 延迟50ms让声音先开始
+                            
+                            lastPlayedAngle = targetAngle; // 更新已播放角度
                             
                             console.log(`旋转被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         } else {
@@ -2026,15 +2030,8 @@
                             gyroWS.sendSpinEvent(finalAngle);
                         }
                         
-                        // 結束強震：保留大震動，其餘移除
-                        try {
-                            triggerSpinVibration([300, 100, 300, 100, 300]);
-                        } catch(e) {}
-                        
-                        // 對齊步進基準，避免殘留
-                        prevAngle = finalAngle;
-                        accumulatedDelta = 0;
-                        lastStepAngle = 0;
+                        // 更新已播放角度为最终角度
+                        lastPlayedAngle = finalAngle;
 
                         console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         
