@@ -1891,12 +1891,13 @@
                     });
                 }, 500);
 
-                // === 震動參數設定 ===
-                const ROTATE_THRESHOLD = 15;           // 每 15 度觸發一次小震動
-                const SMALL_VIBRATION_PATTERN = [60, 40, 60];  // 短促雙脈衝（非常明顯）
+                // === 震動參數設定（網格觸發 + 冷卻）===
+                const GRID_SIZE = 15;                  // 每 15° 一格
+                const VIBRATION_COOLDOWN = 320;        // 震動冷卻（ms）
+                const SMALL_VIBRATION = [60, 40, 60];  // 短促雙脈衝（明顯）
                 const BIG_VIBRATION_PATTERN = [200, 100, 200, 100, 200]; // 停止時三連擊
-                const VIBRATION_COOLDOWN = 320;        // 至少 320ms 後才能再震（避免重疊）
-                let lastVibrationTime = 0;
+                let lastVibrationGrid = null;          // 上次所在網格
+                let lastVibrationTime = 0;             // 上次震動時間
                 let lastPlayedAngle = 0;
                 let isDragging = false;
 
@@ -1929,6 +1930,8 @@
                     onDragStart: function () {
                         this.startAngle = this.rotation;
                         lastPlayedAngle = this.rotation;
+                        lastVibrationGrid = Math.floor(this.startAngle / GRID_SIZE);
+                        lastVibrationTime = 0;
                         isDragging = true;
 
                         // 開始播放旋轉音效（循環）
@@ -1947,18 +1950,18 @@
 
                     onDrag: function () {
                         const currentAngle = this.rotation;
-                        const angleDiff = Math.abs(currentAngle - lastPlayedAngle);
+                        const currentGrid = Math.floor(currentAngle / GRID_SIZE);
 
-                        // === 每 15 度觸發一次小震動 ===
-                        if (angleDiff >= ROTATE_THRESHOLD) {
+                        // 進入新格子 → 震動（含冷卻）
+                        if (lastVibrationGrid !== null && currentGrid !== lastVibrationGrid) {
                             const now = Date.now();
                             if (now - lastVibrationTime >= VIBRATION_COOLDOWN) {
-                                triggerVibration(SMALL_VIBRATION_PATTERN);
+                                triggerVibration(SMALL_VIBRATION);
                                 lastVibrationTime = now;
-                                console.log(`小震動：${currentAngle.toFixed(1)}°`);
+                                console.log(`小震動：${currentAngle.toFixed(1)}° (格子 ${currentGrid})`);
                             }
-                            lastPlayedAngle = currentAngle;
                         }
+                        lastVibrationGrid = currentGrid;
 
                         // === 限制最大旋轉 90 度 ===
                         const rotationDelta = currentAngle - this.startAngle;
@@ -1978,7 +1981,7 @@
                             setTimeout(() => triggerVibration(200), 50);
 
                             gyroWS.sendSpinEvent(targetAngle);
-                            lastPlayedAngle = targetAngle;
+                            lastVibrationGrid = Math.floor(targetAngle / GRID_SIZE); // 強制更新
                         }
 
                         updateSpinAngleDisplay();
