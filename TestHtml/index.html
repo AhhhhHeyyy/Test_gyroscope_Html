@@ -1859,7 +1859,7 @@
         let lastVibrationTime = 0;
         
         // 模式設定
-        const SMALL_VIBRATION = [35, 70, 35];  // 小震 - 齒輪感更明顯
+        const SMALL_VIBRATION = 50;  // 單震一次（50ms 持續時間）
         const BIG_VIBRATION = [200, 120, 200]; // 大震 - 結束回饋更重
         
         function triggerVibration(pattern = SMALL_VIBRATION) {
