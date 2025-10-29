@@ -1881,10 +1881,9 @@
                 
                 console.log("开始创建旋转控制器...");
                 
-                // 追踪已播放的角度区间
+                // 追踪已播放的角度区间（改為每15°步進觸發，無時間節流）
                 let lastPlayedAngle = 0;
-                const ROTATE_THRESHOLD = 5; // 每5度触发一次震动
-                let lastVibrationTime = 0; // 追踪最后震动时间
+                const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
                 let isDragging = false; // 追踪是否正在拖拽
                 
                 // 创建可拖拽的旋钮
@@ -1925,16 +1924,11 @@
                         // 检查是否经过了15度的增量
                         let angleDifference = Math.abs(currentAngle - lastPlayedAngle);
                         
-                        // 如果旋转超过15度，触发震动反馈并更新已播放角度
+                        // 如果旋转超过15度，触发震动反馈并更新已播放角度（單脈衝50ms，無節流）
                         if (angleDifference >= ROTATE_THRESHOLD) {
                             // 音效在onDragStart时已开始循环播放，这里只需要触发震动
-                            
-                            // 触发震动反馈 - 间隔0.5秒
-                            const currentTime = Date.now();
-                            if (currentTime - lastVibrationTime >= 500) { // 0.5秒间隔
-                                triggerSpinVibration([150, 300, 150]); // 震动模式：150ms开启，300ms关闭，150ms开启
-                                lastVibrationTime = currentTime;
-                                console.log(`震动触发：${currentAngle.toFixed(1)}°`);
+                            if ("vibrate" in navigator) {
+                                try { navigator.vibrate(0); navigator.vibrate(50); } catch(e) {}
                             }
                             
                             lastPlayedAngle = currentAngle; // 更新已播放角度
@@ -1964,10 +1958,8 @@
                             console.log('🎯 准备发送旋转事件，角度:', targetAngle);
                             gyroWS.sendSpinEvent(targetAngle);
                             
-                            // 稍微延迟震动，让声音先开始播放
-                            setTimeout(() => {
-                                triggerSpinVibration(200); // 设备震动200毫秒
-                            }, 50); // 延迟50ms让声音先开始
+                            // 夾角限制：改為一次大震動
+                            try { triggerSpinVibration([200, 100, 200]); } catch(e) {}
                             
                             lastPlayedAngle = targetAngle; // 更新已播放角度
                             
@@ -2009,21 +2001,11 @@
                         // 检查总旋转角度（从开始到结束）
                         const totalRotation = Math.abs(rotationDelta);
                         
-                        // 如果最终角度与起始角度不同，播放回弹音效和震动
+                        // 如果最终角度与起始角度不同，播放回弹音效和一次大震动
                         if (finalAngle !== this.startAngle) {
-                            // 如果旋转超过90度，播放se_door_hanekaeri音效并触发大力震动
-                            if (totalRotation >= 90) {
-                                spinSoundEffect.currentTime = 0; // 重置音效
-                                spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
-                                
-                                // 大力震动一次（三次强力震动）
-                                triggerSpinVibration([300, 100, 300, 100, 300]);
-                                
-                                console.log(`🎉 旋转超过90度！播放停止音效并震动。总旋转: ${totalRotation.toFixed(1)}°`);
-                            } else {
-                                // 小于90度只有轻微震动
-                                triggerSpinVibration(200); // 设备震动200毫秒
-                            }
+                            spinSoundEffect.currentTime = 0; // 重置音效
+                            spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                            try { triggerSpinVibration([200, 100, 200]); } catch(e) {}
                             
                             // 发送旋转事件到Unity
                             console.log('🎯 准备发送旋转事件（onDragEnd），角度:', finalAngle);
