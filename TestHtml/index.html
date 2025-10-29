@@ -1882,11 +1882,11 @@
                 console.log("开始创建旋转控制器...");
                 
                 // 連續旋轉齒輪感：每15°觸發一次
-                const GRID_SIZE = 15; // 每15度觸發
+                const GRID_SIZE = 15; // 每15度觸發一次
                 let isDragging = false; // 追踪是否正在拖拽
                 let prevAngle = 0; // 上一幀角度
                 let accumulatedDelta = 0; // 從上次基準累積的角度差
-                let lastStepAngle = 0; // 上次觸發所在的累積角
+                let lastStepAngle = 0; // 上次觸發的累積角
                 
                 // 创建可拖拽的旋钮
                 const draggable = Draggable.create("#spinKnob", {
@@ -1962,14 +1962,10 @@
                             console.log('🎯 准备发送旋转事件，角度:', targetAngle);
                             gyroWS.sendSpinEvent(targetAngle);
                             
-                            // 稍微延迟震动，让声音先开始播放
-                            setTimeout(() => {
-                                triggerSpinVibration(200); // 设备震动200毫秒
-                            }, 50); // 延迟50ms让声音先开始
-                            
-                            // 對齊基準，避免吸附後誤觸發
+                            // 對齊步進基準，避免吸附後誤觸發
                             prevAngle = targetAngle;
-                            accumulatedDelta = lastStepAngle = 0;
+                            accumulatedDelta = 0;
+                            lastStepAngle = 0;
                             
                             console.log(`旋转被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         } else {
@@ -2030,9 +2026,15 @@
                             gyroWS.sendSpinEvent(finalAngle);
                         }
                         
-                        // 結束時不保留累計，避免殘留觸發
+                        // 結束強震：保留大震動，其餘移除
+                        try {
+                            triggerSpinVibration([300, 100, 300, 100, 300]);
+                        } catch(e) {}
+                        
+                        // 對齊步進基準，避免殘留
                         prevAngle = finalAngle;
-                        accumulatedDelta = lastStepAngle = 0;
+                        accumulatedDelta = 0;
+                        lastStepAngle = 0;
 
                         console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         
