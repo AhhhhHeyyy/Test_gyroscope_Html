@@ -1883,8 +1883,7 @@
                 
                 // 追踪已播放的角度区间
                 let lastPlayedAngle = 0;
-                const ROTATE_THRESHOLD = 5; // 每5度触发一次震动
-                let lastVibrationTime = 0; // 追踪最后震动时间
+                const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
                 let isDragging = false; // 追踪是否正在拖拽
                 
                 // 创建可拖拽的旋钮
@@ -1925,20 +1924,16 @@
                         // 检查是否经过了15度的增量
                         let angleDifference = Math.abs(currentAngle - lastPlayedAngle);
                         
-                        // 如果旋转超过15度，触发震动反馈并更新已播放角度
+                        // 如果旋转超过阈值，触发齿轮感短震，并对齐下一次触发基准
                         if (angleDifference >= ROTATE_THRESHOLD) {
-                            // 音效在onDragStart时已开始循环播放，这里只需要触发震动
+                            // 触发震动反馈 - 短促有力的齿轮感
+                            triggerSpinVibration([30]); // 30ms短促震动，像齿轮卡入
                             
-                            // 触发震动反馈 - 间隔0.5秒
-                            const currentTime = Date.now();
-                            if (currentTime - lastVibrationTime >= 500) { // 0.5秒间隔
-                                triggerSpinVibration([150, 300, 150]); // 震动模式：150ms开启，300ms关闭，150ms开启
-                                lastVibrationTime = currentTime;
-                                console.log(`震动触发：${currentAngle.toFixed(1)}°`);
-                            }
+                            // 立即更新已播放角度，让下一个15度能正确触发
+                            // 使用取整来避免累积误差
+                            lastPlayedAngle = Math.floor(currentAngle / ROTATE_THRESHOLD) * ROTATE_THRESHOLD;
                             
-                            lastPlayedAngle = currentAngle; // 更新已播放角度
-                            console.log(`达到15度增量，震动触发。当前角度: ${currentAngle.toFixed(1)}°`);
+                            console.log(`齿轮震动触发：${currentAngle.toFixed(1)}°，下次触发角度: ${(lastPlayedAngle + ROTATE_THRESHOLD).toFixed(1)}°`);
                         }
                         
                         // 实时更新角度显示
