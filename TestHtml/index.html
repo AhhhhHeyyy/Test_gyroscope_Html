@@ -1881,11 +1881,10 @@
                 
                 console.log("开始创建旋转控制器...");
                 
-                // 追踪已播放的角度区间
-                let lastPlayedAngle = 0;
-                const ROTATE_THRESHOLD = 5; // 每5度触发一次震动
-                let lastVibrationTime = 0; // 追踪最后震动时间
-                let isDragging = false; // 追踪是否正在拖拽
+				// 追踪已播放的角度区间
+				let lastPlayedAngle = 0;
+				const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
+				let isDragging = false; // 追踪是否正在拖拽
                 
                 // 创建可拖拽的旋钮
                 const draggable = Draggable.create("#spinKnob", {
@@ -1925,21 +1924,13 @@
                         // 检查是否经过了15度的增量
                         let angleDifference = Math.abs(currentAngle - lastPlayedAngle);
                         
-                        // 如果旋转超过15度，触发震动反馈并更新已播放角度
-                        if (angleDifference >= ROTATE_THRESHOLD) {
-                            // 音效在onDragStart时已开始循环播放，这里只需要触发震动
-                            
-                            // 触发震动反馈 - 间隔0.5秒
-                            const currentTime = Date.now();
-                            if (currentTime - lastVibrationTime >= 500) { // 0.5秒间隔
-                                triggerSpinVibration([150, 300, 150]); // 震动模式：150ms开启，300ms关闭，150ms开启
-                                lastVibrationTime = currentTime;
-                                console.log(`震动触发：${currentAngle.toFixed(1)}°`);
-                            }
-                            
-                            lastPlayedAngle = currentAngle; // 更新已播放角度
-                            console.log(`达到15度增量，震动触发。当前角度: ${currentAngle.toFixed(1)}°`);
-                        }
+						// 如果旋转超过15度，仅依据角度差触发震动并更新已播放角度
+						if (angleDifference >= ROTATE_THRESHOLD) {
+							// 音效在onDragStart时已开始循环播放，这里只需要触发震动
+							triggerSpinVibration(100); // 震动100ms即可，短促明顯
+							lastPlayedAngle = currentAngle; // 更新上次角度
+							console.log(`✅ 小震动触发，角度差: ${angleDifference.toFixed(1)}°`);
+						}
                         
                         // 实时更新角度显示
                         updateSpinAngleDisplay();
