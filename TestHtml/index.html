@@ -1860,7 +1860,7 @@
         
         // 模式設定
         const SMALL_VIBRATION = 20;  // 單震一次（20ms 持續時間）
-        const BIG_VIBRATION = [200, 120, 200]; // 大震 - 結束回饋更重
+        const BIG_VIBRATION = [200]; // 大震 - 結束單震一次（200ms）
         
         function triggerVibration(pattern = SMALL_VIBRATION) {
             const now = Date.now();
@@ -2033,8 +2033,7 @@
                             // 注意：不在这里发送角度，因为实时发送（上方）已经持续发送真实角度
                             // 限制逻辑只影响网页端的视觉回弹效果，Unity接收的应该是真实的累积角度
                             
-                            // 大震動（強制觸發，不受節流限制）
-                            triggerBigVibrationForce();
+                            // 注意：90度限制时不触发大震动，只在松开手时触发
                             
                             // 🔧 关键修复：更新 startAngle 为限制后的角度
                             // 这样下一轮的90度限制会基于新的基准角度，保持角度累积的正确性
