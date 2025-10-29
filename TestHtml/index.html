@@ -2008,9 +2008,8 @@
                             spinSoundEffect.currentTime = 0; // 重置音效到开始位置
                             spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
                             
-                            // 发送旋转事件到Unity
-                            console.log('🎯 准备发送旋转事件，角度:', targetAngle);
-                            gyroWS.sendSpinEvent(targetAngle);
+                            // 注意：不在这里发送角度，因为实时发送（上方）已经持续发送真实角度
+                            // 限制逻辑只影响网页端的视觉回弹效果，Unity接收的应该是真实的累积角度
                             
                             // 大震動（立即觸發，避免與小震混疊）
                             triggerVibration(BIG_VIBRATION);
@@ -2065,9 +2064,9 @@
                             spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
                             triggerVibration(BIG_VIBRATION);
                             
-                            // 发送旋转事件到Unity
-                            console.log('🎯 准备发送旋转事件（onDragEnd），角度:', finalAngle);
-                            gyroWS.sendSpinEvent(finalAngle);
+                            // 发送当前实际角度到Unity（不是吸附后的角度，而是真实的累积角度）
+                            console.log('🎯 准备发送旋转事件（onDragEnd），实际角度:', currentAngle);
+                            gyroWS.sendSpinEvent(currentAngle);
                         }
 
                         console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
