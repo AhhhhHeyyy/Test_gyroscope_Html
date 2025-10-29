@@ -1947,8 +1947,8 @@
 
                         if (currentStepIndex !== lastStepIndex && (movedEnough || recentlyMoving)) {
                             // 步进变化才触发一次震动（更小更清晰）
-                            if (now - lastVibrationTime >= 120) { // 最小安全间隔 120ms，避免抖动
-                                triggerSpinVibration(100); // 100ms 更轻的短震
+                            if (now - lastVibrationTime >= 180) { // 增加安全间隔，避免停下后抖动连发
+                                triggerSpinVibration(80); // 80ms 更轻的短震
                                 lastVibrationTime = now;
                                 console.log(`步进震动触发：step=${currentStepIndex}, angle=${normalized.toFixed(1)}°`);
                             }
