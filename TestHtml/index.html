@@ -1855,17 +1855,32 @@
             }
         }
         
-        // === Android 專用強化震動函數 ===
+        // === Android 專用「齒輪感」震動函數 (強化版) ===
         let lastVibrationTime = 0;
-        function triggerVibration(pattern = [20, 60, 20]) {
+        
+        // 模式設定
+        const SMALL_VIBRATION = [35, 70, 35];  // 小震 - 齒輪感更明顯
+        const BIG_VIBRATION = [200, 120, 200]; // 大震 - 結束回饋更重
+        
+        function triggerVibration(pattern = SMALL_VIBRATION) {
             const now = Date.now();
-            if (now - lastVibrationTime < 120) return;
+
+            // 🔹 避免過密觸發：與上次震動間隔 <130ms 則略過
+            if (now - lastVibrationTime < 130) return;
             lastVibrationTime = now;
+
+            // 僅限 Android
             const isAndroid = /Android/i.test(navigator.userAgent);
             if (!isAndroid) return;
-            if ("vibrate" in navigator) {
-                try { navigator.vibrate(pattern); } catch (e) {}
-                console.log("📳 震動觸發:", pattern);
+
+            // 🔹 使用 vibrate API
+            if (navigator.vibrate) {
+                try {
+                    const result = navigator.vibrate(pattern);
+                    console.log("📳 Android震動觸發:", pattern, "result:", result);
+                } catch (e) {
+                    console.warn("震動執行錯誤:", e);
+                }
             }
         }
         
@@ -1895,10 +1910,21 @@
                 
                 console.log("开始创建旋转控制器...");
                 
-                // 追踪已播放的角度区间
-                let lastPlayedAngle = 0;
+                // 追踪已播放的角度区间（使用累积角度方案，支持多圈旋转）
+                let prevAngle = 0;  // 上一帧角度
+                let accumulatedDelta = 0;  // 累积角度差
+                let lastTriggerStep = 0;  // 上次触发的步数
                 const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
                 let isDragging = false; // 追踪是否正在拖拽
+                
+                // 修正角度差（处理360度跳转）
+                function normalizeAngleDelta(current, prev) {
+                    let delta = current - prev;
+                    // 处理跨360度边界
+                    if (delta > 180) delta -= 360;
+                    if (delta < -180) delta += 360;
+                    return delta;
+                }
                 
                 // 创建可拖拽的旋钮
                 const draggable = Draggable.create("#spinKnob", {
@@ -1907,7 +1933,9 @@
                     onDragStart: function() {
                         // 记录开始拖拽时的角度
                         this.startAngle = this.rotation;
-                        lastPlayedAngle = this.rotation; // 初始化已播放的角度
+                        prevAngle = this.rotation;  // 初始化上一帧角度
+                        accumulatedDelta = 0;  // 重置累积角度
+                        lastTriggerStep = 0;  // 重置触发步数
                         isDragging = true; // 标记开始拖拽
                         
                         // 开始播放音效 - 立即播放，不等待
@@ -1935,19 +1963,19 @@
                         let currentAngle = this.rotation;
                         let rotationDelta = currentAngle - this.startAngle;
                         
-                        // 检查是否经过了15度的增量
-                        let angleDifference = Math.abs(currentAngle - lastPlayedAngle);
+                        // 计算跨帧角度差（处理360度边界）
+                        let frameDelta = normalizeAngleDelta(currentAngle, prevAngle);
+                        accumulatedDelta += frameDelta;
+                        prevAngle = currentAngle;
                         
-                        // 如果旋转超过阈值，触发齿轮感短震，并对齐下一次触发基准
-                        if (angleDifference >= ROTATE_THRESHOLD) {
-                            // 触发震动反馈 - 短促有力的齿轮感（Android 強化版）
-                            triggerVibration([20, 60, 20]);
-                            
-                            // 立即更新已播放角度，让下一个15度能正确触发
-                            // 使用取整来避免累积误差
-                            lastPlayedAngle = Math.floor(currentAngle / ROTATE_THRESHOLD) * ROTATE_THRESHOLD;
-                            
-                            console.log(`齿轮震动触发：${currentAngle.toFixed(1)}°，下次触发角度: ${(lastPlayedAngle + ROTATE_THRESHOLD).toFixed(1)}°`);
+                        // 计算当前累积步数
+                        let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
+                        
+                        // 如果累积步数增加，触发震动
+                        if (currentStep !== lastTriggerStep) {
+                            triggerVibration(SMALL_VIBRATION);
+                            lastTriggerStep = currentStep;
+                            console.log(`齿轮震动触发：${currentAngle.toFixed(1)}°，累积旋转: ${accumulatedDelta.toFixed(1)}°，步数: ${currentStep}`);
                         }
                         
                         // 实时更新角度显示
@@ -1974,9 +2002,12 @@
                             gyroWS.sendSpinEvent(targetAngle);
                             
                             // 大震動（立即觸發，避免與小震混疊）
-                            triggerVibration([200, 100, 200]);
+                            triggerVibration(BIG_VIBRATION);
                             
-                            lastPlayedAngle = targetAngle; // 更新已播放角度
+                            // 重置累积角度基准，避免吸附后误触发
+                            prevAngle = targetAngle;
+                            accumulatedDelta = 0;
+                            lastTriggerStep = 0;
                             
                             console.log(`旋转被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         } else {
@@ -2021,15 +2052,12 @@
                             // 播放音效 + 大震動（無論是否達到90°，統一強烈結束回饋）
                             spinSoundEffect.currentTime = 0; // 重置音效
                             spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
-                            triggerVibration([200, 100, 200]);
+                            triggerVibration(BIG_VIBRATION);
                             
                             // 发送旋转事件到Unity
                             console.log('🎯 准备发送旋转事件（onDragEnd），角度:', finalAngle);
                             gyroWS.sendSpinEvent(finalAngle);
                         }
-                        
-                        // 更新已播放角度为最终角度
-                        lastPlayedAngle = finalAngle;
 
                         console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         
