@@ -1884,6 +1884,28 @@
             }
         }
         
+        // === 强制触发大震动（不受节流限制）===
+        function triggerBigVibrationForce() {
+            const isAndroid = /Android/i.test(navigator.userAgent);
+            if (!isAndroid) return;
+            
+            if (navigator.vibrate) {
+                try {
+                    // 先中断之前的震动
+                    navigator.vibrate(0);
+                    
+                    // 稍微延迟后触发大震动，确保中断生效
+                    setTimeout(() => {
+                        const result = navigator.vibrate(BIG_VIBRATION);
+                        console.log("💥 强制大震动触发:", BIG_VIBRATION, "result:", result);
+                        lastVibrationTime = Date.now(); // 更新节流时间，避免后续小震动立即触发
+                    }, 30); // 30ms延迟确保中断完成
+                } catch (e) {
+                    console.warn("强制大震动执行错误:", e);
+                }
+            }
+        }
+        
         // 初始化旋转控制器
         function initializeSpinController() {
             // 确保 DOM 完全载入后再初始化
@@ -2011,8 +2033,8 @@
                             // 注意：不在这里发送角度，因为实时发送（上方）已经持续发送真实角度
                             // 限制逻辑只影响网页端的视觉回弹效果，Unity接收的应该是真实的累积角度
                             
-                            // 大震動（立即觸發，避免與小震混疊）
-                            triggerVibration(BIG_VIBRATION);
+                            // 大震動（強制觸發，不受節流限制）
+                            triggerBigVibrationForce();
                             
                             // 🔧 关键修复：更新 startAngle 为限制后的角度
                             // 这样下一轮的90度限制会基于新的基准角度，保持角度累积的正确性
@@ -2063,17 +2085,14 @@
                         // 检查总旋转角度（从开始到结束）
                         const totalRotation = Math.abs(rotationDelta);
                         
-                        // 如果最终角度与起始角度不同，播放回弹音效和震动
-                        if (finalAngle !== this.startAngle) {
-                            // 播放音效 + 大震動（無論是否達到90°，統一強烈結束回饋）
-                            spinSoundEffect.currentTime = 0; // 重置音效
-                            spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
-                            triggerVibration(BIG_VIBRATION);
-                            
-                            // 发送当前实际角度到Unity（不是吸附后的角度，而是真实的累积角度）
-                            console.log('🎯 准备发送旋转事件（onDragEnd），实际角度:', currentAngle);
-                            gyroWS.sendSpinEvent(currentAngle);
-                        }
+                        // 🔧 修复：无论旋转多少度，松开手就触发大震动和音效
+                        spinSoundEffect.currentTime = 0; // 重置音效
+                        spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                        triggerBigVibrationForce(); // 强制触发大震动，不受节流限制
+                        
+                        // 发送当前实际角度到Unity（不是吸附后的角度，而是真实的累积角度）
+                        console.log('🎯 准备发送旋转事件（onDragEnd），实际角度:', currentAngle);
+                        gyroWS.sendSpinEvent(currentAngle);
 
                         console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         
