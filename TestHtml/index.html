@@ -1884,6 +1884,7 @@
                 // 追踪已触发的角度「步进」（以 15° 为单位）
                 let lastStepIndex = -1;
                 const ROTATE_THRESHOLD = 15; // 每15度触发一次震动（步进制）
+                const ENABLE_EXTRA_VIBRATIONS = false; // 关闭非步进震动，确保每90°仅6次
                 let lastVibrationTime = 0; // 追踪最后震动时间（安全间隔）
                 let isDragging = false; // 追踪是否正在拖拽
                 
@@ -1962,10 +1963,12 @@
                             console.log('🎯 准备发送旋转事件，角度:', targetAngle);
                             gyroWS.sendSpinEvent(targetAngle);
                             
-                            // 稍微延迟震动，让声音先开始播放
-                            setTimeout(() => {
-                                triggerSpinVibration(200); // 设备震动200毫秒
-                            }, 50); // 延迟50ms让声音先开始
+                            // 可选：回弹时额外震动（默认关闭）
+                            if (ENABLE_EXTRA_VIBRATIONS) {
+                                setTimeout(() => {
+                                    triggerSpinVibration(200); // 设备震动200毫秒
+                                }, 50); // 延迟50ms让声音先开始
+                            }
                             
                             // 同步更新最后步进索引
                             lastStepIndex = Math.floor((((targetAngle % 360) + 360) % 360) / ROTATE_THRESHOLD);
@@ -2015,13 +2018,17 @@
                                 spinSoundEffect.currentTime = 0; // 重置音效
                                 spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
                                 
-                                // 大力震动一次（三次强力震动）
-                                triggerSpinVibration([300, 100, 300, 100, 300]);
+                                if (ENABLE_EXTRA_VIBRATIONS) {
+                                    // 大力震动一次（三次强力震动）
+                                    triggerSpinVibration([300, 100, 300, 100, 300]);
+                                }
                                 
-                                console.log(`🎉 旋转超过90度！播放停止音效并震动。总旋转: ${totalRotation.toFixed(1)}°`);
+                                console.log(`🎉 旋转超过90度！播放停止音效${ENABLE_EXTRA_VIBRATIONS ? '并震动' : ''}。总旋转: ${totalRotation.toFixed(1)}°`);
                             } else {
-                                // 小于90度只有轻微震动
-                                triggerSpinVibration(200); // 设备震动200毫秒
+                                if (ENABLE_EXTRA_VIBRATIONS) {
+                                    // 小于90度只有轻微震动
+                                    triggerSpinVibration(200); // 设备震动200毫秒
+                                }
                             }
                             
                             // 发送旋转事件到Unity
