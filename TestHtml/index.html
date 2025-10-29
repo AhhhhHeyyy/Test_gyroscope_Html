@@ -1885,6 +1885,11 @@
                 let lastStepIndex = -1;
                 const ROTATE_THRESHOLD = 15; // 每15度触发一次震动（步进制）
                 let lastVibrationTime = 0; // 追踪最后震动时间（安全间隔）
+                // 运动判定：小抖动/长按不触发
+                let lastAngleForMotion = null;
+                let lastMotionUpdateTime = 0;
+                const MIN_ANGLE_DELTA = 2; // 小于2°视为未移动，避免边界抖动
+                const IDLE_TIMEOUT = 150;  // 150ms 内无显著移动视为静止
                 let isDragging = false; // 追踪是否正在拖拽
                 
                 // 创建可拖拽的旋钮
@@ -1927,12 +1932,23 @@
                         const normalized = (((currentAngle % 360) + 360) % 360);
                         const currentStepIndex = Math.floor(normalized / ROTATE_THRESHOLD); // 0..23
 
-                        if (currentStepIndex !== lastStepIndex) {
-                            // 步进变化才触发一次震动（提升明显度）
-                            const now = Date.now();
+                        // 运动检测：仅在显著移动时才允许触发步进震动
+                        const now = Date.now();
+                        if (lastAngleForMotion === null) {
+                            lastAngleForMotion = currentAngle;
+                            lastMotionUpdateTime = now;
+                        }
+                        const movedEnough = Math.abs(currentAngle - lastAngleForMotion) >= MIN_ANGLE_DELTA;
+                        const recentlyMoving = (now - lastMotionUpdateTime) <= IDLE_TIMEOUT;
+                        if (movedEnough) {
+                            lastAngleForMotion = currentAngle;
+                            lastMotionUpdateTime = now;
+                        }
+
+                        if (currentStepIndex !== lastStepIndex && (movedEnough || recentlyMoving)) {
+                            // 步进变化才触发一次震动（更小更清晰）
                             if (now - lastVibrationTime >= 120) { // 最小安全间隔 120ms，避免抖动
-                                // 加强震动力度，单拍更清晰
-                                triggerSpinVibration(220); // 220ms 明确的短震
+                                triggerSpinVibration(100); // 100ms 更轻的短震
                                 lastVibrationTime = now;
                                 console.log(`步进震动触发：step=${currentStepIndex}, angle=${normalized.toFixed(1)}°`);
                             }
