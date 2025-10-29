@@ -2000,6 +2000,10 @@
                         lastAngleForMotion = null;
                         lastMotionUpdateTime = 0;
                         
+                        // 立即停止任何尚在进行的震动队列，并设置短暂黑屏期避免尾震
+                        try { if ("vibrate" in navigator) navigator.vibrate(0); } catch(_) {}
+                        lastVibrationTime = Date.now() + 200; // 200ms 黑屏，避免刚停下时的抖动触发
+                        
                         // 停止播放音效
                         rotateSound.pause();
                         rotateSound.currentTime = 0;
