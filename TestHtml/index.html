@@ -2014,12 +2014,18 @@
                             // 大震動（立即觸發，避免與小震混疊）
                             triggerVibration(BIG_VIBRATION);
                             
-                            // 重置累积角度基准，避免吸附后误触发
-                            prevAngle = targetAngle;
+                            // 🔧 关键修复：更新 startAngle 为限制后的角度
+                            // 这样下一轮的90度限制会基于新的基准角度，保持角度累积的正确性
+                            this.startAngle = targetAngle;
+                            
+                            // 重置累积角度基准（用于震动检测）
                             accumulatedDelta = 0;
                             lastTriggerStep = 0;
                             
-                            console.log(`旋转被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
+                            // ⚠️ 重要：不要重置 prevAngle，保持使用当前的 actualAngle
+                            // 否则会导致角度计算出现跳跃，让数值从几千度突然变成几百度
+                            
+                            console.log(`旋转被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)，已更新基准角度`);
                         } else {
                             console.log("拖拽中，旋转角度:", this.rotation, "增量:", rotationDelta.toFixed(1));
                         }
