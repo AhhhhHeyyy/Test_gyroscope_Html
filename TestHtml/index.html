@@ -1804,268 +1804,98 @@
             }
         });
         
-        // ===== SpinTest 旋转控制功能 =====
+        // ===== SpinTest 旋轉控制（多圈連續震動穩定版）=====
         
-        // 创建音效对象
-        const spinSoundEffect = new Audio('se_door_hanekaeri.mp3');
-        const rotateSound = new Audio('cada5.MP3'); // 每5度触发震动音效
-        
-        // 预加载音效以减少延迟
-        rotateSound.preload = 'auto';
-        rotateSound.load();
-        
-        // 初始化音效 - 预先加载到内存以减少延迟
-        rotateSound.addEventListener('loadeddata', function() {
-            console.log('cada5音效已加载完成');
-        });
-        
-        // 预播放一小段来预热音效（先静音播放）
-        setTimeout(() => {
-            rotateSound.volume = 0;
-            rotateSound.play().then(() => {
-                rotateSound.pause();
-                rotateSound.currentTime = 0;
-                rotateSound.volume = 1;
-                console.log('音效预热完成');
-            }).catch(() => {
-                rotateSound.volume = 1;
-            });
-        }, 500);
-        
-        // 创建震动函数
-        function triggerSpinVibration(pattern = [100, 50, 100]) {
-            console.log("尝试触发旋转震动，模式:", pattern);
-            
-            if ("vibrate" in navigator) {
-                try {
-                    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-                    console.log("检测到移动设备:", isMobile);
-                    
-                    if (isMobile) {
-                        navigator.vibrate(pattern);
-                        console.log("移动设备震动触发:", pattern);
-                    } else {
-                        console.log("桌面设备，震动功能不可用");
-                    }
-                } catch (error) {
-                    console.log("震动执行失败:", error);
-                }
-            } else {
-                console.log("此设备或浏览器不支援震动功能");
-            }
-        }
-        
-        // 初始化旋转控制器（已完全修正震動問題）
         function initializeSpinController() {
-            $(document).ready(function () {
-                console.log("DOM 已載入，開始初始化旋轉控制器...");
+          const knob = document.getElementById("spinKnob");
+          if (!knob) return;
 
-                if (typeof gsap === 'undefined' || typeof Draggable === 'undefined') {
-                    console.error("GSAP 或 Draggable 未載入！");
-                    return;
-                }
+          const rotateSound = new Audio("cada5.MP3");
+          rotateSound.preload = "auto";
+          rotateSound.load();
 
-                const knobElement = document.getElementById("spinKnob");
-                if (!knobElement) {
-                    console.error("找不到 #spinKnob 元素！");
-                    return;
-                }
+          const spinSound = new Audio("se_door_hanekaeri.mp3");
 
-                // === 音效物件 ===
-                const spinSoundEffect = new Audio('se_door_hanekaeri.mp3');
-                const rotateSound = new Audio('cada5.MP3');
+          const STEP_DEG = 15;         // 每 15 度觸發一次震動
+          const SMALL_VIBE = 50;       // 小震動時長 (ms)
+          const BIG_VIBE = [200,100,200]; // 結束大震動模式
+          const ELASTIC_LIMIT = 90;    // 最大可轉角（單邊）
 
-                // 預載音效
-                rotateSound.preload = 'auto';
-                rotateSound.load();
+          let totalAngle = 0;          // 真實累積角度（可超過360）
+          let lastTriggerAngle = 0;
+          let prevRotation = 0;
+          let dragging = false;
 
-                // 預熱音效（避免首次播放延遲）
-                setTimeout(() => {
-                    rotateSound.volume = 0;
-                    rotateSound.play().then(() => {
-                        rotateSound.pause();
-                        rotateSound.currentTime = 0;
-                        rotateSound.volume = 1;
-                    }).catch(() => {
-                        rotateSound.volume = 1;
-                    });
-                }, 500);
+          // === 補正角度變化（防止360→0跳變） ===
+          function angleDelta(a, b) {
+            let d = a - b;
+            if (d > 180) d -= 360;
+            if (d < -180) d += 360;
+            return d;
+          }
 
-                // === 震動參數設定（網格觸發 + 冷卻）===
-                const GRID_SIZE = 15;                  // 每 15° 觸發一次
-                const SMALL_VIBRATION = [60, 40, 60];  // 短促雙脈衝（明顯）
-                const BIG_VIBRATION_PATTERN = [200, 100, 200, 100, 200]; // 停止時三連擊
-                let lastPlayedAngle = 0;               // 上一次觸發基準角度（用於累進觸發）
-                let prevAngle = 0;                     // 上一幀角度（用於計算跨幀差）
-                let accumulatedDelta = 0;              // 從上次觸發以來累積的角度差
-                let isDragging = false;
+          function vibrate(msOrPattern) {
+            if (!("vibrate" in navigator)) return;
+            try { navigator.vibrate(msOrPattern); } catch(e){}
+          }
 
-                // === 震動函數（支援 iOS 增強）===
-                function triggerVibration(pattern) {
-                    if (!("vibrate" in navigator)) {
-                        console.log("此設備不支援震動");
-                        return;
-                    }
+          Draggable.create("#spinKnob", {
+            type: "rotation",
+            inertia: true,
+            onPress() {
+              dragging = true;
+              totalAngle = 0;
+              lastTriggerAngle = 0;
+              prevRotation = this.rotation;
+              try { rotateSound.play().catch(()=>{}); } catch(e){}
+            },
+            onDrag() {
+              const rot = this.rotation;
+              const d = angleDelta(rot, prevRotation);
+              prevRotation = rot;
+              totalAngle += d;
 
-                    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-                    const finalPattern = Array.isArray(pattern) ? pattern : [pattern];
+              // 每跨 15° 就觸發
+              const stepDiff = Math.floor(totalAngle / STEP_DEG) - Math.floor(lastTriggerAngle / STEP_DEG);
+              if (stepDiff !== 0) {
+                vibrate(SMALL_VIBE);
+                try {
+                  rotateSound.currentTime = 0;
+                  rotateSound.play().catch(()=>{});
+                } catch(e){}
+                gyroWS.sendSpinEvent(totalAngle % 360, Date.now());
+                lastTriggerAngle = totalAngle;
+              }
 
-                    // iOS 震動較弱，可加雙擊增強
-                    const enhancedPattern = isIOS ? [...finalPattern, 50, ...finalPattern] : finalPattern;
+              // 限制 ±90° 並彈回
+              if (Math.abs(totalAngle) > ELASTIC_LIMIT) {
+                const target = ELASTIC_LIMIT * Math.sign(totalAngle);
+                gsap.to(knob, {rotation: target, duration:0.3, ease:"elastic.out(1,0.4)"});
+                spinSound.currentTime = 0;
+                spinSound.play().catch(()=>{});
+                vibrate(BIG_VIBE);
+                gyroWS.sendSpinEvent(target, Date.now());
+                totalAngle = target;
+                lastTriggerAngle = target;
+              }
+            },
+            onRelease() {
+              dragging = false;
+              rotateSound.pause();
+              rotateSound.currentTime = 0;
+              // 彈性回歸 0°
+              gsap.to(knob, {rotation:0, duration:0.5, ease:"elastic.out(1,0.3)"});
+              vibrate(BIG_VIBE);
+              spinSound.currentTime = 0;
+              spinSound.play().catch(()=>{});
+              gyroWS.sendSpinEvent(0, Date.now());
+            }
+          });
 
-                    try {
-                        navigator.vibrate(enhancedPattern);
-                        console.log("震動觸發:", enhancedPattern);
-                    } catch (error) {
-                        console.warn("震動失敗:", error);
-                    }
-                }
-
-                // 計算跨幀角度差（修正 -180/180 回繞）
-                function normalizeDelta(delta) {
-                    let d = delta % 360;
-                    if (d > 180) d -= 360;
-                    if (d < -180) d += 360;
-                    return d;
-                }
-
-                // === Draggable 旋鈕設定 ===
-                const draggable = Draggable.create("#spinKnob", {
-                    type: "rotation",
-                    inertia: true,
-
-                    onDragStart: function () {
-                        this.startAngle = this.rotation;
-                        lastPlayedAngle = this.rotation;
-                        prevAngle = this.rotation;
-                        accumulatedDelta = 0;
-                        isDragging = true;
-
-                        // 開始播放旋轉音效（循環）
-                        try {
-                            rotateSound.loop = true;
-                            const playPromise = rotateSound.play();
-                            if (playPromise !== undefined) {
-                                playPromise.catch(() => rotateSound.play());
-                            }
-                        } catch (e) {
-                            rotateSound.play();
-                        }
-
-                        console.log("開始拖拽，音效啟動");
-                    },
-
-                    onDrag: function () {
-                        const currentAngle = this.rotation;
-
-                        // 跨幀差，修正 360 回繞，累積角度
-                        const frameDelta = normalizeDelta(currentAngle - prevAngle);
-                        accumulatedDelta += frameDelta;
-                        prevAngle = currentAngle;
-
-                        // 每滿 15° 連續觸發，無時間冷卻
-                        while (Math.abs(accumulatedDelta) >= GRID_SIZE) {
-                            triggerVibration(SMALL_VIBRATION);
-                            accumulatedDelta -= GRID_SIZE * Math.sign(accumulatedDelta);
-                            console.log(`小震動：${currentAngle.toFixed(1)}°`);
-                        }
-
-                        // === 限制最大旋轉 90 度 ===
-                        const rotationDelta = currentAngle - this.startAngle;
-                        if (Math.abs(rotationDelta) > 45) {
-                            const targetAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
-
-                            gsap.to(this.target, {
-                                rotation: targetAngle,
-                                duration: 0.4,
-                                ease: "elastic.out(1, 0.4)"
-                            });
-
-                            // 回彈音效 + 震動
-                            spinSoundEffect.currentTime = 0;
-                            spinSoundEffect.play().catch(() => {});
-
-                            setTimeout(() => triggerVibration(200), 50);
-
-                            gyroWS.sendSpinEvent(targetAngle);
-                            // 強制吸附時重置基準，避免錯位
-                            lastPlayedAngle = targetAngle;
-                            prevAngle = targetAngle;
-                            accumulatedDelta = 0;
-                        }
-
-                        updateSpinAngleDisplay();
-                    },
-
-                    onDragEnd: function () {
-                        isDragging = false;
-                        rotateSound.pause();
-                        rotateSound.currentTime = 0;
-                        rotateSound.loop = false;
-
-                        const currentAngle = this.rotation;
-                        const rotationDelta = currentAngle - this.startAngle;
-                        const totalRotation = Math.abs(rotationDelta);
-
-                        // 最終吸附角度
-                        let finalAngle = this.startAngle;
-                        if (totalRotation > 45) {
-                            finalAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
-                        }
-
-                        // 強力回彈動畫
-                        gsap.to(this.target, {
-                            rotation: finalAngle,
-                            duration: 0.6,
-                            ease: "elastic.out(1, 0.3)"
-                        });
-
-                        // === 大震動：旋轉完成 90 度 ===
-                        if (finalAngle !== this.startAngle) {
-                            if (totalRotation >= 90) {
-                                spinSoundEffect.currentTime = 0;
-                                spinSoundEffect.play().catch(() => {});
-
-                                triggerVibration(BIG_VIBRATION_PATTERN); // 三連擊
-                                console.log(`大震動！完成 90° 旋轉：${totalRotation.toFixed(1)}°`);
-                            } else {
-                                triggerVibration(200);
-                            }
-
-                            gyroWS.sendSpinEvent(finalAngle);
-                        }
-
-                        lastPlayedAngle = finalAngle;
-                        updateSpinAngleDisplay();
-                        console.log(`拖拽結束，最終角度: ${finalAngle}°`);
-                    }
-                });
-
-                // 初始化角度顯示（可選：若你有顯示角度的元素）
-                function updateSpinAngleDisplay() {
-                    const rotation = gsap.getProperty("#spinKnob", "rotation");
-                    // 如果你有顯示角度的元素，例如：
-                    // const display = document.getElementById("spinAngleDisplay");
-                    // if (display) display.textContent = `角度: ${rotation.toFixed(1)}°`;
-                }
-
-                console.log("旋轉控制器初始化成功！每 15 度小震動 + 停止時大震動");
-            });
+          console.log("✅ 多圈穩定震動控制器已初始化");
         }
-        
-        // 更新角度显示的函數
-        function updateSpinAngleDisplay() {
-            const currentRotation = gsap.getProperty("#spinKnob", "rotation");
-            $("#spinAngleDisplay").text("当前角度: " + currentRotation.toFixed(1) + "°");
-        }
-        
-        // 页面载入时初始化旋转控制器
-        window.addEventListener('load', function () {
-            // 延迟初始化，确保其他库已载入
-            setTimeout(() => {
-                initializeSpinController();
-            }, 1000);
-        });
+
+        window.addEventListener("load", ()=>setTimeout(initializeSpinController, 500));
     </script>
 </body>
 </html>
