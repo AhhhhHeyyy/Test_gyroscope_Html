@@ -2028,6 +2028,14 @@
                     }
                 });
 
+                // 初始化角度顯示（可選：若你有顯示角度的元素）
+                function updateSpinAngleDisplay() {
+                    const rotation = gsap.getProperty("#spinKnob", "rotation");
+                    // 如果你有顯示角度的元素，例如：
+                    // const display = document.getElementById("spinAngleDisplay");
+                    // if (display) display.textContent = `角度: ${rotation.toFixed(1)}°`;
+                }
+
                 console.log("旋轉控制器初始化成功！每 15 度小震動 + 停止時大震動");
             });
         }
