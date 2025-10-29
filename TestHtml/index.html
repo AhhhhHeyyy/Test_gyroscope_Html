@@ -1855,6 +1855,20 @@
             }
         }
         
+        // === Android 專用強化震動函數 ===
+        let lastVibrationTime = 0;
+        function triggerVibration(pattern = [20, 60, 20]) {
+            const now = Date.now();
+            if (now - lastVibrationTime < 120) return;
+            lastVibrationTime = now;
+            const isAndroid = /Android/i.test(navigator.userAgent);
+            if (!isAndroid) return;
+            if ("vibrate" in navigator) {
+                try { navigator.vibrate(pattern); } catch (e) {}
+                console.log("📳 震動觸發:", pattern);
+            }
+        }
+        
         // 初始化旋转控制器
         function initializeSpinController() {
             // 确保 DOM 完全载入后再初始化
@@ -1926,8 +1940,8 @@
                         
                         // 如果旋转超过阈值，触发齿轮感短震，并对齐下一次触发基准
                         if (angleDifference >= ROTATE_THRESHOLD) {
-                            // 触发震动反馈 - 短促有力的齿轮感
-                            triggerSpinVibration([30]); // 30ms短促震动，像齿轮卡入
+                            // 触发震动反馈 - 短促有力的齿轮感（Android 強化版）
+                            triggerVibration([20, 60, 20]);
                             
                             // 立即更新已播放角度，让下一个15度能正确触发
                             // 使用取整来避免累积误差
@@ -1959,10 +1973,8 @@
                             console.log('🎯 准备发送旋转事件，角度:', targetAngle);
                             gyroWS.sendSpinEvent(targetAngle);
                             
-                            // 稍微延迟震动，让声音先开始播放
-                            setTimeout(() => {
-                                triggerSpinVibration(200); // 设备震动200毫秒
-                            }, 50); // 延迟50ms让声音先开始
+                            // 大震動（立即觸發，避免與小震混疊）
+                            triggerVibration([200, 100, 200]);
                             
                             lastPlayedAngle = targetAngle; // 更新已播放角度
                             
@@ -2006,19 +2018,10 @@
                         
                         // 如果最终角度与起始角度不同，播放回弹音效和震动
                         if (finalAngle !== this.startAngle) {
-                            // 如果旋转超过90度，播放se_door_hanekaeri音效并触发大力震动
-                            if (totalRotation >= 90) {
-                                spinSoundEffect.currentTime = 0; // 重置音效
-                                spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
-                                
-                                // 大力震动一次（三次强力震动）
-                                triggerSpinVibration([300, 100, 300, 100, 300]);
-                                
-                                console.log(`🎉 旋转超过90度！播放停止音效并震动。总旋转: ${totalRotation.toFixed(1)}°`);
-                            } else {
-                                // 小于90度只有轻微震动
-                                triggerSpinVibration(200); // 设备震动200毫秒
-                            }
+                            // 播放音效 + 大震動（無論是否達到90°，統一強烈結束回饋）
+                            spinSoundEffect.currentTime = 0; // 重置音效
+                            spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                            triggerVibration([200, 100, 200]);
                             
                             // 发送旋转事件到Unity
                             console.log('🎯 准备发送旋转事件（onDragEnd），角度:', finalAngle);
