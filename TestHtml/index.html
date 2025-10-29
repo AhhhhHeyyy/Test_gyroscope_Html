@@ -1888,8 +1888,8 @@
                 // 运动判定：小抖动/长按不触发
                 let lastAngleForMotion = null;
                 let lastMotionUpdateTime = 0;
-                const MIN_ANGLE_DELTA = 2; // 小于2°视为未移动，避免边界抖动
-                const IDLE_TIMEOUT = 150;  // 150ms 内无显著移动视为静止
+                const MIN_ANGLE_DELTA = 1; // 小于2°视为未移动，避免边界抖动
+                const IDLE_TIMEOUT = 10;  // 150ms 内无显著移动视为静止
                 let isDragging = false; // 追踪是否正在拖拽
                 
                 // 创建可拖拽的旋钮
