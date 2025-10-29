@@ -2026,9 +2026,7 @@
                                 ease: "elastic.out(1, 0.4)"
                             });
                             
-                            // 播放回弹音效
-                            spinSoundEffect.currentTime = 0; // 重置音效到开始位置
-                            spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                            // 注意：90度限制时不播放音效，只在松开手时播放
                             
                             // 注意：不在这里发送角度，因为实时发送（上方）已经持续发送真实角度
                             // 限制逻辑只影响网页端的视觉回弹效果，Unity接收的应该是真实的累积角度
