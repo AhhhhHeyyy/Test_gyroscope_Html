@@ -1893,11 +1893,11 @@
 
                 // === 震動參數設定（網格觸發 + 冷卻）===
                 const GRID_SIZE = 15;                  // 每 15° 觸發一次
-                const VIBRATION_COOLDOWN = 320;        // 震動冷卻（ms）
                 const SMALL_VIBRATION = [60, 40, 60];  // 短促雙脈衝（明顯）
                 const BIG_VIBRATION_PATTERN = [200, 100, 200, 100, 200]; // 停止時三連擊
-                let lastVibrationTime = 0;             // 上次震動時間
                 let lastPlayedAngle = 0;               // 上一次觸發基準角度（用於累進觸發）
+                let prevAngle = 0;                     // 上一幀角度（用於計算跨幀差）
+                let accumulatedDelta = 0;              // 從上次觸發以來累積的角度差
                 let isDragging = false;
 
                 // === 震動函數（支援 iOS 增強）===
@@ -1921,6 +1921,14 @@
                     }
                 }
 
+                // 計算跨幀角度差（修正 -180/180 回繞）
+                function normalizeDelta(delta) {
+                    let d = delta % 360;
+                    if (d > 180) d -= 360;
+                    if (d < -180) d += 360;
+                    return d;
+                }
+
                 // === Draggable 旋鈕設定 ===
                 const draggable = Draggable.create("#spinKnob", {
                     type: "rotation",
@@ -1929,7 +1937,8 @@
                     onDragStart: function () {
                         this.startAngle = this.rotation;
                         lastPlayedAngle = this.rotation;
-                        lastVibrationTime = 0;
+                        prevAngle = this.rotation;
+                        accumulatedDelta = 0;
                         isDragging = true;
 
                         // 開始播放旋轉音效（循環）
@@ -1949,18 +1958,16 @@
                     onDrag: function () {
                         const currentAngle = this.rotation;
 
-                        // 累計角度每滿 15° 觸發一次
-                        const delta = currentAngle - lastPlayedAngle;
-                        const steps = Math.floor(Math.abs(delta) / GRID_SIZE);
-                        if (steps >= 1) {
-                            const now = Date.now();
-                            if (now - lastVibrationTime >= VIBRATION_COOLDOWN) {
-                                triggerVibration(SMALL_VIBRATION);
-                                lastVibrationTime = now;
-                                console.log(`小震動：${currentAngle.toFixed(1)}° (+${steps * GRID_SIZE * Math.sign(delta)}°)`);
-                            }
-                            // 將基準角向前推進整數個 15°，確保連續多步也能逐步觸發
-                            lastPlayedAngle += GRID_SIZE * steps * Math.sign(delta);
+                        // 跨幀差，修正 360 回繞，累積角度
+                        const frameDelta = normalizeDelta(currentAngle - prevAngle);
+                        accumulatedDelta += frameDelta;
+                        prevAngle = currentAngle;
+
+                        // 每滿 15° 連續觸發，無時間冷卻
+                        while (Math.abs(accumulatedDelta) >= GRID_SIZE) {
+                            triggerVibration(SMALL_VIBRATION);
+                            accumulatedDelta -= GRID_SIZE * Math.sign(accumulatedDelta);
+                            console.log(`小震動：${currentAngle.toFixed(1)}°`);
                         }
 
                         // === 限制最大旋轉 90 度 ===
@@ -1981,7 +1988,10 @@
                             setTimeout(() => triggerVibration(200), 50);
 
                             gyroWS.sendSpinEvent(targetAngle);
-                            lastPlayedAngle = targetAngle; // 將基準角對齊到目標角度
+                            // 強制吸附時重置基準，避免錯位
+                            lastPlayedAngle = targetAngle;
+                            prevAngle = targetAngle;
+                            accumulatedDelta = 0;
                         }
 
                         updateSpinAngleDisplay();
