@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -1857,197 +1855,180 @@
             }
         }
         
-        // 初始化旋转控制器
+        // 初始化旋转控制器（已完全修正震動問題）
         function initializeSpinController() {
-            // 确保 DOM 完全载入后再初始化
-            $(document).ready(function() {
-                console.log("DOM 已载入，开始初始化旋转控制器...");
-                
-                // 检查必要的库是否已载入
-                if (typeof gsap === 'undefined') {
-                    console.error("GSAP 未载入！");
+            $(document).ready(function () {
+                console.log("DOM 已載入，開始初始化旋轉控制器...");
+
+                if (typeof gsap === 'undefined' || typeof Draggable === 'undefined') {
+                    console.error("GSAP 或 Draggable 未載入！");
                     return;
                 }
-                
-                if (typeof Draggable === 'undefined') {
-                    console.error("Draggable 插件未载入！");
-                    return;
-                }
-                
-                // 检查旋钮元素是否存在
+
                 const knobElement = document.getElementById("spinKnob");
                 if (!knobElement) {
                     console.error("找不到 #spinKnob 元素！");
                     return;
                 }
-                
-                console.log("开始创建旋转控制器...");
-                
-                // 追踪已播放的角度区间
+
+                // === 音效物件 ===
+                const spinSoundEffect = new Audio('se_door_hanekaeri.mp3');
+                const rotateSound = new Audio('cada5.MP3');
+
+                // 預載音效
+                rotateSound.preload = 'auto';
+                rotateSound.load();
+
+                // 預熱音效（避免首次播放延遲）
+                setTimeout(() => {
+                    rotateSound.volume = 0;
+                    rotateSound.play().then(() => {
+                        rotateSound.pause();
+                        rotateSound.currentTime = 0;
+                        rotateSound.volume = 1;
+                    }).catch(() => {
+                        rotateSound.volume = 1;
+                    });
+                }, 500);
+
+                // === 震動參數設定 ===
+                const ROTATE_THRESHOLD = 15;           // 每 15 度觸發一次小震動
+                const SMALL_VIBRATION_PATTERN = [60, 40, 60];  // 短促雙脈衝（非常明顯）
+                const BIG_VIBRATION_PATTERN = [200, 100, 200, 100, 200]; // 停止時三連擊
+                const VIBRATION_COOLDOWN = 320;        // 至少 320ms 後才能再震（避免重疊）
+                let lastVibrationTime = 0;
                 let lastPlayedAngle = 0;
-                const ROTATE_THRESHOLD = 5; // 每5度触发一次震动
-                let lastVibrationTime = 0; // 追踪最后震动时间
-                let isDragging = false; // 追踪是否正在拖拽
-                
-                // 创建可拖拽的旋钮
+                let isDragging = false;
+
+                // === 震動函數（支援 iOS 增強）===
+                function triggerVibration(pattern) {
+                    if (!("vibrate" in navigator)) {
+                        console.log("此設備不支援震動");
+                        return;
+                    }
+
+                    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+                    const finalPattern = Array.isArray(pattern) ? pattern : [pattern];
+
+                    // iOS 震動較弱，可加雙擊增強
+                    const enhancedPattern = isIOS ? [...finalPattern, 50, ...finalPattern] : finalPattern;
+
+                    try {
+                        navigator.vibrate(enhancedPattern);
+                        console.log("震動觸發:", enhancedPattern);
+                    } catch (error) {
+                        console.warn("震動失敗:", error);
+                    }
+                }
+
+                // === Draggable 旋鈕設定 ===
                 const draggable = Draggable.create("#spinKnob", {
                     type: "rotation",
                     inertia: true,
-                    onDragStart: function() {
-                        // 记录开始拖拽时的角度
+
+                    onDragStart: function () {
                         this.startAngle = this.rotation;
-                        lastPlayedAngle = this.rotation; // 初始化已播放的角度
-                        isDragging = true; // 标记开始拖拽
-                        
-                        // 开始播放音效 - 立即播放，不等待
+                        lastPlayedAngle = this.rotation;
+                        isDragging = true;
+
+                        // 開始播放旋轉音效（循環）
                         try {
-                            rotateSound.loop = true; // 设置循环播放
+                            rotateSound.loop = true;
                             const playPromise = rotateSound.play();
-                            
-                            // 如果浏览器需要用户交互
                             if (playPromise !== undefined) {
-                                playPromise.catch(error => {
-                                    // 如果自动播放被阻止，尝试立即播放
-                                    console.log("自动播放被阻止，尝试立即播放:", error);
-                                    rotateSound.play();
-                                });
+                                playPromise.catch(() => rotateSound.play());
                             }
-                        } catch(e) {
-                            console.log("音效播放失败:", e);
-                            // 失败时也尝试播放
+                        } catch (e) {
                             rotateSound.play();
                         }
-                        
-                        console.log("开始拖拽，开始播放音效。起始角度:", this.startAngle);
+
+                        console.log("開始拖拽，音效啟動");
                     },
-                    onDrag: function() {
-                        let currentAngle = this.rotation;
-                        let rotationDelta = currentAngle - this.startAngle;
-                        
-                        // 检查是否经过了15度的增量
-                        let angleDifference = Math.abs(currentAngle - lastPlayedAngle);
-                        
-                        // 如果旋转超过15度，触发震动反馈并更新已播放角度
-                        if (angleDifference >= ROTATE_THRESHOLD) {
-                            // 音效在onDragStart时已开始循环播放，这里只需要触发震动
-                            
-                            // 触发震动反馈 - 间隔0.5秒
-                            const currentTime = Date.now();
-                            if (currentTime - lastVibrationTime >= 500) { // 0.5秒间隔
-                                triggerSpinVibration([150, 300, 150]); // 震动模式：150ms开启，300ms关闭，150ms开启
-                                lastVibrationTime = currentTime;
-                                console.log(`震动触发：${currentAngle.toFixed(1)}°`);
+
+                    onDrag: function () {
+                        const currentAngle = this.rotation;
+                        const angleDiff = Math.abs(currentAngle - lastPlayedAngle);
+
+                        // === 每 15 度觸發一次小震動 ===
+                        if (angleDiff >= ROTATE_THRESHOLD) {
+                            const now = Date.now();
+                            if (now - lastVibrationTime >= VIBRATION_COOLDOWN) {
+                                triggerVibration(SMALL_VIBRATION_PATTERN);
+                                lastVibrationTime = now;
+                                console.log(`小震動：${currentAngle.toFixed(1)}°`);
                             }
-                            
-                            lastPlayedAngle = currentAngle; // 更新已播放角度
-                            console.log(`达到15度增量，震动触发。当前角度: ${currentAngle.toFixed(1)}°`);
+                            lastPlayedAngle = currentAngle;
                         }
-                        
-                        // 实时更新角度显示
-                        updateSpinAngleDisplay();
-                        
-                        // 限制旋转增量在 90 度以内
+
+                        // === 限制最大旋轉 90 度 ===
+                        const rotationDelta = currentAngle - this.startAngle;
                         if (Math.abs(rotationDelta) > 45) {
-                            // 如果旋转超过 45 度，就限制到 90 度
-                            let targetAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
-                            
-                            // 强制设定到限制的角度，使用回弹动画
+                            const targetAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
+
                             gsap.to(this.target, {
                                 rotation: targetAngle,
                                 duration: 0.4,
                                 ease: "elastic.out(1, 0.4)"
                             });
-                            
-                            // 播放回弹音效
-                            spinSoundEffect.currentTime = 0; // 重置音效到开始位置
-                            spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
-                            
-                            // 发送旋转事件到Unity
-                            console.log('🎯 准备发送旋转事件，角度:', targetAngle);
+
+                            // 回彈音效 + 震動
+                            spinSoundEffect.currentTime = 0;
+                            spinSoundEffect.play().catch(() => {});
+
+                            setTimeout(() => triggerVibration(200), 50);
+
                             gyroWS.sendSpinEvent(targetAngle);
-                            
-                            // 稍微延迟震动，让声音先开始播放
-                            setTimeout(() => {
-                                triggerSpinVibration(200); // 设备震动200毫秒
-                            }, 50); // 延迟50ms让声音先开始
-                            
-                            lastPlayedAngle = targetAngle; // 更新已播放角度
-                            
-                            console.log(`旋转被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
-                        } else {
-                            console.log("拖拽中，旋转角度:", this.rotation, "增量:", rotationDelta.toFixed(1));
+                            lastPlayedAngle = targetAngle;
                         }
+
+                        updateSpinAngleDisplay();
                     },
-                    onDragEnd: function() {
-                        // 标记拖拽结束
+
+                    onDragEnd: function () {
                         isDragging = false;
-                        
-                        // 停止播放音效
                         rotateSound.pause();
                         rotateSound.currentTime = 0;
-                        rotateSound.loop = false; // 取消循环
-                        console.log("拖拽结束，音效已停止");
-                        
-                        // 拖拽结束时进行最终吸附
-                        let currentAngle = this.rotation;
-                        let rotationDelta = currentAngle - this.startAngle;
-                        
-                        // 计算最终角度（限制在 90 度增量内）
+                        rotateSound.loop = false;
+
+                        const currentAngle = this.rotation;
+                        const rotationDelta = currentAngle - this.startAngle;
+                        const totalRotation = Math.abs(rotationDelta);
+
+                        // 最終吸附角度
                         let finalAngle = this.startAngle;
-                        if (Math.abs(rotationDelta) > 45) {
+                        if (totalRotation > 45) {
                             finalAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
-                        } else {
-                            // 如果增量小于 45 度，回到起始角度
-                            finalAngle = this.startAngle;
                         }
-                        
-                        // 使用强烈的回弹动画吸附到最终角度
+
+                        // 強力回彈動畫
                         gsap.to(this.target, {
                             rotation: finalAngle,
                             duration: 0.6,
                             ease: "elastic.out(1, 0.3)"
                         });
 
-                        // 检查总旋转角度（从开始到结束）
-                        const totalRotation = Math.abs(rotationDelta);
-                        
-                        // 如果最终角度与起始角度不同，播放回弹音效和震动
+                        // === 大震動：旋轉完成 90 度 ===
                         if (finalAngle !== this.startAngle) {
-                            // 如果旋转超过90度，播放se_door_hanekaeri音效并触发大力震动
                             if (totalRotation >= 90) {
-                                spinSoundEffect.currentTime = 0; // 重置音效
-                                spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
-                                
-                                // 大力震动一次（三次强力震动）
-                                triggerSpinVibration([300, 100, 300, 100, 300]);
-                                
-                                console.log(`🎉 旋转超过90度！播放停止音效并震动。总旋转: ${totalRotation.toFixed(1)}°`);
+                                spinSoundEffect.currentTime = 0;
+                                spinSoundEffect.play().catch(() => {});
+
+                                triggerVibration(BIG_VIBRATION_PATTERN); // 三連擊
+                                console.log(`大震動！完成 90° 旋轉：${totalRotation.toFixed(1)}°`);
                             } else {
-                                // 小于90度只有轻微震动
-                                triggerSpinVibration(200); // 设备震动200毫秒
+                                triggerVibration(200);
                             }
-                            
-                            // 发送旋转事件到Unity
-                            console.log('🎯 准备发送旋转事件（onDragEnd），角度:', finalAngle);
+
                             gyroWS.sendSpinEvent(finalAngle);
                         }
-                        
-                        // 更新已播放角度为最终角度
-                        lastPlayedAngle = finalAngle;
 
-                        console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
-                        
-                        // 更新最终角度显示
+                        lastPlayedAngle = finalAngle;
                         updateSpinAngleDisplay();
+                        console.log(`拖拽結束，最終角度: ${finalAngle}°`);
                     }
                 });
-                
-                console.log("旋转控制器创建成功:", draggable);
-                
-                // 初始化角度显示
-                updateSpinAngleDisplay();
-                
-                console.log("旋转控制器初始化完成！");
+
+                console.log("旋轉控制器初始化成功！每 15 度小震動 + 停止時大震動");
             });
         }
         
