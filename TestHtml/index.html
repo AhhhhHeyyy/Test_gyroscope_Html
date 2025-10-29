@@ -1888,8 +1888,8 @@
                 // 运动判定：小抖动/长按不触发
                 let lastAngleForMotion = null;
                 let lastMotionUpdateTime = 0;
-                const MIN_ANGLE_DELTA = 1; // 小于2°视为未移动，避免边界抖动
-                const IDLE_TIMEOUT = 10;  // 150ms 内无显著移动视为静止
+                const MIN_ANGLE_DELTA = 2; // 小于2°视为未移动，避免边界抖动
+                const IDLE_TIMEOUT = 150;  // 150ms 内无显著移动视为静止
                 let isDragging = false; // 追踪是否正在拖拽
                 
                 // 创建可拖拽的旋钮
@@ -1945,13 +1945,17 @@
                             lastMotionUpdateTime = now;
                         }
 
-                        if (currentStepIndex !== lastStepIndex && (movedEnough || recentlyMoving)) {
+                        // 只允许在拖拽中且真正移动时才触发步进震动
+                        if (isDragging && currentStepIndex !== lastStepIndex && movedEnough) {
                             // 步进变化才触发一次震动（更小更清晰）
                             if (now - lastVibrationTime >= 180) { // 增加安全间隔，避免停下后抖动连发
                                 triggerSpinVibration(80); // 80ms 更轻的短震
                                 lastVibrationTime = now;
                                 console.log(`步进震动触发：step=${currentStepIndex}, angle=${normalized.toFixed(1)}°`);
                             }
+                            lastStepIndex = currentStepIndex;
+                        } else if (currentStepIndex !== lastStepIndex) {
+                            // 非拖拽状态或未移动时，只更新步进索引，不触发震动
                             lastStepIndex = currentStepIndex;
                         }
                         
@@ -1989,8 +1993,12 @@
                         }
                     },
                     onDragEnd: function() {
-                        // 标记拖拽结束
+                        // 标记拖拽结束（放在最前面，立即停止步进震动）
                         isDragging = false;
+                        
+                        // 立即重置运动检测状态，防止停止后的多余震动
+                        lastAngleForMotion = null;
+                        lastMotionUpdateTime = 0;
                         
                         // 停止播放音效
                         rotateSound.pause();
