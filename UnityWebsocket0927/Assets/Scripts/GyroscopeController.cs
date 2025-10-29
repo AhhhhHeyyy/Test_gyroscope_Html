@@ -20,6 +20,11 @@ public class GyroscopeController : MonoBehaviour
     [SerializeField] private Vector2 yRotationLimits = new Vector2(-180f, 180f);
     [SerializeField] private Vector2 zRotationLimits = new Vector2(-180f, 180f);
     
+    [Header("旋转盘控制設定")]
+    [SerializeField] private bool enableSpinRotation = true;
+    [SerializeField] private bool useSpinSmoothing = true;
+    [SerializeField] private float spinSmoothingFactor = 0.1f;
+    
     [Header("調試")]
     [SerializeField] private bool showDebugInfo = false;
     
@@ -33,6 +38,10 @@ public class GyroscopeController : MonoBehaviour
     private Vector3 targetRotation = Vector3.zero;
     private Vector3 smoothedRotation = Vector3.zero;
     private Vector3 lastPosition = Vector3.zero;
+    
+    // 旋转盘角度控制
+    private float targetSpinAngle = 0f;
+    private float currentSpinAngle = 0f;
     
     void Start()
     {
@@ -53,6 +62,9 @@ public class GyroscopeController : MonoBehaviour
         // 訂閱搖晃數據事件
         GyroscopeReceiver.OnShakeDataReceived += OnShakeDataReceived;
         
+        // 訂閱旋轉盤數據事件
+        GyroscopeReceiver.OnSpinDataReceived += OnSpinDataReceived;
+        
         // 初始化旋轉
         currentRotation = transform.eulerAngles;
         targetRotation = currentRotation;
@@ -66,6 +78,7 @@ public class GyroscopeController : MonoBehaviour
         // 取消訂閱事件
         GyroscopeReceiver.OnGyroscopeDataReceived -= OnGyroscopeDataReceived;
         GyroscopeReceiver.OnShakeDataReceived -= OnShakeDataReceived;
+        GyroscopeReceiver.OnSpinDataReceived -= OnSpinDataReceived;
     }
     
     void Update()
@@ -78,6 +91,12 @@ public class GyroscopeController : MonoBehaviour
         if (enablePosition)
         {
             ApplyPosition();
+        }
+        
+        // 应用旋转盘角度（持续读取）
+        if (enableSpinRotation && gyroReceiver != null)
+        {
+            ApplySpinRotation();
         }
         
         if (showDebugInfo)
@@ -119,6 +138,39 @@ public class GyroscopeController : MonoBehaviour
             lastPosition += deltaPosition;
             Debug.Log($"🎮 更新位置: {lastPosition}");
         }
+    }
+    
+    // 旋转盘事件处理函数
+    private void OnSpinDataReceived(GyroscopeReceiver.SpinData spinData)
+    {
+        // 更新目标旋转角度为网页端传来的角度
+        targetSpinAngle = spinData.angle;
+        
+        Debug.Log($"🎯 收到旋转盘事件: 角度={spinData.angle:F2}°");
+    }
+    
+    // 应用旋转盘角度
+    private void ApplySpinRotation()
+    {
+        // 持续读取 GyroscopeReceiver 的 LastSpinAngle（保持最新值）
+        if (gyroReceiver != null)
+        {
+            targetSpinAngle = gyroReceiver.LastSpinAngle;
+        }
+        
+        if (useSpinSmoothing)
+        {
+            // 平滑插值到目标角度
+            currentSpinAngle = Mathf.LerpAngle(currentSpinAngle, targetSpinAngle, spinSmoothingFactor * Time.deltaTime * 60f);
+        }
+        else
+        {
+            // 直接应用角度
+            currentSpinAngle = targetSpinAngle;
+        }
+        
+        // 应用到 Transform 的 Y 轴旋转
+        transform.rotation = Quaternion.Euler(transform.eulerAngles.x, currentSpinAngle, transform.eulerAngles.z);
     }
     
     // 搖晃事件處理函數

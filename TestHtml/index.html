@@ -1859,7 +1859,7 @@
         let lastVibrationTime = 0;
         
         // 模式設定
-        const SMALL_VIBRATION = 20;  // 單震一次（50ms 持續時間）
+        const SMALL_VIBRATION = 20;  // 單震一次（20ms 持續時間）
         const BIG_VIBRATION = [200, 120, 200]; // 大震 - 結束回饋更重
         
         function triggerVibration(pattern = SMALL_VIBRATION) {
@@ -1916,6 +1916,10 @@
                 let lastTriggerStep = 0;  // 上次触发的步数
                 const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
                 let isDragging = false; // 追踪是否正在拖拽
+                
+                // 实时角度发送节流（每50ms发送一次，避免过于频繁）
+                let lastAngleSendTime = 0;
+                const ANGLE_SEND_INTERVAL = 50; // 毫秒
                 
                 // 修正角度差（处理360度跳转）
                 function normalizeAngleDelta(current, prev) {
@@ -1980,6 +1984,13 @@
                         
                         // 实时更新角度显示
                         updateSpinAngleDisplay();
+                        
+                        // 实时发送角度数据到Unity（节流：每50ms发送一次）
+                        const now = Date.now();
+                        if (now - lastAngleSendTime >= ANGLE_SEND_INTERVAL) {
+                            gyroWS.sendSpinEvent(currentAngle);
+                            lastAngleSendTime = now;
+                        }
                         
                         // 限制旋转增量在 90 度以内
                         if (Math.abs(rotationDelta) > 45) {

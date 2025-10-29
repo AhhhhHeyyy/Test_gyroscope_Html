@@ -24,6 +24,9 @@ public class GyroscopeReceiver : MonoBehaviour
     [SerializeField] private float lastSpinAngle = 0f;
     [SerializeField] private int spinCount = 0;
     
+    // 公共属性：允许外部脚本访问当前旋转角度
+    public float LastSpinAngle => lastSpinAngle;
+    
     [Header("連接狀態")]
     [SerializeField] public bool isConnected = false;
     [SerializeField] public string connectionStatus = "未連接";
