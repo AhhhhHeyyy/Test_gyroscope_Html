@@ -1847,15 +1847,6 @@
                     } else {
                         console.log("桌面设备，震动功能不可用");
                     }
-
-			// 安全封裝：調用內建震動函數
-			function safeTriggerSpinVibration(patternOrDuration) {
-				try {
-					triggerSpinVibration(patternOrDuration);
-				} catch (e) {
-					console.log("safeTriggerSpinVibration 失敗:", e);
-				}
-			}
                 } catch (error) {
                     console.log("震动执行失败:", error);
                 }
@@ -1890,12 +1881,11 @@
                 
                 console.log("开始创建旋转控制器...");
                 
-				// 追踪已播放的角度区间
-				let lastPlayedAngle = 0;
-				const ROTATE_THRESHOLD = 15; // 每15°觸發一次
-				const VIBRATION_INTERVAL = 250;
-				let lastVibrationTime = 0;
-				let isDragging = false; // 追踪是否正在拖拽
+                // 追踪已播放的角度区间
+                let lastPlayedAngle = 0;
+                const ROTATE_THRESHOLD = 5; // 每5度触发一次震动
+                let lastVibrationTime = 0; // 追踪最后震动时间
+                let isDragging = false; // 追踪是否正在拖拽
                 
                 // 创建可拖拽的旋钮
                 const draggable = Draggable.create("#spinKnob", {
@@ -1935,18 +1925,21 @@
                         // 检查是否经过了15度的增量
                         let angleDifference = Math.abs(currentAngle - lastPlayedAngle);
                         
-						// 僅依角度差判斷，加入最小觸發間隔避免過密震動
-						if (angleDifference >= ROTATE_THRESHOLD) {
-							const now = Date.now();
-							if (now - lastVibrationTime >= VIBRATION_INTERVAL) {
-								safeTriggerSpinVibration(150);  // 明確短震
-								rotateSound.currentTime = 0;    // 重置音效
-								rotateSound.play().catch(()=>{}); // 播放短音效
-								lastVibrationTime = now;
-								lastPlayedAngle = currentAngle;
-								console.log(`✅ 震動觸發，角度差 ${angleDifference.toFixed(1)}°`);
-							}
-						}
+                        // 如果旋转超过15度，触发震动反馈并更新已播放角度
+                        if (angleDifference >= ROTATE_THRESHOLD) {
+                            // 音效在onDragStart时已开始循环播放，这里只需要触发震动
+                            
+                            // 触发震动反馈 - 间隔0.5秒
+                            const currentTime = Date.now();
+                            if (currentTime - lastVibrationTime >= 500) { // 0.5秒间隔
+                                triggerSpinVibration([150, 300, 150]); // 震动模式：150ms开启，300ms关闭，150ms开启
+                                lastVibrationTime = currentTime;
+                                console.log(`震动触发：${currentAngle.toFixed(1)}°`);
+                            }
+                            
+                            lastPlayedAngle = currentAngle; // 更新已播放角度
+                            console.log(`达到15度增量，震动触发。当前角度: ${currentAngle.toFixed(1)}°`);
+                        }
                         
                         // 实时更新角度显示
                         updateSpinAngleDisplay();
