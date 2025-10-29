@@ -1927,7 +1927,7 @@
 						// 如果旋转超过15度，仅依据角度差触发震动并更新已播放角度
 						if (angleDifference >= ROTATE_THRESHOLD) {
 							// 音效在onDragStart时已开始循环播放，这里只需要触发震动
-							triggerSpinVibration(100); // 震动100ms即可，短促明顯
+							triggerSpinVibration([200, 60, 200]); // 更明顯的雙重短震動
 							lastPlayedAngle = currentAngle; // 更新上次角度
 							console.log(`✅ 小震动触发，角度差: ${angleDifference.toFixed(1)}°`);
 						}
