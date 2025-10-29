@@ -1881,11 +1881,10 @@
                 
                 console.log("开始创建旋转控制器...");
                 
-                // 追踪已触发的角度「步进」（以 15° 为单位）
-                let lastStepIndex = -1;
-                const ROTATE_THRESHOLD = 15; // 每15度触发一次震动（步进制）
-                const ENABLE_EXTRA_VIBRATIONS = false; // 关闭非步进震动，确保每90°仅6次
-                let lastVibrationTime = 0; // 追踪最后震动时间（安全间隔）
+                // 追踪已播放的角度区间
+                let lastPlayedAngle = 0;
+                const ROTATE_THRESHOLD = 5; // 每5度触发一次震动
+                let lastVibrationTime = 0; // 追踪最后震动时间
                 let isDragging = false; // 追踪是否正在拖拽
                 
                 // 创建可拖拽的旋钮
@@ -1895,8 +1894,7 @@
                     onDragStart: function() {
                         // 记录开始拖拽时的角度
                         this.startAngle = this.rotation;
-                        // 初始化最后步进索引（0..23）
-                        lastStepIndex = Math.floor((((this.rotation % 360) + 360) % 360) / ROTATE_THRESHOLD);
+                        lastPlayedAngle = this.rotation; // 初始化已播放的角度
                         isDragging = true; // 标记开始拖拽
                         
                         // 开始播放音效 - 立即播放，不等待
@@ -1923,21 +1921,24 @@
                     onDrag: function() {
                         let currentAngle = this.rotation;
                         let rotationDelta = currentAngle - this.startAngle;
-
-                        // 以「每15°一个格」为单位触发：对齐到离散步进，避免持续微小震动
-                        const normalized = (((currentAngle % 360) + 360) % 360);
-                        const currentStepIndex = Math.floor(normalized / ROTATE_THRESHOLD); // 0..23
-
-                        if (currentStepIndex !== lastStepIndex) {
-                            // 步进变化才触发一次震动（提升明显度）
-                            const now = Date.now();
-                            if (now - lastVibrationTime >= 120) { // 最小安全间隔 120ms，避免抖动
-                                // 加强震动力度，单拍更清晰
-                                triggerSpinVibration(220); // 220ms 明确的短震
-                                lastVibrationTime = now;
-                                console.log(`步进震动触发：step=${currentStepIndex}, angle=${normalized.toFixed(1)}°`);
+                        
+                        // 检查是否经过了15度的增量
+                        let angleDifference = Math.abs(currentAngle - lastPlayedAngle);
+                        
+                        // 如果旋转超过15度，触发震动反馈并更新已播放角度
+                        if (angleDifference >= ROTATE_THRESHOLD) {
+                            // 音效在onDragStart时已开始循环播放，这里只需要触发震动
+                            
+                            // 触发震动反馈 - 间隔0.5秒
+                            const currentTime = Date.now();
+                            if (currentTime - lastVibrationTime >= 500) { // 0.5秒间隔
+                                triggerSpinVibration([150, 300, 150]); // 震动模式：150ms开启，300ms关闭，150ms开启
+                                lastVibrationTime = currentTime;
+                                console.log(`震动触发：${currentAngle.toFixed(1)}°`);
                             }
-                            lastStepIndex = currentStepIndex;
+                            
+                            lastPlayedAngle = currentAngle; // 更新已播放角度
+                            console.log(`达到15度增量，震动触发。当前角度: ${currentAngle.toFixed(1)}°`);
                         }
                         
                         // 实时更新角度显示
@@ -1963,15 +1964,12 @@
                             console.log('🎯 准备发送旋转事件，角度:', targetAngle);
                             gyroWS.sendSpinEvent(targetAngle);
                             
-                            // 可选：回弹时额外震动（默认关闭）
-                            if (ENABLE_EXTRA_VIBRATIONS) {
-                                setTimeout(() => {
-                                    triggerSpinVibration(200); // 设备震动200毫秒
-                                }, 50); // 延迟50ms让声音先开始
-                            }
+                            // 稍微延迟震动，让声音先开始播放
+                            setTimeout(() => {
+                                triggerSpinVibration(200); // 设备震动200毫秒
+                            }, 50); // 延迟50ms让声音先开始
                             
-                            // 同步更新最后步进索引
-                            lastStepIndex = Math.floor((((targetAngle % 360) + 360) % 360) / ROTATE_THRESHOLD);
+                            lastPlayedAngle = targetAngle; // 更新已播放角度
                             
                             console.log(`旋转被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         } else {
@@ -2018,17 +2016,13 @@
                                 spinSoundEffect.currentTime = 0; // 重置音效
                                 spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
                                 
-                                if (ENABLE_EXTRA_VIBRATIONS) {
-                                    // 大力震动一次（三次强力震动）
-                                    triggerSpinVibration([300, 100, 300, 100, 300]);
-                                }
+                                // 大力震动一次（三次强力震动）
+                                triggerSpinVibration([300, 100, 300, 100, 300]);
                                 
-                                console.log(`🎉 旋转超过90度！播放停止音效${ENABLE_EXTRA_VIBRATIONS ? '并震动' : ''}。总旋转: ${totalRotation.toFixed(1)}°`);
+                                console.log(`🎉 旋转超过90度！播放停止音效并震动。总旋转: ${totalRotation.toFixed(1)}°`);
                             } else {
-                                if (ENABLE_EXTRA_VIBRATIONS) {
-                                    // 小于90度只有轻微震动
-                                    triggerSpinVibration(200); // 设备震动200毫秒
-                                }
+                                // 小于90度只有轻微震动
+                                triggerSpinVibration(200); // 设备震动200毫秒
                             }
                             
                             // 发送旋转事件到Unity
@@ -2036,8 +2030,8 @@
                             gyroWS.sendSpinEvent(finalAngle);
                         }
                         
-                        // 更新步进索引为最终角度所在步进
-                        lastStepIndex = Math.floor((((finalAngle % 360) + 360) % 360) / ROTATE_THRESHOLD);
+                        // 更新已播放角度为最终角度
+                        lastPlayedAngle = finalAngle;
 
                         console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         
