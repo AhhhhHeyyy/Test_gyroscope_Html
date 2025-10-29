@@ -1808,7 +1808,7 @@
         
         // 创建音效对象
         const spinSoundEffect = new Audio('se_door_hanekaeri.mp3');
-        const rotateSound = new Audio('cada6.MP3'); // 每5度触发震动音效
+        const rotateSound = new Audio('cada7.MP3'); // 每5度触发震动音效
         
         // 预加载音效以减少延迟
         rotateSound.preload = 'auto';
@@ -1816,7 +1816,7 @@
         
         // 初始化音效 - 预先加载到内存以减少延迟
         rotateSound.addEventListener('loadeddata', function() {
-            console.log('cada6音效已加载完成');
+            console.log('cada7音效已加载完成');
         });
         
         // 预播放一小段来预热音效（先静音播放）
