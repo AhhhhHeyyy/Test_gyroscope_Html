@@ -1909,186 +1909,201 @@
         
         // 初始化旋转控制器
         function initializeSpinController() {
+            // 确保 DOM 完全载入后再初始化
             $(document).ready(function() {
                 console.log("DOM 已载入，开始初始化旋转控制器...");
-
-                if (typeof gsap === 'undefined' || typeof Draggable === 'undefined') {
-                    console.error("缺少 GSAP 或 Draggable");
+                
+                // 检查必要的库是否已载入
+                if (typeof gsap === 'undefined') {
+                    console.error("GSAP 未载入！");
                     return;
                 }
-
+                
+                if (typeof Draggable === 'undefined') {
+                    console.error("Draggable 插件未载入！");
+                    return;
+                }
+                
+                // 检查旋钮元素是否存在
                 const knobElement = document.getElementById("spinKnob");
                 if (!knobElement) {
                     console.error("找不到 #spinKnob 元素！");
                     return;
                 }
-
-                // === 原始邏輯變數 ===
-                let prevAngle = 0;
-                let accumulatedDelta = 0;
-                let lastTriggerStep = 0;
-                const ROTATE_THRESHOLD = 15;
-                let isDragging = false;
+                
+                console.log("开始创建旋转控制器...");
+                
+                // 追踪已播放的角度区间（使用累积角度方案，支持多圈旋转）
+                let prevAngle = 0;  // 上一帧角度
+                let accumulatedDelta = 0;  // 累积角度差
+                let lastTriggerStep = 0;  // 上次触发的步数
+                const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
+                let isDragging = false; // 追踪是否正在拖拽
+                
+                // 实时角度发送节流（每50ms发送一次，避免过于频繁）
                 let lastAngleSendTime = 0;
-                const ANGLE_SEND_INTERVAL = 50;
-
-                // === 🆕 新增邏輯變數 ===
-                let totalRotation = 0; // 累積總旋轉角度（0~360 之間循環）
-                let rotatingBack = false; // 防止歸零動畫時重複觸發
-
-                // === 補：角度差計算 ===
+                const ANGLE_SEND_INTERVAL = 50; // 毫秒
+                
+                // 修正角度差（处理360度跳转）
                 function normalizeAngleDelta(current, prev) {
                     let delta = current - prev;
+                    // 处理跨360度边界
                     if (delta > 180) delta -= 360;
                     if (delta < -180) delta += 360;
                     return delta;
                 }
-
-                // === 可拖拽旋鈕 ===
+                
+                // 创建可拖拽的旋钮
                 const draggable = Draggable.create("#spinKnob", {
                     type: "rotation",
                     inertia: true,
-
                     onDragStart: function() {
+                        // 记录开始拖拽时的角度
                         this.startAngle = this.rotation;
-                        prevAngle = this.rotation;
-                        accumulatedDelta = 0;
-                        lastTriggerStep = 0;
-                        isDragging = true;
-
+                        prevAngle = this.rotation;  // 初始化上一帧角度
+                        accumulatedDelta = 0;  // 重置累积角度
+                        lastTriggerStep = 0;  // 重置触发步数
+                        isDragging = true; // 标记开始拖拽
+                        
+                        // 开始播放音效 - 立即播放，不等待
                         try {
-                            rotateSound.loop = true;
-                            rotateSound.play();
-                        } catch(e){}
-                    },
-
-                    onDrag: function() {
-                        if (rotatingBack) return; // 🆕 防止在歸零動畫時干擾
-
-                        let currentAngle = this.rotation;
-                        let frameDelta = normalizeAngleDelta(currentAngle, prevAngle);
-
-                        // 🆕 禁止逆時針旋轉
-                        if (frameDelta < 0) {
-                            this.rotation = prevAngle;
-                            return;
-                        }
-
-                        prevAngle = currentAngle;
-                        accumulatedDelta += frameDelta;
-                        totalRotation += frameDelta;
-
-                        // 🆕 當累積滿360度 → 執行回轉動畫歸零
-                        if (totalRotation >= 360) {
-                            totalRotation = 360;
-                            rotatingBack = true;
-                            console.log("🌀 已滿一圈，執行歸零動畫");
+                            rotateSound.loop = true; // 设置循环播放
+                            const playPromise = rotateSound.play();
                             
-                            // 🆕 停止循環音效
-                            rotateSound.pause();
-                            rotateSound.currentTime = 0;
-                            rotateSound.loop = false;
-                            console.log("🔇 歸零動畫開始，音效已停止");
-
-                            gsap.to("#spinKnob", {
-                                rotation: 0,
-                                duration: 0.8,
-                                ease: "power2.inOut",
-                                onComplete: () => {
-                                    totalRotation = 0;
-                                    prevAngle = 0;
-                                    rotatingBack = false;
-                                    
-                                    // 🆕 確保音效已完全停止（雙重保險）
-                                    rotateSound.pause();
-                                    rotateSound.currentTime = 0;
-                                    rotateSound.loop = false;
-                                    isDragging = false; // 重置拖拽狀態
-                                    
-                                    console.log("✅ 歸零動畫完成，音效已確認停止");
-                                }
-                            });
-                            return;
+                            // 如果浏览器需要用户交互
+                            if (playPromise !== undefined) {
+                                playPromise.catch(error => {
+                                    // 如果自动播放被阻止，尝试立即播放
+                                    console.log("自动播放被阻止，尝试立即播放:", error);
+                                    rotateSound.play();
+                                });
+                            }
+                        } catch(e) {
+                            console.log("音效播放失败:", e);
+                            // 失败时也尝试播放
+                            rotateSound.play();
                         }
-
-                        // === 原本的 15° 小震動邏輯 ===
+                        
+                        console.log("开始拖拽，开始播放音效。起始角度:", this.startAngle);
+                    },
+                    onDrag: function() {
+                        let currentAngle = this.rotation;
+                        let rotationDelta = currentAngle - this.startAngle;
+                        
+                        // 计算跨帧角度差（处理360度边界）
+                        let frameDelta = normalizeAngleDelta(currentAngle, prevAngle);
+                        accumulatedDelta += frameDelta;
+                        prevAngle = currentAngle;
+                        
+                        // 计算当前累积步数
                         let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
+                        
+                        // 如果累积步数增加，触发震动
                         if (currentStep !== lastTriggerStep) {
                             triggerVibration(SMALL_VIBRATION);
                             lastTriggerStep = currentStep;
+                            console.log(`齿轮震动触发：${currentAngle.toFixed(1)}°，累积旋转: ${accumulatedDelta.toFixed(1)}°，步数: ${currentStep}`);
                         }
-
+                        
+                        // 实时更新角度显示
                         updateSpinAngleDisplay();
-
-                        // === 傳送到 Unity (限制 0~360) ===
+                        
+                        // 实时发送角度数据到Unity（节流：每50ms发送一次）
                         const now = Date.now();
                         if (now - lastAngleSendTime >= ANGLE_SEND_INTERVAL) {
-                            gyroWS.sendSpinEvent(totalRotation % 360);
+                            gyroWS.sendSpinEvent(currentAngle);
                             lastAngleSendTime = now;
                         }
-
-                        // === 原本的 90° 限制區段 ===
-                        let rotationDelta = currentAngle - this.startAngle;
+                        
+                        // 限制旋转增量在 90 度以内
                         if (Math.abs(rotationDelta) > 45) {
+                            // 如果旋转超过 45 度，就限制到 90 度
                             let targetAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
+                            
+                            // 强制设定到限制的角度，使用回弹动画
                             gsap.to(this.target, {
                                 rotation: targetAngle,
                                 duration: 0.4,
                                 ease: "elastic.out(1, 0.4)"
                             });
-
+                            
+                            // 注意：90度限制时不播放音效，只在松开手时播放
+                            
+                            // 注意：不在这里发送角度，因为实时发送（上方）已经持续发送真实角度
+                            // 限制逻辑只影响网页端的视觉回弹效果，Unity接收的应该是真实的累积角度
+                            
+                            // 注意：90度限制时不触发大震动，只在松开手时触发
+                            
+                            // 🔧 关键修复：更新 startAngle 为限制后的角度
+                            // 这样下一轮的90度限制会基于新的基准角度，保持角度累积的正确性
                             this.startAngle = targetAngle;
+                            
+                            // 重置累积角度基准（用于震动检测）
                             accumulatedDelta = 0;
                             lastTriggerStep = 0;
+                            
+                            // ⚠️ 重要：不要重置 prevAngle，保持使用当前的 actualAngle
+                            // 否则会导致角度计算出现跳跃，让数值从几千度突然变成几百度
+                            
+                            console.log(`旋转被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)，已更新基准角度`);
+                        } else {
+                            console.log("拖拽中，旋转角度:", this.rotation, "增量:", rotationDelta.toFixed(1));
                         }
                     },
-
                     onDragEnd: function() {
-                        // 🆕 如果在歸零動畫期間鬆手，先停止音效再返回
-                        if (rotatingBack) {
-                            rotateSound.pause();
-                            rotateSound.currentTime = 0;
-                            rotateSound.loop = false;
-                            return;
-                        }
-                        
+                        // 标记拖拽结束
                         isDragging = false;
-
+                        
+                        // 停止播放音效
                         rotateSound.pause();
                         rotateSound.currentTime = 0;
-                        rotateSound.loop = false;
-
+                        rotateSound.loop = false; // 取消循环
+                        console.log("拖拽结束，音效已停止");
+                        
+                        // 拖拽结束时进行最终吸附
                         let currentAngle = this.rotation;
                         let rotationDelta = currentAngle - this.startAngle;
+                        
+                        // 计算最终角度（限制在 90 度增量内）
                         let finalAngle = this.startAngle;
-
                         if (Math.abs(rotationDelta) > 45) {
                             finalAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
                         } else {
+                            // 如果增量小于 45 度，回到起始角度
                             finalAngle = this.startAngle;
                         }
-
-                        // === 保留原有回吸動畫 ===
+                        
+                        // 使用强烈的回弹动画吸附到最终角度
                         gsap.to(this.target, {
                             rotation: finalAngle,
                             duration: 0.6,
                             ease: "elastic.out(1, 0.3)"
                         });
 
-                        // === 原有：放手大震動 + 音效 ===
-                        spinSoundEffect.currentTime = 0;
-                        spinSoundEffect.play().catch(e=>{});
-                        triggerBigVibrationForce();
+                        // 检查总旋转角度（从开始到结束）
+                        const totalRotation = Math.abs(rotationDelta);
+                        
+                        // 🔧 修复：无论旋转多少度，松开手就触发大震动和音效
+                        spinSoundEffect.currentTime = 0; // 重置音效
+                        spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                        triggerBigVibrationForce(); // 强制触发大震动，不受节流限制
+                        
+                        // 发送当前实际角度到Unity（不是吸附后的角度，而是真实的累积角度）
+                        console.log('🎯 准备发送旋转事件（onDragEnd），实际角度:', currentAngle);
+                        gyroWS.sendSpinEvent(currentAngle);
 
-                        // === 傳送當前角度 (限制 0~360) ===
-                        gyroWS.sendSpinEvent(totalRotation % 360);
-
-                        console.log(`拖拽结束，当前累积角度: ${totalRotation.toFixed(1)}°`);
+                        console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
+                        
+                        // 更新最终角度显示
                         updateSpinAngleDisplay();
                     }
                 });
-
+                
+                console.log("旋转控制器创建成功:", draggable);
+                
+                // 初始化角度显示
                 updateSpinAngleDisplay();
+                
                 console.log("旋转控制器初始化完成！");
             });
         }
