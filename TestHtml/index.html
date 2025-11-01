@@ -2096,6 +2096,58 @@
                         if (rotationDelta > 180) rotationDelta -= 360;
                         if (rotationDelta < -180) rotationDelta += 360;
                         
+                        // 🔧 新功能：如果累积旋转超过一圈，进行带惯性感的回转动画
+                        if (accumulatedDelta >= 360 || accumulatedDelta <= -360) {
+                            console.log(`🔁 累积超过360° (${accumulatedDelta.toFixed(1)}°)，触发逆时针回归动画`);
+                            
+                            // 先播放结束音效 + 强震
+                            spinSoundEffect.currentTime = 0;
+                            spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                            triggerBigVibrationForce();
+                            
+                            // 保存当前实际角度（用于动画起始）
+                            const startAnimationAngle = normalizeAngleTo0_360(this.rotation);
+                            
+                            // 计算逆时针路径：从当前角度逆时针转到 0°
+                            // 方法：将目标设置为稍大于当前角度但小于 360 的值，然后让 GSAP 选择路径
+                            // 或者使用负数角度：当前角度 - 360，这样会形成逆时针路径
+                            // 例如：从 50° 转到 -310°（等于逆时针转 50°到 0°）
+                            // 例如：从 350° 转到 -10°（等于逆时针转 350°到 0°）
+                            const targetRotation = this.rotation - 360;
+                            
+                            // 使用 GSAP 慢速逆时针动画回到 0°
+                            gsap.to(this.target, {
+                                rotation: targetRotation,
+                                duration: 1.8,               // 慢慢回归（可调整速度）
+                                ease: "power2.out",          // 有自然减速的感觉（惯性感）
+                                onStart: () => {
+                                    console.log("🌀 开始逆时针回归动画，从", startAnimationAngle.toFixed(1), "° 转到 0°");
+                                },
+                                onUpdate: () => {
+                                    const angleNow = gsap.getProperty(this.target, "rotation");
+                                    const normalizedAngle = normalizeAngleTo0_360(angleNow);
+                                    // 实时同步角度给Unity
+                                    gyroWS.sendSpinEvent(normalizedAngle);
+                                    // 更新角度显示
+                                    updateSpinAngleDisplay();
+                                },
+                                onComplete: () => {
+                                    console.log("✅ 回归动画完成，已回到 0°");
+                                    // 确保最终角度是 0（标准化处理）
+                                    gsap.set(this.target, { rotation: 0 });
+                                    // 重置累积角度
+                                    accumulatedDelta = 0;
+                                    lastTriggerStep = 0;
+                                    // 更新最终角度显示
+                                    updateSpinAngleDisplay();
+                                    // 发送最终的 0 度角度
+                                    gyroWS.sendSpinEvent(0);
+                                }
+                            });
+                            return; // ✅ 提前结束，避免执行后续的普通吸附逻辑
+                        }
+                        
+                        // 【普通结束情况】正常的角度吸附逻辑
                         // 计算最终角度（限制在 90 度增量内）
                         let finalAngle = startAngleNormalized;
                         if (Math.abs(rotationDelta) > 45) {
@@ -2103,12 +2155,6 @@
                         } else {
                             // 如果增量小于 45 度，回到起始角度
                             finalAngle = startAngleNormalized;
-                        }
-                        
-                        // 🔧 新功能：如果顺时针转超过360度（累积角度超过360度），松开手时转盘会惯性转回0度
-                        if (accumulatedDelta >= 360 || accumulatedDelta <= -360) {
-                            console.log(`转超过360度（累积: ${accumulatedDelta.toFixed(1)}°），转盘将惯性转回0度`);
-                            finalAngle = 0;
                         }
                         
                         // 使用强烈的回弹动画吸附到最终角度
