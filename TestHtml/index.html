@@ -1933,9 +1933,9 @@
                 
                 console.log("开始创建旋转控制器...");
                 
-                // 追踪已播放的角度区间（使用累积角度方案，支持多圈旋转）
+                // 追踪已播放的角度区间（只支持单圈旋转，限制在0-360度）
                 let prevAngle = 0;  // 上一帧角度
-                let accumulatedDelta = 0;  // 累积角度差
+                let accumulatedDelta = 0;  // 累积角度差（限制在0-360度）
                 let lastTriggerStep = 0;  // 上次触发的步数
                 const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
                 let isDragging = false; // 追踪是否正在拖拽
@@ -1944,10 +1944,21 @@
                 let lastAngleSendTime = 0;
                 const ANGLE_SEND_INTERVAL = 50; // 毫秒
                 
-                // 修正角度差（处理360度跳转）
+                // 将角度标准化到0-360度范围内
+                function normalizeAngleTo0_360(angle) {
+                    angle = angle % 360;
+                    if (angle < 0) angle += 360;
+                    return angle;
+                }
+                
+                // 修正角度差（处理360度边界，限制在单圈内）
                 function normalizeAngleDelta(current, prev) {
+                    // 先将两个角度都标准化到0-360度
+                    current = normalizeAngleTo0_360(current);
+                    prev = normalizeAngleTo0_360(prev);
+                    
                     let delta = current - prev;
-                    // 处理跨360度边界
+                    // 处理跨360度边界（选择最短路径）
                     if (delta > 180) delta -= 360;
                     if (delta < -180) delta += 360;
                     return delta;
@@ -1958,9 +1969,9 @@
                     type: "rotation",
                     inertia: true,
                     onDragStart: function() {
-                        // 记录开始拖拽时的角度
-                        this.startAngle = this.rotation;
-                        prevAngle = this.rotation;  // 初始化上一帧角度
+                        // 记录开始拖拽时的角度（标准化到0-360度）
+                        this.startAngle = normalizeAngleTo0_360(this.rotation);
+                        prevAngle = this.startAngle;  // 初始化上一帧角度
                         accumulatedDelta = 0;  // 重置累积角度
                         lastTriggerStep = 0;  // 重置触发步数
                         isDragging = true; // 标记开始拖拽
@@ -1988,15 +1999,31 @@
                     },
                     onDrag: function() {
                         let currentAngle = this.rotation;
-                        let rotationDelta = currentAngle - this.startAngle;
+                        // 将当前角度限制在0-360度范围内
+                        currentAngle = normalizeAngleTo0_360(currentAngle);
                         
-                        // 计算跨帧角度差（处理360度边界）
+                        // 如果超出0-360度范围，强制限制
+                        if (this.rotation !== currentAngle) {
+                            gsap.set(this.target, { rotation: currentAngle });
+                            this.rotation = currentAngle;
+                        }
+                        
+                        let startAngleNormalized = normalizeAngleTo0_360(this.startAngle);
+                        let rotationDelta = currentAngle - startAngleNormalized;
+                        
+                        // 处理旋转增量的0-360度边界
+                        if (rotationDelta > 180) rotationDelta -= 360;
+                        if (rotationDelta < -180) rotationDelta += 360;
+                        
+                        // 计算跨帧角度差（处理360度边界，限制在单圈内）
                         let frameDelta = normalizeAngleDelta(currentAngle, prevAngle);
                         accumulatedDelta += frameDelta;
+                        // 注意：accumulatedDelta 不限制在0-360度，用于检测是否超过360度
+                        
                         prevAngle = currentAngle;
                         
-                        // 计算当前累积步数
-                        let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
+                        // 计算当前累积步数（使用绝对值，支持顺时针和逆时针）
+                        let currentStep = Math.floor(Math.abs(accumulatedDelta) / ROTATE_THRESHOLD);
                         
                         // 如果累积步数增加，触发震动
                         if (currentStep !== lastTriggerStep) {
@@ -2018,7 +2045,7 @@
                         // 限制旋转增量在 90 度以内
                         if (Math.abs(rotationDelta) > 45) {
                             // 如果旋转超过 45 度，就限制到 90 度
-                            let targetAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
+                            let targetAngle = normalizeAngleTo0_360(startAngleNormalized + (rotationDelta > 0 ? 90 : -90));
                             
                             // 强制设定到限制的角度，使用回弹动画
                             gsap.to(this.target, {
@@ -2042,12 +2069,12 @@
                             accumulatedDelta = 0;
                             lastTriggerStep = 0;
                             
-                            // ⚠️ 重要：不要重置 prevAngle，保持使用当前的 actualAngle
-                            // 否则会导致角度计算出现跳跃，让数值从几千度突然变成几百度
+                            // ⚠️ 重要：更新 prevAngle 为限制后的角度
+                            prevAngle = targetAngle;
                             
                             console.log(`旋转被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)，已更新基准角度`);
                         } else {
-                            console.log("拖拽中，旋转角度:", this.rotation, "增量:", rotationDelta.toFixed(1));
+                            console.log("拖拽中，旋转角度:", currentAngle, "增量:", rotationDelta.toFixed(1));
                         }
                     },
                     onDragEnd: function() {
@@ -2060,17 +2087,28 @@
                         rotateSound.loop = false; // 取消循环
                         console.log("拖拽结束，音效已停止");
                         
-                        // 拖拽结束时进行最终吸附
-                        let currentAngle = this.rotation;
-                        let rotationDelta = currentAngle - this.startAngle;
+                        // 拖拽结束时进行最终处理
+                        let currentAngle = normalizeAngleTo0_360(this.rotation);
+                        let startAngleNormalized = normalizeAngleTo0_360(this.startAngle);
+                        let rotationDelta = currentAngle - startAngleNormalized;
+                        
+                        // 处理旋转增量的0-360度边界
+                        if (rotationDelta > 180) rotationDelta -= 360;
+                        if (rotationDelta < -180) rotationDelta += 360;
                         
                         // 计算最终角度（限制在 90 度增量内）
-                        let finalAngle = this.startAngle;
+                        let finalAngle = startAngleNormalized;
                         if (Math.abs(rotationDelta) > 45) {
-                            finalAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
+                            finalAngle = normalizeAngleTo0_360(startAngleNormalized + (rotationDelta > 0 ? 90 : -90));
                         } else {
                             // 如果增量小于 45 度，回到起始角度
-                            finalAngle = this.startAngle;
+                            finalAngle = startAngleNormalized;
+                        }
+                        
+                        // 🔧 新功能：如果顺时针转超过360度（累积角度超过360度），松开手时转盘会惯性转回0度
+                        if (accumulatedDelta >= 360 || accumulatedDelta <= -360) {
+                            console.log(`转超过360度（累积: ${accumulatedDelta.toFixed(1)}°），转盘将惯性转回0度`);
+                            finalAngle = 0;
                         }
                         
                         // 使用强烈的回弹动画吸附到最终角度
@@ -2088,14 +2126,18 @@
                         spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
                         triggerBigVibrationForce(); // 强制触发大震动，不受节流限制
                         
-                        // 发送当前实际角度到Unity（不是吸附后的角度，而是真实的累积角度）
-                        console.log('🎯 准备发送旋转事件（onDragEnd），实际角度:', currentAngle);
-                        gyroWS.sendSpinEvent(currentAngle);
+                        // 发送标准化后的角度到Unity（0-360度范围内）
+                        console.log('🎯 准备发送旋转事件（onDragEnd），实际角度:', finalAngle);
+                        gyroWS.sendSpinEvent(finalAngle);
 
-                        console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
+                        console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°，累积: ${accumulatedDelta.toFixed(1)}°)`);
                         
                         // 更新最终角度显示
                         updateSpinAngleDisplay();
+                        
+                        // 重置累积角度
+                        accumulatedDelta = 0;
+                        lastTriggerStep = 0;
                     }
                 });
                 
