@@ -11,6 +11,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/Draggable.min.js"></script>
     <!-- 引入 jQuery 库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <!-- 预先加载音效文件 - 浏览器会在页面加载时立即开始下载 -->
+    <audio id="preloadRotateSound" preload="auto" src="cada7.MP3"></audio>
+    <audio id="preloadSpinSoundEffect" preload="auto" src="se_door_hanekaeri.mp3"></audio>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -1807,19 +1810,17 @@
         
         // ===== SpinTest 旋转控制功能 =====
         
-        // 创建音效对象
-        const spinSoundEffect = new Audio('se_door_hanekaeri.mp3');
-        const rotateSound = new Audio('cada7.MP3'); // 每5度触发震动音效
+        // 音效池技术 - 创建多个音效实例以避免重复加载延迟
+        const ROTATE_SOUND_POOL_SIZE = 3; // 创建3个实例用于旋转音效
+        const SPIN_SOUND_POOL_SIZE = 2; // 创建2个实例用于结束音效
         
-        // 预加载音效以减少延迟
-        rotateSound.preload = 'auto';
-        spinSoundEffect.preload = 'auto';
-        rotateSound.load();
-        spinSoundEffect.load();
+        const rotateSoundPool = [];
+        const spinSoundEffectPool = [];
+        let rotateSoundPoolIndex = 0;
+        let spinSoundPoolIndex = 0;
         
-        // 音效加载状态跟踪
-        let rotateSoundReady = false;
-        let spinSoundEffectReady = false;
+        // 当前正在使用的音效实例（用于循环播放的旋转音效）
+        let currentRotateSound = null;
         
         // 音效预热函数
         function warmupSound(audio) {
@@ -1833,7 +1834,7 @@
                             audio.pause();
                             audio.currentTime = 0;
                             audio.volume = originalVolume;
-                            console.log('音效预热完成:', audio.src);
+                            console.log('音效预热完成:', audio.src.substring(audio.src.lastIndexOf('/') + 1));
                         }).catch(() => {
                             audio.volume = originalVolume;
                         });
@@ -1844,64 +1845,113 @@
             }
         }
         
-        // 初始化音效 - 预先加载到内存以减少延迟
-        rotateSound.addEventListener('loadeddata', function() {
-            rotateSoundReady = true;
-            console.log('cada7音效已加载完成');
-            // 立即预热音效（不等待setTimeout）
-            warmupSound(rotateSound);
-        });
-        
-        spinSoundEffect.addEventListener('loadeddata', function() {
-            spinSoundEffectReady = true;
-            console.log('se_door_hanekaeri音效已加载完成');
-            // 立即预热音效
-            warmupSound(spinSoundEffect);
-        });
-        
-        // 立即尝试预热（如果已加载）
-        if (rotateSound.readyState >= 2) {
-            warmupSound(rotateSound);
-            rotateSoundReady = true;
+        // 初始化音效池
+        function initSoundPools() {
+            console.log('🎵 开始初始化音效池...');
+            
+            // 创建旋转音效池
+            for (let i = 0; i < ROTATE_SOUND_POOL_SIZE; i++) {
+                const audio = new Audio('cada7.MP3');
+                audio.preload = 'auto';
+                audio.load();
+                rotateSoundPool.push(audio);
+                
+                // 监听加载完成事件
+                audio.addEventListener('canplaythrough', function() {
+                    console.log(`✅ 旋转音效池 #${i} 已就绪 (readyState: ${audio.readyState})`);
+                    warmupSound(audio);
+                }, { once: true });
+                
+                // 如果已经加载完成，立即预热
+                if (audio.readyState >= 3) { // HAVE_FUTURE_DATA
+                    console.log(`✅ 旋转音效池 #${i} 已预加载完成，立即预热`);
+                    warmupSound(audio);
+                }
+            }
+            
+            // 创建结束音效池
+            for (let i = 0; i < SPIN_SOUND_POOL_SIZE; i++) {
+                const audio = new Audio('se_door_hanekaeri.mp3');
+                audio.preload = 'auto';
+                audio.load();
+                spinSoundEffectPool.push(audio);
+                
+                // 监听加载完成事件
+                audio.addEventListener('canplaythrough', function() {
+                    console.log(`✅ 结束音效池 #${i} 已就绪 (readyState: ${audio.readyState})`);
+                    warmupSound(audio);
+                }, { once: true });
+                
+                // 如果已经加载完成，立即预热
+                if (audio.readyState >= 3) {
+                    console.log(`✅ 结束音效池 #${i} 已预加载完成，立即预热`);
+                    warmupSound(audio);
+                }
+            }
+            
+            console.log(`🎵 音效池初始化完成 - 旋转音效: ${ROTATE_SOUND_POOL_SIZE}个, 结束音效: ${SPIN_SOUND_POOL_SIZE}个`);
         }
-        if (spinSoundEffect.readyState >= 2) {
-            warmupSound(spinSoundEffect);
-            spinSoundEffectReady = true;
+        
+        // 从音效池获取可用的音效
+        function getRotateSound() {
+            return rotateSoundPool[rotateSoundPoolIndex % ROTATE_SOUND_POOL_SIZE];
         }
         
-        // 统一的音效播放函数（确保已加载并立即播放）
-        function playSoundEffect(audio, readyFlag) {
+        function getSpinSoundEffect() {
+            return spinSoundEffectPool[spinSoundPoolIndex % SPIN_SOUND_POOL_SIZE];
+        }
+        
+        // 优化的音效播放函数 - 立即播放，无延迟
+        function playSoundEffectImmediate(audio) {
             try {
-                if (!readyFlag && audio.readyState < 2) {
-                    console.warn('音效尚未加载完成，等待加载...');
-                    return new Promise((resolve) => {
-                        audio.addEventListener('loadeddata', function onLoaded() {
-                            audio.removeEventListener('loadeddata', onLoaded);
-                            playSoundNow();
-                            resolve();
-                        }, { once: true });
-                    });
-                } else {
-                    playSoundNow();
+                // 如果音效还没加载完成，尝试立即加载
+                if (audio.readyState < 2) {
+                    audio.load();
                 }
                 
-                function playSoundNow() {
-                    audio.currentTime = 0; // 重置到开始
+                // 立即重置并播放
+                audio.currentTime = 0;
+                
+                // 检查是否可以播放
+                if (audio.readyState >= 2) {
                     const playPromise = audio.play();
                     if (playPromise !== undefined) {
                         playPromise.catch(error => {
-                            console.warn('音效播放失败:', error);
-                            // 用户交互中，重试一次
-                            audio.play().catch(e => {
-                                console.error('音效播放重试失败:', e);
-                            });
+                            console.warn('音效播放失败，尝试重新加载:', error);
+                            audio.load();
+                            setTimeout(() => {
+                                audio.currentTime = 0;
+                                audio.play().catch(e => console.error('音效播放重试失败:', e));
+                            }, 50);
                         });
                     }
+                } else {
+                    // 如果还没准备好，等待一下
+                    audio.addEventListener('canplay', function onCanPlay() {
+                        audio.removeEventListener('canplay', onCanPlay);
+                        audio.currentTime = 0;
+                        audio.play().catch(e => console.error('音效播放失败:', e));
+                    }, { once: true });
                 }
             } catch(e) {
                 console.error('音效播放异常:', e);
             }
         }
+        
+        // 兼容旧代码的函数（用于结束音效）
+        function playSoundEffect(audio, readyFlag) {
+            playSoundEffectImmediate(audio);
+        }
+        
+        // 在页面加载的最早阶段就开始初始化音效池
+        (function() {
+            // 立即初始化音效池
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initSoundPools);
+            } else {
+                initSoundPools();
+            }
+        })();
         
         // 创建震动函数
         function triggerSpinVibration(pattern = [100, 50, 100]) {
@@ -2046,36 +2096,22 @@
                         lastTriggerStep = 0;  // 重置触发步数
                         isDragging = true; // 标记开始拖拽
                         
-                        // 开始播放音效 - 立即播放，不等待
+                        // 开始播放音效 - 使用音效池，立即播放，无延迟
                         try {
-                            // 确保音效已加载
-                            if (!rotateSoundReady && rotateSound.readyState < 2) {
-                                console.warn('音效尚未加载完成，等待加载...');
-                                rotateSound.addEventListener('loadeddata', function onLoaded() {
-                                    rotateSound.removeEventListener('loadeddata', onLoaded);
-                                    startRotateSound();
-                                }, { once: true });
-                            } else {
-                                startRotateSound();
-                            }
+                            // 从音效池获取可用的音效实例
+                            currentRotateSound = getRotateSound();
                             
-                            function startRotateSound() {
-                                rotateSound.loop = true;
-                                rotateSound.currentTime = 0; // 重置到开始
-                                const playPromise = rotateSound.play();
-                                
-                                if (playPromise !== undefined) {
-                                    playPromise.then(() => {
-                                        console.log('音效播放成功');
-                                    }).catch(error => {
-                                        console.warn('音效自动播放被阻止:', error);
-                                        // 用户交互中，应该可以播放，重试一次
-                                        rotateSound.play().catch(e => {
-                                            console.error('音效播放失败:', e);
-                                        });
-                                    });
-                                }
-                            }
+                            // 设置循环播放
+                            currentRotateSound.loop = true;
+                            currentRotateSound.currentTime = 0; // 重置到开始
+                            
+                            // 立即播放
+                            playSoundEffectImmediate(currentRotateSound);
+                            
+                            // 更新音效池索引，下次使用下一个实例
+                            rotateSoundPoolIndex++;
+                            
+                            console.log('🎵 开始播放旋转音效 (池索引:', rotateSoundPoolIndex - 1, ')');
                         } catch(e) {
                             console.error("音效播放异常:", e);
                         }
@@ -2167,10 +2203,13 @@
                         isDragging = false;
                         
                         // 停止播放音效
-                        rotateSound.pause();
-                        rotateSound.currentTime = 0;
-                        rotateSound.loop = false; // 取消循环
-                        console.log("拖拽结束，音效已停止");
+                        if (currentRotateSound) {
+                            currentRotateSound.pause();
+                            currentRotateSound.currentTime = 0;
+                            currentRotateSound.loop = false; // 取消循环
+                            currentRotateSound = null;
+                            console.log("拖拽结束，音效已停止");
+                        }
                         
                         // 拖拽结束时进行最终处理
                         let currentAngle = normalizeAngleTo0_360(this.rotation);
@@ -2185,8 +2224,10 @@
                         if (accumulatedDelta >= 360 || accumulatedDelta <= -360) {
                             console.log(`🔁 累积超过360° (${accumulatedDelta.toFixed(1)}°)，触发逆时针回归动画`);
                             
-                            // 先播放结束音效 + 强震
-                            playSoundEffect(spinSoundEffect, spinSoundEffectReady);
+                            // 先播放结束音效 + 强震（使用音效池）
+                            const currentSpinSound = getSpinSoundEffect();
+                            playSoundEffectImmediate(currentSpinSound);
+                            spinSoundPoolIndex++;
                             triggerBigVibrationForce();
                             
                             // 保存当前实际角度（用于动画起始）
@@ -2251,8 +2292,10 @@
                         // 检查总旋转角度（从开始到结束）
                         const totalRotation = Math.abs(rotationDelta);
                         
-                        // 🔧 修复：无论旋转多少度，松开手就触发大震动和音效
-                        playSoundEffect(spinSoundEffect, spinSoundEffectReady);
+                        // 🔧 修复：无论旋转多少度，松开手就触发大震动和音效（使用音效池）
+                        const currentSpinSound = getSpinSoundEffect();
+                        playSoundEffectImmediate(currentSpinSound);
+                        spinSoundPoolIndex++;
                         triggerBigVibrationForce(); // 强制触发大震动，不受节流限制
                         
                         // 发送标准化后的角度到Unity（0-360度范围内）
