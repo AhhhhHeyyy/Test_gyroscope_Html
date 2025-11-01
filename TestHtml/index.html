@@ -1813,25 +1813,95 @@
         
         // 预加载音效以减少延迟
         rotateSound.preload = 'auto';
+        spinSoundEffect.preload = 'auto';
         rotateSound.load();
+        spinSoundEffect.load();
+        
+        // 音效加载状态跟踪
+        let rotateSoundReady = false;
+        let spinSoundEffectReady = false;
+        
+        // 音效预热函数
+        function warmupSound(audio) {
+            if (audio.readyState >= 2) { // HAVE_CURRENT_DATA 或更高
+                try {
+                    const originalVolume = audio.volume;
+                    audio.volume = 0;
+                    const playPromise = audio.play();
+                    if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                            audio.pause();
+                            audio.currentTime = 0;
+                            audio.volume = originalVolume;
+                            console.log('音效预热完成:', audio.src);
+                        }).catch(() => {
+                            audio.volume = originalVolume;
+                        });
+                    }
+                } catch(e) {
+                    console.warn('音效预热失败:', e);
+                }
+            }
+        }
         
         // 初始化音效 - 预先加载到内存以减少延迟
         rotateSound.addEventListener('loadeddata', function() {
+            rotateSoundReady = true;
             console.log('cada7音效已加载完成');
+            // 立即预热音效（不等待setTimeout）
+            warmupSound(rotateSound);
         });
         
-        // 预播放一小段来预热音效（先静音播放）
-        setTimeout(() => {
-            rotateSound.volume = 0;
-            rotateSound.play().then(() => {
-                rotateSound.pause();
-                rotateSound.currentTime = 0;
-                rotateSound.volume = 1;
-                console.log('音效预热完成');
-            }).catch(() => {
-                rotateSound.volume = 1;
-            });
-        }, 500);
+        spinSoundEffect.addEventListener('loadeddata', function() {
+            spinSoundEffectReady = true;
+            console.log('se_door_hanekaeri音效已加载完成');
+            // 立即预热音效
+            warmupSound(spinSoundEffect);
+        });
+        
+        // 立即尝试预热（如果已加载）
+        if (rotateSound.readyState >= 2) {
+            warmupSound(rotateSound);
+            rotateSoundReady = true;
+        }
+        if (spinSoundEffect.readyState >= 2) {
+            warmupSound(spinSoundEffect);
+            spinSoundEffectReady = true;
+        }
+        
+        // 统一的音效播放函数（确保已加载并立即播放）
+        function playSoundEffect(audio, readyFlag) {
+            try {
+                if (!readyFlag && audio.readyState < 2) {
+                    console.warn('音效尚未加载完成，等待加载...');
+                    return new Promise((resolve) => {
+                        audio.addEventListener('loadeddata', function onLoaded() {
+                            audio.removeEventListener('loadeddata', onLoaded);
+                            playSoundNow();
+                            resolve();
+                        }, { once: true });
+                    });
+                } else {
+                    playSoundNow();
+                }
+                
+                function playSoundNow() {
+                    audio.currentTime = 0; // 重置到开始
+                    const playPromise = audio.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(error => {
+                            console.warn('音效播放失败:', error);
+                            // 用户交互中，重试一次
+                            audio.play().catch(e => {
+                                console.error('音效播放重试失败:', e);
+                            });
+                        });
+                    }
+                }
+            } catch(e) {
+                console.error('音效播放异常:', e);
+            }
+        }
         
         // 创建震动函数
         function triggerSpinVibration(pattern = [100, 50, 100]) {
@@ -1978,21 +2048,36 @@
                         
                         // 开始播放音效 - 立即播放，不等待
                         try {
-                            rotateSound.loop = true; // 设置循环播放
-                            const playPromise = rotateSound.play();
+                            // 确保音效已加载
+                            if (!rotateSoundReady && rotateSound.readyState < 2) {
+                                console.warn('音效尚未加载完成，等待加载...');
+                                rotateSound.addEventListener('loadeddata', function onLoaded() {
+                                    rotateSound.removeEventListener('loadeddata', onLoaded);
+                                    startRotateSound();
+                                }, { once: true });
+                            } else {
+                                startRotateSound();
+                            }
                             
-                            // 如果浏览器需要用户交互
-                            if (playPromise !== undefined) {
-                                playPromise.catch(error => {
-                                    // 如果自动播放被阻止，尝试立即播放
-                                    console.log("自动播放被阻止，尝试立即播放:", error);
-                                    rotateSound.play();
-                                });
+                            function startRotateSound() {
+                                rotateSound.loop = true;
+                                rotateSound.currentTime = 0; // 重置到开始
+                                const playPromise = rotateSound.play();
+                                
+                                if (playPromise !== undefined) {
+                                    playPromise.then(() => {
+                                        console.log('音效播放成功');
+                                    }).catch(error => {
+                                        console.warn('音效自动播放被阻止:', error);
+                                        // 用户交互中，应该可以播放，重试一次
+                                        rotateSound.play().catch(e => {
+                                            console.error('音效播放失败:', e);
+                                        });
+                                    });
+                                }
                             }
                         } catch(e) {
-                            console.log("音效播放失败:", e);
-                            // 失败时也尝试播放
-                            rotateSound.play();
+                            console.error("音效播放异常:", e);
                         }
                         
                         console.log("开始拖拽，开始播放音效。起始角度:", this.startAngle);
@@ -2101,8 +2186,7 @@
                             console.log(`🔁 累积超过360° (${accumulatedDelta.toFixed(1)}°)，触发逆时针回归动画`);
                             
                             // 先播放结束音效 + 强震
-                            spinSoundEffect.currentTime = 0;
-                            spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                            playSoundEffect(spinSoundEffect, spinSoundEffectReady);
                             triggerBigVibrationForce();
                             
                             // 保存当前实际角度（用于动画起始）
@@ -2168,8 +2252,7 @@
                         const totalRotation = Math.abs(rotationDelta);
                         
                         // 🔧 修复：无论旋转多少度，松开手就触发大震动和音效
-                        spinSoundEffect.currentTime = 0; // 重置音效
-                        spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                        playSoundEffect(spinSoundEffect, spinSoundEffectReady);
                         triggerBigVibrationForce(); // 强制触发大震动，不受节流限制
                         
                         // 发送标准化后的角度到Unity（0-360度范围内）
