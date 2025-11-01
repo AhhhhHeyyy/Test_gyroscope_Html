@@ -1963,12 +1963,12 @@
                     },
 
                     onDrag: function() {
-                        if (rotatingBack) return;
+                        if (rotatingBack) return; // 🆕 防止在歸零動畫時干擾
 
                         let currentAngle = this.rotation;
                         let frameDelta = normalizeAngleDelta(currentAngle, prevAngle);
 
-                        // 禁止逆時針旋轉
+                        // 🆕 禁止逆時針旋轉
                         if (frameDelta < 0) {
                             this.rotation = prevAngle;
                             return;
@@ -1978,7 +1978,40 @@
                         accumulatedDelta += frameDelta;
                         totalRotation += frameDelta;
 
-                        // === 每 15° 小震動 ===
+                        // 🆕 當累積滿360度 → 執行回轉動畫歸零
+                        if (totalRotation >= 360) {
+                            totalRotation = 360;
+                            rotatingBack = true;
+                            console.log("🌀 已滿一圈，執行歸零動畫");
+                            
+                            // 🆕 停止循環音效
+                            rotateSound.pause();
+                            rotateSound.currentTime = 0;
+                            rotateSound.loop = false;
+                            console.log("🔇 歸零動畫開始，音效已停止");
+
+                            gsap.to("#spinKnob", {
+                                rotation: 0,
+                                duration: 0.8,
+                                ease: "power2.inOut",
+                                onComplete: () => {
+                                    totalRotation = 0;
+                                    prevAngle = 0;
+                                    rotatingBack = false;
+                                    
+                                    // 🆕 確保音效已完全停止（雙重保險）
+                                    rotateSound.pause();
+                                    rotateSound.currentTime = 0;
+                                    rotateSound.loop = false;
+                                    isDragging = false; // 重置拖拽狀態
+                                    
+                                    console.log("✅ 歸零動畫完成，音效已確認停止");
+                                }
+                            });
+                            return;
+                        }
+
+                        // === 原本的 15° 小震動邏輯 ===
                         let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
                         if (currentStep !== lastTriggerStep) {
                             triggerVibration(SMALL_VIBRATION);
@@ -1987,14 +2020,14 @@
 
                         updateSpinAngleDisplay();
 
-                        // === 持續發送角度（0~360） ===
+                        // === 傳送到 Unity (限制 0~360) ===
                         const now = Date.now();
                         if (now - lastAngleSendTime >= ANGLE_SEND_INTERVAL) {
                             gyroWS.sendSpinEvent(totalRotation % 360);
                             lastAngleSendTime = now;
                         }
 
-                        // === 每 90° 自動回吸（非強制歸零）===
+                        // === 原本的 90° 限制區段 ===
                         let rotationDelta = currentAngle - this.startAngle;
                         if (Math.abs(rotationDelta) > 45) {
                             let targetAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
@@ -2011,59 +2044,46 @@
                     },
 
                     onDragEnd: function() {
-                        if (rotatingBack) return;
-
+                        // 🆕 如果在歸零動畫期間鬆手，先停止音效再返回
+                        if (rotatingBack) {
+                            rotateSound.pause();
+                            rotateSound.currentTime = 0;
+                            rotateSound.loop = false;
+                            return;
+                        }
+                        
                         isDragging = false;
 
-                        // 停止音效
                         rotateSound.pause();
                         rotateSound.currentTime = 0;
                         rotateSound.loop = false;
 
-                        // 若累積滿一圈(>=360°)，在放開手時才歸零
-                        if (totalRotation >= 360) {
-                            totalRotation = 360;
-                            rotatingBack = true;
-
-                            spinSoundEffect.play().catch(e=>{});
-                            triggerBigVibrationForce();
-
-                            gsap.to("#spinKnob", {
-                                rotation: 0,
-                                duration: 0.8,
-                                ease: "power2.inOut",
-                                onComplete: () => {
-                                    totalRotation = 0;
-                                    prevAngle = 0;
-                                    rotatingBack = false;
-                                    console.log("✅ 放開後歸零動畫完成");
-                                }
-                            });
-                            return;
-                        }
-
-                        // 否則照原本的回吸邏輯
                         let currentAngle = this.rotation;
                         let rotationDelta = currentAngle - this.startAngle;
                         let finalAngle = this.startAngle;
 
                         if (Math.abs(rotationDelta) > 45) {
                             finalAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
+                        } else {
+                            finalAngle = this.startAngle;
                         }
 
+                        // === 保留原有回吸動畫 ===
                         gsap.to(this.target, {
                             rotation: finalAngle,
                             duration: 0.6,
                             ease: "elastic.out(1, 0.3)"
                         });
 
-                        // 放手音效 + 大震
+                        // === 原有：放手大震動 + 音效 ===
                         spinSoundEffect.currentTime = 0;
                         spinSoundEffect.play().catch(e=>{});
                         triggerBigVibrationForce();
 
+                        // === 傳送當前角度 (限制 0~360) ===
                         gyroWS.sendSpinEvent(totalRotation % 360);
-                        console.log(`拖拽結束，累積角度: ${totalRotation.toFixed(1)}°`);
+
+                        console.log(`拖拽结束，当前累积角度: ${totalRotation.toFixed(1)}°`);
                         updateSpinAngleDisplay();
                     }
                 });
