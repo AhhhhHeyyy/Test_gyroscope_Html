@@ -1,4 +1,4 @@
-
+@ -1,2125 +0,0 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -1813,95 +1813,25 @@
         
         // 预加载音效以减少延迟
         rotateSound.preload = 'auto';
-        spinSoundEffect.preload = 'auto';
         rotateSound.load();
-        spinSoundEffect.load();
-        
-        // 音效加载状态跟踪
-        let rotateSoundReady = false;
-        let spinSoundEffectReady = false;
-        
-        // 音效预热函数
-        function warmupSound(audio) {
-            if (audio.readyState >= 2) { // HAVE_CURRENT_DATA 或更高
-                try {
-                    const originalVolume = audio.volume;
-                    audio.volume = 0;
-                    const playPromise = audio.play();
-                    if (playPromise !== undefined) {
-                        playPromise.then(() => {
-                            audio.pause();
-                            audio.currentTime = 0;
-                            audio.volume = originalVolume;
-                            console.log('音效预热完成:', audio.src);
-                        }).catch(() => {
-                            audio.volume = originalVolume;
-                        });
-                    }
-                } catch(e) {
-                    console.warn('音效预热失败:', e);
-                }
-            }
-        }
         
         // 初始化音效 - 预先加载到内存以减少延迟
         rotateSound.addEventListener('loadeddata', function() {
-            rotateSoundReady = true;
             console.log('cada7音效已加载完成');
-            // 立即预热音效（不等待setTimeout）
-            warmupSound(rotateSound);
         });
         
-        spinSoundEffect.addEventListener('loadeddata', function() {
-            spinSoundEffectReady = true;
-            console.log('se_door_hanekaeri音效已加载完成');
-            // 立即预热音效
-            warmupSound(spinSoundEffect);
-        });
-        
-        // 立即尝试预热（如果已加载）
-        if (rotateSound.readyState >= 2) {
-            warmupSound(rotateSound);
-            rotateSoundReady = true;
-        }
-        if (spinSoundEffect.readyState >= 2) {
-            warmupSound(spinSoundEffect);
-            spinSoundEffectReady = true;
-        }
-        
-        // 统一的音效播放函数（确保已加载并立即播放）
-        function playSoundEffect(audio, readyFlag) {
-            try {
-                if (!readyFlag && audio.readyState < 2) {
-                    console.warn('音效尚未加载完成，等待加载...');
-                    return new Promise((resolve) => {
-                        audio.addEventListener('loadeddata', function onLoaded() {
-                            audio.removeEventListener('loadeddata', onLoaded);
-                            playSoundNow();
-                            resolve();
-                        }, { once: true });
-                    });
-                } else {
-                    playSoundNow();
-                }
-                
-                function playSoundNow() {
-                    audio.currentTime = 0; // 重置到开始
-                    const playPromise = audio.play();
-                    if (playPromise !== undefined) {
-                        playPromise.catch(error => {
-                            console.warn('音效播放失败:', error);
-                            // 用户交互中，重试一次
-                            audio.play().catch(e => {
-                                console.error('音效播放重试失败:', e);
-                            });
-                        });
-                    }
-                }
-            } catch(e) {
-                console.error('音效播放异常:', e);
-            }
-        }
+        // 预播放一小段来预热音效（先静音播放）
+        setTimeout(() => {
+            rotateSound.volume = 0;
+            rotateSound.play().then(() => {
+                rotateSound.pause();
+                rotateSound.currentTime = 0;
+                rotateSound.volume = 1;
+                console.log('音效预热完成');
+            }).catch(() => {
+                rotateSound.volume = 1;
+            });
+        }, 500);
         
         // 创建震动函数
         function triggerSpinVibration(pattern = [100, 50, 100]) {
@@ -2003,9 +1933,9 @@
                 
                 console.log("开始创建旋转控制器...");
                 
-                // 追踪已播放的角度区间（只支持单圈旋转，限制在0-360度）
+                // 追踪已播放的角度区间（使用累积角度方案，支持多圈旋转）
                 let prevAngle = 0;  // 上一帧角度
-                let accumulatedDelta = 0;  // 累积角度差（限制在0-360度）
+                let accumulatedDelta = 0;  // 累积角度差
                 let lastTriggerStep = 0;  // 上次触发的步数
                 const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
                 let isDragging = false; // 追踪是否正在拖拽
@@ -2014,21 +1944,10 @@
                 let lastAngleSendTime = 0;
                 const ANGLE_SEND_INTERVAL = 50; // 毫秒
                 
-                // 将角度标准化到0-360度范围内
-                function normalizeAngleTo0_360(angle) {
-                    angle = angle % 360;
-                    if (angle < 0) angle += 360;
-                    return angle;
-                }
-                
-                // 修正角度差（处理360度边界，限制在单圈内）
+                // 修正角度差（处理360度跳转）
                 function normalizeAngleDelta(current, prev) {
-                    // 先将两个角度都标准化到0-360度
-                    current = normalizeAngleTo0_360(current);
-                    prev = normalizeAngleTo0_360(prev);
-                    
                     let delta = current - prev;
-                    // 处理跨360度边界（选择最短路径）
+                    // 处理跨360度边界
                     if (delta > 180) delta -= 360;
                     if (delta < -180) delta += 360;
                     return delta;
@@ -2039,76 +1958,45 @@
                     type: "rotation",
                     inertia: true,
                     onDragStart: function() {
-                        // 记录开始拖拽时的角度（标准化到0-360度）
-                        this.startAngle = normalizeAngleTo0_360(this.rotation);
-                        prevAngle = this.startAngle;  // 初始化上一帧角度
+                        // 记录开始拖拽时的角度
+                        this.startAngle = this.rotation;
+                        prevAngle = this.rotation;  // 初始化上一帧角度
                         accumulatedDelta = 0;  // 重置累积角度
                         lastTriggerStep = 0;  // 重置触发步数
                         isDragging = true; // 标记开始拖拽
                         
                         // 开始播放音效 - 立即播放，不等待
                         try {
-                            // 确保音效已加载
-                            if (!rotateSoundReady && rotateSound.readyState < 2) {
-                                console.warn('音效尚未加载完成，等待加载...');
-                                rotateSound.addEventListener('loadeddata', function onLoaded() {
-                                    rotateSound.removeEventListener('loadeddata', onLoaded);
-                                    startRotateSound();
-                                }, { once: true });
-                            } else {
-                                startRotateSound();
-                            }
+                            rotateSound.loop = true; // 设置循环播放
+                            const playPromise = rotateSound.play();
                             
-                            function startRotateSound() {
-                                rotateSound.loop = true;
-                                rotateSound.currentTime = 0; // 重置到开始
-                                const playPromise = rotateSound.play();
-                                
-                                if (playPromise !== undefined) {
-                                    playPromise.then(() => {
-                                        console.log('音效播放成功');
-                                    }).catch(error => {
-                                        console.warn('音效自动播放被阻止:', error);
-                                        // 用户交互中，应该可以播放，重试一次
-                                        rotateSound.play().catch(e => {
-                                            console.error('音效播放失败:', e);
-                                        });
-                                    });
-                                }
+                            // 如果浏览器需要用户交互
+                            if (playPromise !== undefined) {
+                                playPromise.catch(error => {
+                                    // 如果自动播放被阻止，尝试立即播放
+                                    console.log("自动播放被阻止，尝试立即播放:", error);
+                                    rotateSound.play();
+                                });
                             }
                         } catch(e) {
-                            console.error("音效播放异常:", e);
+                            console.log("音效播放失败:", e);
+                            // 失败时也尝试播放
+                            rotateSound.play();
                         }
                         
                         console.log("开始拖拽，开始播放音效。起始角度:", this.startAngle);
                     },
                     onDrag: function() {
                         let currentAngle = this.rotation;
-                        // 将当前角度限制在0-360度范围内
-                        currentAngle = normalizeAngleTo0_360(currentAngle);
+                        let rotationDelta = currentAngle - this.startAngle;
                         
-                        // 如果超出0-360度范围，强制限制
-                        if (this.rotation !== currentAngle) {
-                            gsap.set(this.target, { rotation: currentAngle });
-                            this.rotation = currentAngle;
-                        }
-                        
-                        let startAngleNormalized = normalizeAngleTo0_360(this.startAngle);
-                        let rotationDelta = currentAngle - startAngleNormalized;
-                        
-                        // 处理旋转增量的0-360度边界
-                        if (rotationDelta > 180) rotationDelta -= 360;
-                        if (rotationDelta < -180) rotationDelta += 360;
-                        
-                        // 计算跨帧角度差（处理360度边界，限制在单圈内）
+                        // 计算跨帧角度差（处理360度边界）
                         let frameDelta = normalizeAngleDelta(currentAngle, prevAngle);
                         accumulatedDelta += frameDelta;
-                        // 注意：accumulatedDelta 不限制在0-360度，用于检测是否超过360度
-                        
                         prevAngle = currentAngle;
                         
-                        // 计算当前累积步数（使用绝对值，支持顺时针和逆时针）
-                        let currentStep = Math.floor(Math.abs(accumulatedDelta) / ROTATE_THRESHOLD);
+                        // 计算当前累积步数
+                        let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
                         
                         // 如果累积步数增加，触发震动
                         if (currentStep !== lastTriggerStep) {
@@ -2130,7 +2018,7 @@
                         // 限制旋转增量在 90 度以内
                         if (Math.abs(rotationDelta) > 45) {
                             // 如果旋转超过 45 度，就限制到 90 度
-                            let targetAngle = normalizeAngleTo0_360(startAngleNormalized + (rotationDelta > 0 ? 90 : -90));
+                            let targetAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
                             
                             // 强制设定到限制的角度，使用回弹动画
                             gsap.to(this.target, {
@@ -2154,12 +2042,12 @@
                             accumulatedDelta = 0;
                             lastTriggerStep = 0;
                             
-                            // ⚠️ 重要：更新 prevAngle 为限制后的角度
-                            prevAngle = targetAngle;
+                            // ⚠️ 重要：不要重置 prevAngle，保持使用当前的 actualAngle
+                            // 否则会导致角度计算出现跳跃，让数值从几千度突然变成几百度
                             
                             console.log(`旋转被限制到: ${targetAngle}° (增量: ${rotationDelta.toFixed(1)}°)，已更新基准角度`);
                         } else {
-                            console.log("拖拽中，旋转角度:", currentAngle, "增量:", rotationDelta.toFixed(1));
+                            console.log("拖拽中，旋转角度:", this.rotation, "增量:", rotationDelta.toFixed(1));
                         }
                     },
                     onDragEnd: function() {
@@ -2172,73 +2060,17 @@
                         rotateSound.loop = false; // 取消循环
                         console.log("拖拽结束，音效已停止");
                         
-                        // 拖拽结束时进行最终处理
-                        let currentAngle = normalizeAngleTo0_360(this.rotation);
-                        let startAngleNormalized = normalizeAngleTo0_360(this.startAngle);
-                        let rotationDelta = currentAngle - startAngleNormalized;
+                        // 拖拽结束时进行最终吸附
+                        let currentAngle = this.rotation;
+                        let rotationDelta = currentAngle - this.startAngle;
                         
-                        // 处理旋转增量的0-360度边界
-                        if (rotationDelta > 180) rotationDelta -= 360;
-                        if (rotationDelta < -180) rotationDelta += 360;
-                        
-                        // 🔧 新功能：如果累积旋转超过一圈，进行带惯性感的回转动画
-                        if (accumulatedDelta >= 360 || accumulatedDelta <= -360) {
-                            console.log(`🔁 累积超过360° (${accumulatedDelta.toFixed(1)}°)，触发逆时针回归动画`);
-                            
-                            // 先播放结束音效 + 强震
-                            playSoundEffect(spinSoundEffect, spinSoundEffectReady);
-                            triggerBigVibrationForce();
-                            
-                            // 保存当前实际角度（用于动画起始）
-                            const startAnimationAngle = normalizeAngleTo0_360(this.rotation);
-                            
-                            // 计算逆时针路径：从当前角度逆时针转到 0°
-                            // 方法：将目标设置为稍大于当前角度但小于 360 的值，然后让 GSAP 选择路径
-                            // 或者使用负数角度：当前角度 - 360，这样会形成逆时针路径
-                            // 例如：从 50° 转到 -310°（等于逆时针转 50°到 0°）
-                            // 例如：从 350° 转到 -10°（等于逆时针转 350°到 0°）
-                            const targetRotation = this.rotation - 360;
-                            
-                            // 使用 GSAP 慢速逆时针动画回到 0°
-                            gsap.to(this.target, {
-                                rotation: targetRotation,
-                                duration: 1.8,               // 慢慢回归（可调整速度）
-                                ease: "power2.out",          // 有自然减速的感觉（惯性感）
-                                onStart: () => {
-                                    console.log("🌀 开始逆时针回归动画，从", startAnimationAngle.toFixed(1), "° 转到 0°");
-                                },
-                                onUpdate: () => {
-                                    const angleNow = gsap.getProperty(this.target, "rotation");
-                                    const normalizedAngle = normalizeAngleTo0_360(angleNow);
-                                    // 实时同步角度给Unity
-                                    gyroWS.sendSpinEvent(normalizedAngle);
-                                    // 更新角度显示
-                                    updateSpinAngleDisplay();
-                                },
-                                onComplete: () => {
-                                    console.log("✅ 回归动画完成，已回到 0°");
-                                    // 确保最终角度是 0（标准化处理）
-                                    gsap.set(this.target, { rotation: 0 });
-                                    // 重置累积角度
-                                    accumulatedDelta = 0;
-                                    lastTriggerStep = 0;
-                                    // 更新最终角度显示
-                                    updateSpinAngleDisplay();
-                                    // 发送最终的 0 度角度
-                                    gyroWS.sendSpinEvent(0);
-                                }
-                            });
-                            return; // ✅ 提前结束，避免执行后续的普通吸附逻辑
-                        }
-                        
-                        // 【普通结束情况】正常的角度吸附逻辑
                         // 计算最终角度（限制在 90 度增量内）
-                        let finalAngle = startAngleNormalized;
+                        let finalAngle = this.startAngle;
                         if (Math.abs(rotationDelta) > 45) {
-                            finalAngle = normalizeAngleTo0_360(startAngleNormalized + (rotationDelta > 0 ? 90 : -90));
+                            finalAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
                         } else {
                             // 如果增量小于 45 度，回到起始角度
-                            finalAngle = startAngleNormalized;
+                            finalAngle = this.startAngle;
                         }
                         
                         // 使用强烈的回弹动画吸附到最终角度
@@ -2252,21 +2084,18 @@
                         const totalRotation = Math.abs(rotationDelta);
                         
                         // 🔧 修复：无论旋转多少度，松开手就触发大震动和音效
-                        playSoundEffect(spinSoundEffect, spinSoundEffectReady);
+                        spinSoundEffect.currentTime = 0; // 重置音效
+                        spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
                         triggerBigVibrationForce(); // 强制触发大震动，不受节流限制
                         
-                        // 发送标准化后的角度到Unity（0-360度范围内）
-                        console.log('🎯 准备发送旋转事件（onDragEnd），实际角度:', finalAngle);
-                        gyroWS.sendSpinEvent(finalAngle);
+                        // 发送当前实际角度到Unity（不是吸附后的角度，而是真实的累积角度）
+                        console.log('🎯 准备发送旋转事件（onDragEnd），实际角度:', currentAngle);
+                        gyroWS.sendSpinEvent(currentAngle);
 
-                        console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°，累积: ${accumulatedDelta.toFixed(1)}°)`);
+                        console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         
                         // 更新最终角度显示
                         updateSpinAngleDisplay();
-                        
-                        // 重置累积角度
-                        accumulatedDelta = 0;
-                        lastTriggerStep = 0;
                     }
                 });
                 
