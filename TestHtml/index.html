@@ -2086,11 +2086,17 @@
                         // 计算当前累积步数
                         let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
                         
-                        // 如果累积步数增加，触发震动
+                        // 如果累积步数增加，触发“震动突发”（按跨越步数分散触发，避免被节流吞掉）
                         if (currentStep !== lastTriggerStep) {
-                            triggerVibration(SMALL_VIBRATION);
+                            const stepDiff = Math.abs(currentStep - lastTriggerStep);
+                            const burst = Math.min(stepDiff, 4); // 一次最多震4下，避免过密
+                            for (let i = 0; i < burst; i++) {
+                                setTimeout(() => {
+                                    triggerVibration(SMALL_VIBRATION);
+                                }, i * 90); // 每90ms一次，避开80ms节流
+                            }
                             lastTriggerStep = currentStep;
-                            console.log(`齿轮震动触发：${currentAngle.toFixed(1)}°，累积旋转: ${accumulatedDelta.toFixed(1)}°，步数: ${currentStep}，总旋转: ${totalAbsoluteRotation.toFixed(1)}°`);
+                            console.log(`齿轮震动触发(burst x${burst})：${currentAngle.toFixed(1)}°，累积旋转: ${accumulatedDelta.toFixed(1)}°，步数: ${currentStep}，总旋转: ${totalAbsoluteRotation.toFixed(1)}°`);
                         }
                         
                         // 实时更新角度显示
