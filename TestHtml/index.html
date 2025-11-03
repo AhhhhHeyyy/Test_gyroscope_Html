@@ -363,11 +363,6 @@
     </style>
 </head>
 <body>
-    <div id="playOverlay" class="play-overlay" style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,0.18) 0%, rgba(0,0,0,0.35) 60%), linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); z-index: 9999;">
-        <button id="playButton" class="play-button" style="appearance: none; border: none; cursor: pointer; padding: 16px 42px; border-radius: 999px; font-size: 22px; letter-spacing: 2px; font-weight: 800; color: #ffffff; background: linear-gradient(135deg, #ff8a00 0%, #e52e71 100%); box-shadow: 0 10px 30px rgba(229,46,113,0.45), inset 0 1px 0 rgba(255,255,255,0.25); transition: transform .15s ease, box-shadow .2s ease; text-transform: uppercase;">
-            PLAY
-        </button>
-    </div>
     <div class="container" style="background: none; box-shadow: none; border: none; padding: 0; margin: 0; max-width: none; width: 100vw; min-height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden;">
         <h1 style="display: none;">🎯 旋轉控制器</h1>
         <div style="display: none; text-align: center; margin-bottom: 20px; font-size: 1.2em; color: #FFD700;">
@@ -603,7 +598,7 @@
             </div>
         </div>
         
-        <div id="spinnerSection" class="cube-feature" style="display: none; justify-content: center; align-items: center; min-height: 70vh; background: none; box-shadow: none; border-left: none; padding: 0; margin: 0; border: none; border-radius: 0;">
+        <div class="cube-feature" style="display: flex; justify-content: center; align-items: center; min-height: 70vh; background: none; box-shadow: none; border-left: none; padding: 0; margin: 0; border: none; border-radius: 0;">
             <div class="cube-preview" style="display: block; margin: 0 auto;">
                 <div style="position: relative; width: min(300px, 80vw); height: min(300px, 80vw); margin: 0 auto;">
                     <img id="spinKnob" src="https://i.postimg.cc/mr45tyXJ/Hi-Paint-1760323869267.png" 
@@ -705,19 +700,6 @@
     </div>
 
     <script>
-        // PLAY 覆蓋層行為：點擊後顯示轉盤
-        document.addEventListener('DOMContentLoaded', function() {
-            var playBtn = document.getElementById('playButton');
-            if (playBtn) {
-                playBtn.addEventListener('click', function() {
-                    var overlay = document.getElementById('playOverlay');
-                    var spinner = document.getElementById('spinnerSection');
-                    if (overlay) overlay.style.display = 'none';
-                    if (spinner) spinner.style.display = 'flex';
-                });
-            }
-        });
-
         // 搖晃偵測相關變數 - 基於推薦方式優化
         let shakeCount = 0;
         let lastShakeTime = 0;
@@ -828,10 +810,6 @@
                 this.ws.onopen = () => {
                     console.log('✅ WebSocket連接已建立');
                     this.isConnected = true;
-                    // 連上即宣告搶佔控制權（可依需求調整時機）
-                    try {
-                        this.ws.send(JSON.stringify({ type: 'claim' }));
-                    } catch (_) {}
                     if (this.onConnectedCallback) {
                         this.onConnectedCallback();
                     }
@@ -847,19 +825,6 @@
                             // 不要 return，讓後續信令也能被處理
                         }
                         
-                        // 被擠出通知：停止發送並關閉當前連線
-                        if (data.type === 'ejected') {
-                            console.warn('你已被新的控制者擠出，停止發送資料。原因：', data.reason);
-                            this.isConnected = false;
-                            try { this.ws.close(); } catch (_) {}
-                            return;
-                        }
-
-                        if (data.type === 'you-are-controller') {
-                            console.log('你現在是控制者，起始於：', new Date(data.since).toLocaleTimeString());
-                            // 可在此處開啟本地的發送開關（若有）
-                        }
-
                         // WebRTC 原生三型別
                         if (['offer', 'answer', 'candidate'].includes(data.type)) {
                             if (this.webrtcCapture) {

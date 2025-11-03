@@ -103,10 +103,8 @@ wss.on('connection', (ws, req) => {
             // 控制類數據：僅允許當前控制者；若不是，直接搶佔
             if (CONTROL_TYPES.has(msg.type)) {
                 if (!isController(ws)) {
-                    console.log('🔄 新控制者搶佔:', msg.type, '舊控制器:', currentController ? '存在' : '無');
                     setController(ws);
                 }
-                console.log('📤 廣播控制數據:', msg.type, '控制器:', currentController === ws ? '是' : '否', '其他客戶端數:', clients.size - 1);
                 const out = { ...msg, timestamp: Date.now() };
                 clients.forEach(client => {
                     if (client !== ws && client.readyState === WebSocket.OPEN) {
@@ -117,30 +115,23 @@ wss.on('connection', (ws, req) => {
                 return;
             }
 
-            // 其他/舊格式：檢查是否為陀螺儀數據（具 alpha/beta/gamma 任一）
-            if (msg.alpha !== undefined || msg.beta !== undefined || msg.gamma !== undefined) {
-                if (!isController(ws)) {
-                    setController(ws);
-                }
-                console.log('📱 收到陀螺儀數據（舊格式）:', { alpha: msg.alpha, beta: msg.beta, gamma: msg.gamma });
-                const gyroData = {
-                    alpha: msg.alpha,
-                    beta: msg.beta,
-                    gamma: msg.gamma,
-                    timestamp: msg.timestamp || Date.now()
-                };
-                const out = { type: 'gyroscope', data: gyroData, timestamp: Date.now() };
-                clients.forEach(client => {
-                    if (client !== ws && client.readyState === WebSocket.OPEN) {
-                        client.send(JSON.stringify(out));
-                    }
-                });
-                ws.send(JSON.stringify({ type: 'ack', message: 'broadcasted', timestamp: Date.now(), clientsCount: clients.size }));
-                return;
+            // 其他/舊格式：按陀螺儀數據處理，同樣要求控制者
+            if (!isController(ws)) {
+                setController(ws);
             }
-
-            // 未知消息類型：只記錄，不處理
-            console.log('⚠️ 未知消息類型或格式:', msg.type || '無type字段', 'keys:', Object.keys(msg));
+            const gyroData = {
+                alpha: msg.alpha,
+                beta: msg.beta,
+                gamma: msg.gamma,
+                timestamp: msg.timestamp
+            };
+            const out = { type: 'gyroscope', data: gyroData, timestamp: Date.now() };
+            clients.forEach(client => {
+                if (client !== ws && client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify(out));
+                }
+            });
+            ws.send(JSON.stringify({ type: 'ack', message: 'broadcasted', timestamp: Date.now(), clientsCount: clients.size }));
 
         } catch (error) {
             console.error('❌ 解析訊息錯誤:', error);
