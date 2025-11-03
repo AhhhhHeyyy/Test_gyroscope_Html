@@ -828,6 +828,10 @@
                 this.ws.onopen = () => {
                     console.log('✅ WebSocket連接已建立');
                     this.isConnected = true;
+                    // 連上即宣告搶佔控制權
+                    try {
+                        this.ws.send(JSON.stringify({ type: 'claim' }));
+                    } catch (_) {}
                     if (this.onConnectedCallback) {
                         this.onConnectedCallback();
                     }
@@ -837,6 +841,27 @@
                     try {
                         const data = JSON.parse(event.data);
                         
+                        // 被踢出通知
+                        if (data.type === 'ejected') {
+                            console.warn('⚠️ 你已被新控制者取代，停止傳送資料');
+                            try {
+                                if (typeof this.stopSending === 'function') {
+                                    this.stopSending();
+                                } else {
+                                    if (window.gyroInterval) clearInterval(window.gyroInterval);
+                                    if (window.shakeInterval) clearInterval(window.shakeInterval);
+                                }
+                            } catch (_) {}
+                            try { this.ws && this.ws.close(); } catch (_) {}
+                            return;
+                        }
+
+                        // 取得控制權確認
+                        if (data.type === 'you-are-controller') {
+                            console.log('🎯 你是目前控制者，可以傳送資料');
+                            return;
+                        }
+
                         // 處理 ready 消息（房間配對完成）
                         if (data.type === 'ready') {
                             console.log('🤝 房間配對完成:', data.message);

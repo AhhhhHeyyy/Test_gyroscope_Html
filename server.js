@@ -20,6 +20,31 @@ const wss = new WebSocket.Server({ server });
 // 儲存所有連接的客戶端
 const clients = new Set();
 
+// 控制者狀態
+let currentController = null;
+let controllerSince = 0;
+const CONTROL_TYPES = new Set(['gyroscope', 'shake', 'spin', 'screen_capture_header']);
+const SIGNALING_TYPES = new Set(['offer', 'answer', 'candidate', 'join', 'ready']);
+
+function setController(ws) {
+    if (currentController && currentController !== ws) {
+        try {
+            currentController.send(JSON.stringify({ type: 'ejected', reason: 'new-controller' }));
+            console.log('⚠️ 舊控制者被踢出');
+        } catch (_) {}
+    }
+    currentController = ws;
+    controllerSince = Date.now();
+    try {
+        ws.send(JSON.stringify({ type: 'you-are-controller', since: controllerSince }));
+    } catch (_) {}
+    console.log('🎯 控制權已切換給新使用者');
+}
+
+function isController(ws) {
+    return currentController === ws;
+}
+
 // 連接統計
 const stats = {
     totalConnections: 0,
@@ -38,85 +63,70 @@ wss.on('connection', (ws, req) => {
     ws.send(JSON.stringify({
         type: 'connection',
         message: 'WebSocket連接已建立',
-        timestamp: Date.now(),
-        clientId: stats.totalConnections
+        timestamp: Date.now()
     }));
     
-    ws.on('message', (message) => {
+    ws.on('message', (message, isBinary) => {
         try {
+            if (isBinary) return;
             const msg = JSON.parse(message);
             stats.totalMessages++;
-            
-            let out;
-            if (msg.type === 'shake') {
-                // 處理搖晃數據
-                console.log('📳 收到搖晃數據:', {
-                    count: msg.data?.count,
-                    intensity: msg.data?.intensity,
-                    shakeType: msg.data?.shakeType,
-                    clientId: stats.totalConnections
-                });
-                
-                out = { 
-                    type: 'shake', 
-                    data: msg.data, 
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
-            } else if (msg.type === 'spin') {
-                // 🌀 新增旋轉事件處理
-                console.log('🎯 收到旋轉事件:', {
-                    angle: msg.data?.angle,
-                    triggered: msg.data?.triggered,
-                    clientId: stats.totalConnections
-                });
-                
-                out = {
-                    type: 'spin',
-                    data: msg.data,
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
-            } else {
-                // 預設當作陀螺儀角度（向後相容）
-                console.log('📱 收到陀螺儀數據:', {
-                    alpha: msg.alpha,
-                    beta: msg.beta,
-                    gamma: msg.gamma,
-                    clientId: stats.totalConnections
-                });
-                
-                const gyroData = {
-                    alpha: msg.alpha,
-                    beta: msg.beta,
-                    gamma: msg.gamma,
-                    timestamp: msg.timestamp,
-                    clientId: stats.totalConnections
-                };
-                
-                out = { 
-                    type: 'gyroscope', 
-                    data: gyroData, 
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
+
+            // 使用者要求成為控制者
+            if (msg.type === 'claim') {
+                setController(ws);
+                return;
             }
-            
-            // 廣播給所有其他客戶端（包括Unity）
-            clients.forEach(client => {
-                if (client !== ws && client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify(out));
+
+            // 信令類型直接轉發（不受控制權限制）
+            if (SIGNALING_TYPES.has(msg.type)) {
+                clients.forEach(client => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify(msg));
+                    }
+                });
+                return;
+            }
+
+            // 控制類型（只允許控制者廣播）
+            if (CONTROL_TYPES.has(msg.type)) {
+                if (!isController(ws)) {
+                    // 若不是控制者，嘗試搶權並提示
+                    setController(ws);
                 }
-            });
-            
-            // 回應發送者確認收到
-            ws.send(JSON.stringify({
-                type: 'ack',
-                message: '數據已廣播',
-                timestamp: Date.now(),
-                clientsCount: clients.size
-            }));
-            
+
+                if (isController(ws)) {
+                    let out = { ...msg, timestamp: Date.now() };
+
+                    // 與舊前端相容：若是gyroscope且未使用data包裝，則正規化
+                    if (msg.type === 'gyroscope') {
+                        const hasData = typeof msg.data === 'object' && msg.data !== null;
+                        if (!hasData) {
+                            const gyroData = {
+                                alpha: msg.alpha,
+                                beta: msg.beta,
+                                gamma: msg.gamma,
+                                timestamp: msg.timestamp
+                            };
+                            out = {
+                                type: 'gyroscope',
+                                data: gyroData,
+                                timestamp: Date.now()
+                            };
+                        }
+                    }
+
+                    clients.forEach(client => {
+                        if (client !== ws && client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify(out));
+                        }
+                    });
+                } else {
+                    ws.send(JSON.stringify({ type: 'error', message: '你不是控制者' }));
+                }
+                return;
+            }
+
         } catch (error) {
             console.error('❌ 解析訊息錯誤:', error);
             ws.send(JSON.stringify({
@@ -128,7 +138,11 @@ wss.on('connection', (ws, req) => {
     });
     
     ws.on('close', (code, reason) => {
-        console.log('🔌 WebSocket連接關閉:', code, reason.toString());
+        console.log('🔌 WebSocket連接關閉:', code, reason?.toString?.());
+        if (isController(ws)) {
+            console.log('⚠️ 控制者離線，釋放控制權');
+            currentController = null;
+        }
         clients.delete(ws);
         stats.activeConnections = clients.size;
     });
@@ -151,6 +165,7 @@ app.get('/health', (req, res) => {
             total: stats.totalConnections
         },
         messages: stats.totalMessages,
+        controllerSince: currentController ? controllerSince : null,
         timestamp: Date.now()
     });
 });
@@ -162,17 +177,21 @@ app.get('/api/status', (req, res) => {
     
     res.json({
         service: 'Gyroscope WebSocket Server',
-        version: '1.0.0',
+        version: '1.1.0',
         uptime: Math.floor(uptime / 1000),
         connections: {
             active: stats.activeConnections,
             total: stats.totalConnections
         },
         messages: stats.totalMessages,
+        controller: {
+            active: Boolean(currentController),
+            since: currentController ? controllerSince : null
+        },
         memory: {
-            used: Math.round(memoryUsage.heapUsed / 1024 / 1024),
-            total: Math.round(memoryUsage.heapTotal / 1024 / 1024),
-            external: Math.round(memoryUsage.external / 1024 / 1024)
+            usedMB: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+            totalMB: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+            externalMB: Math.round(memoryUsage.external / 1024 / 1024)
         },
         timestamp: Date.now()
     });
@@ -200,18 +219,17 @@ setInterval(() => {
     if (beforeCount !== clients.size) {
         console.log(`🧹 清理無效連接: ${beforeCount} -> ${clients.size}`);
     }
-}, 30000); // 每30秒清理一次
+}, 30000);
 
 // 定期狀態報告
 setInterval(() => {
     const uptime = Math.floor((Date.now() - stats.startTime) / 1000);
     console.log(`📊 服務狀態: 運行時間 ${uptime}s, 活躍連接 ${clients.size}, 總訊息 ${stats.totalMessages}`);
-}, 60000); // 每分鐘報告一次
+}, 60000);
 
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-    console.log('🚀 陀螺儀WebSocket伺服器啟動成功!');
-    console.log(`📱 靜態檔案服務: http://localhost:${PORT}`);
+    console.log(`🚀 WebSocket伺服器啟動成功於 http://localhost:${PORT}`);
     console.log(`🔌 WebSocket端點: ws://localhost:${PORT}`);
     console.log(`❤️ 健康檢查: http://localhost:${PORT}/health`);
     console.log(`📊 狀態監控: http://localhost:${PORT}/api/status`);
@@ -241,7 +259,7 @@ process.on('uncaughtException', (error) => {
     process.exit(1);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
     console.error('💥 未處理的Promise拒絕:', reason);
     process.exit(1);
 });
