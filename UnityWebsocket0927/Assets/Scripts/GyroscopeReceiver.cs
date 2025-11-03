@@ -23,12 +23,9 @@ public class GyroscopeReceiver : MonoBehaviour
     [SerializeField] private bool spinTriggered = false;
     [SerializeField] private float lastSpinAngle = 0f;
     [SerializeField] private int spinCount = 0;
-    [SerializeField] private bool spinLimitReached = false; // 标记是否已达到360度限制
-    [SerializeField] private float spinLimitThreshold = 360f; // 角度限制阈值（可在Inspector中调整）
     
     // 公共属性：允许外部脚本访问当前旋转角度
     public float LastSpinAngle => lastSpinAngle;
-    public bool SpinLimitReached => spinLimitReached; // 允许外部查询限制状态
     
     [Header("連接狀態")]
     [SerializeField] public bool isConnected = false;
@@ -305,13 +302,6 @@ public class GyroscopeReceiver : MonoBehaviour
                             Debug.Log($"🎯 收到旋转事件: {message}");
                             try
                             {
-                                // 如果已經達到360度限制，則不再接收新的轉動數據
-                                if (spinLimitReached)
-                                {
-                                    Debug.Log($"⚠️ 已達到角度限制({spinLimitThreshold}°)，忽略新的轉動數據");
-                                    break;
-                                }
-                                
                                 // 使用與陀螺儀和搖晃相同的解析方式
                                 var spinData = new SpinData
                                 {
@@ -319,16 +309,6 @@ public class GyroscopeReceiver : MonoBehaviour
                                     angle = serverMessage.data.angle,
                                     timestamp = serverMessage.data.timestamp
                                 };
-                                
-                                // 檢查角度是否超過限制
-                                if (spinData.angle >= spinLimitThreshold)
-                                {
-                                    Debug.LogWarning($"⚠️ 角度已達到限制 ({spinData.angle:F2}° >= {spinLimitThreshold}°)，停止接收轉動數據");
-                                    spinLimitReached = true;
-                                    // 仍然更新最後一次角度值，但不觸發事件和計數
-                                    lastSpinAngle = spinData.angle;
-                                    break;
-                                }
                                 
                                 spinTriggered = true;
                                 lastSpinAngle = spinData.angle;
@@ -521,13 +501,6 @@ public class GyroscopeReceiver : MonoBehaviour
         spinTriggered = false;
     }
     
-    // 重置角度限制，允許再次接收轉動數據
-    public void ResetSpinLimit()
-    {
-        spinLimitReached = false;
-        Debug.Log($"✅ 角度限制已重置，現在可以繼續接收轉動數據");
-    }
-    
     private async void OnApplicationQuit()
     {
         if (websocket != null)
@@ -541,7 +514,7 @@ public class GyroscopeReceiver : MonoBehaviour
     {
         if (Application.isPlaying)
         {
-            GUILayout.BeginArea(new Rect(10, 10, 300, 250));
+            GUILayout.BeginArea(new Rect(10, 10, 300, 200));
             GUILayout.Label($"連接狀態: {connectionStatus}");
             GUILayout.Label($"Alpha: {alpha:F2}");
             GUILayout.Label($"Beta: {beta:F2}");
@@ -551,20 +524,6 @@ public class GyroscopeReceiver : MonoBehaviour
             GUILayout.Label($"旋转次数: {spinCount}");
             GUILayout.Label($"最后角度: {lastSpinAngle:F2}°");
             
-            // 显示角度限制状态
-            var originalColor = GUI.color;
-            if (spinLimitReached)
-            {
-                GUI.color = Color.red;
-                GUILayout.Label($"⚠️ 角度限制: 已達限制 ({spinLimitThreshold}°)");
-            }
-            else
-            {
-                GUI.color = Color.green;
-                GUILayout.Label($"✓ 角度限制: 正常");
-            }
-            GUI.color = originalColor;
-            
             if (!isConnected && GUILayout.Button("重新連接"))
             {
                 ConnectToServer();
@@ -573,12 +532,6 @@ public class GyroscopeReceiver : MonoBehaviour
             if (isConnected && GUILayout.Button("斷線"))
             {
                 Disconnect();
-            }
-            
-            // 重置角度限制按钮
-            if (spinLimitReached && GUILayout.Button("重置角度限制"))
-            {
-                ResetSpinLimit();
             }
             
             GUILayout.EndArea();
