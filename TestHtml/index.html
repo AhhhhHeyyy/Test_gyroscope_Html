@@ -2017,11 +2017,15 @@
                         
                         console.log("开始拖拽，开始播放音效。起始角度:", this.startAngle);
 
-                        // 預防第一次拖動時累積角度太小導致不震動（預熱）
+                        // 預防第一次拖動時累積角度太小導致不震動（預熱，給 GSAP 一幀時間）
                         setTimeout(() => {
-                            try { triggerVibration(SMALL_VIBRATION); } catch(e) {}
-                            console.log("✨ 首次拖動立即震動預熱");
-                        }, 50);
+                            try {
+                                triggerVibration(SMALL_VIBRATION);
+                                console.log("✨ 首次拖動立即震動預熱");
+                            } catch (e) {
+                                console.warn("首次震動失敗:", e);
+                            }
+                        }, 10);
                     },
                     onDrag: function() {
                         let currentAngle = this.rotation;
@@ -2087,11 +2091,13 @@
                         // 计算当前累积步数
                         let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
                         
-                        // 如果累积步数增加触发；或首次拖动已超過 10° 也先給一次
-                        if (currentStep !== lastTriggerStep || (lastTriggerStep === 0 && Math.abs(accumulatedDelta) >= 10)) {
+                        // === ✅ 觸發條件修正版：放寬首次 10° 立即觸發 ===
+                        if (currentStep !== lastTriggerStep) {
                             triggerVibration(SMALL_VIBRATION);
-                            lastTriggerStep = Math.max(currentStep, 1);
-                            console.log(`齿轮震动触发：${currentAngle.toFixed(1)}°，累积旋转: ${accumulatedDelta.toFixed(1)}°，步数: ${currentStep}，总旋转: ${totalAbsoluteRotation.toFixed(1)}°`);
+                            lastTriggerStep = currentStep;
+                        } else if (lastTriggerStep === 0 && Math.abs(accumulatedDelta) >= 10) {
+                            triggerVibration(SMALL_VIBRATION);
+                            lastTriggerStep = 1;
                         }
                         
                         // 实时更新角度显示
