@@ -700,6 +700,26 @@
     </div>
 
     <script>
+        // === 手勢同步激活修復（必須最早註冊，且不可 passive）===
+        const ACTIVATION_WINDOW_MS = 300;   // activation 續用窗口
+        const VIBE_THROTTLE_MS    = 120;    // 避免過密震動
+        let __lastUserActivationTs = 0;
+        let __lastPointerVibeTs    = 0;
+
+        window.addEventListener("pointerdown", () => {
+            __lastUserActivationTs = Date.now();
+            try { navigator.vibrate(40); } catch (_) {}
+            console.log("🖐️ pointerdown → 立即預震 (確保激活)");
+        });
+
+        window.addEventListener("pointermove", () => {
+            const now = Date.now();
+            if (now - __lastUserActivationTs < ACTIVATION_WINDOW_MS && now - __lastPointerVibeTs >= VIBE_THROTTLE_MS) {
+                try { navigator.vibrate(40); } catch (_) {}
+                __lastPointerVibeTs = now;
+                console.log("📳 pointermove(activation續用) → 震動觸發");
+            }
+        });
         // 搖晃偵測相關變數 - 基於推薦方式優化
         let shakeCount = 0;
         let lastShakeTime = 0;
@@ -1957,28 +1977,7 @@
                 let isDragging = false; // 追踪是否正在拖拽
                 let lastPointerAngle = 0; // 指針同步回呼的角度基準
 
-                // === 手勢同步激活修復（必須在 Draggable.create 之前註冊）===
-                const ACTIVATION_WINDOW_MS = 300;   // activation 續用窗口
-                const VIBE_THROTTLE_MS    = 120;    // 避免過密震動
-                let __lastUserActivationTs = 0;
-                let __lastPointerVibeTs    = 0;
-
-                // pointerdown：建立 activation token，當下小震
-                window.addEventListener("pointerdown", () => {
-                    __lastUserActivationTs = Date.now();
-                    try { navigator.vibrate(SMALL_VIBRATION); } catch (_) {}
-                    console.log("🖐️ pointerdown → 立即預震 (確保激活)");
-                });
-
-                // pointermove：activation 窗口內於同步手勢上下文再震一次（含節流）
-                window.addEventListener("pointermove", () => {
-                    const now = Date.now();
-                    if (now - __lastUserActivationTs < ACTIVATION_WINDOW_MS && now - __lastPointerVibeTs >= VIBE_THROTTLE_MS) {
-                        try { navigator.vibrate(SMALL_VIBRATION); } catch (_) {}
-                        __lastPointerVibeTs = now;
-                        console.log("📳 pointermove(activation續用) → 震動觸發");
-                    }
-                });
+                // （已移至全域：pointerdown/pointermove activation 維持機制）
                 
                 // 375度总旋转限制相关变量
                 let initialRotationAngle = null; // 初始角度（第一次拖拽时的角度）
