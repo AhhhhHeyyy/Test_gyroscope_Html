@@ -2106,15 +2106,17 @@
                         // 计算当前累积步数
                         let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
                         
-                        // === ✅ 終極修正版：第一次角度變化立即震動（僅在按住期間嘗試）===
+                        // === ✅ 修正版：按下即震；首次移動 ≥0.5° 再震；之後每15° ===
                         if (window.__spinIsPointerDown) {
-                            if (currentStep !== lastTriggerStep) {
-                                triggerVibration(SMALL_VIBRATION);
-                                lastTriggerStep = currentStep;
-                            } else if (lastTriggerStep === 0 && Math.abs(accumulatedDelta) >= 2) {
+                            // 首次拖動放寬到 0.5° 立即震動
+                            if (lastTriggerStep === 0 && Math.abs(accumulatedDelta) >= 0.5) {
                                 triggerVibration(SMALL_VIBRATION);
                                 lastTriggerStep = 1;
                                 console.log("⚡ 首次有效角度變化 → 立即震動");
+                            } else if (currentStep !== lastTriggerStep) {
+                                // 後續每 15° 震動一次
+                                triggerVibration(SMALL_VIBRATION);
+                                lastTriggerStep = currentStep;
                             }
                         }
                         
