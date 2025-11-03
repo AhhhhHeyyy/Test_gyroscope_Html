@@ -1870,15 +1870,15 @@
             if (now - lastVibrationTime < 130) return;
             lastVibrationTime = now;
 
-            // 僅限 Android
             const isAndroid = /Android/i.test(navigator.userAgent);
-            if (!isAndroid) return;
+            const hasActivation = !!(navigator.userActivation && navigator.userActivation.isActive);
 
-            // 🔹 使用 vibrate API
-            if (navigator.vibrate) {
+            // ✅ 原生震動（需 Android 且在使用者啟動上下文內）
+            if (isAndroid && hasActivation && navigator.vibrate) {
                 try {
                     const result = navigator.vibrate(pattern);
                     console.log("📳 Android震動觸發:", pattern, "result:", result);
+                    return;
                 } catch (e) {
                     console.warn("震動執行錯誤:", e);
                 }
@@ -1973,6 +1973,14 @@
                 const draggable = Draggable.create("#spinKnob", {
                     type: "rotation",
                     inertia: true,
+                    onPress: function() {
+                        // 手勢同步回呼：立即小震建立首感
+                        try { triggerVibration(SMALL_VIBRATION); } catch(e) {}
+                        window.__spinIsPointerDown = true;
+                    },
+                    onRelease: function() {
+                        window.__spinIsPointerDown = false;
+                    },
                     onDragStart: function() {
                         // 如果是第一次拖拽，记录初始角度
                         if (initialRotationAngle === null) {
@@ -2082,14 +2090,17 @@
                         // 计算当前累积步数
                         let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
                         
-                        // === ✅ 終極修正版：第一次角度變化立即震動 ===
-                        if (currentStep !== lastTriggerStep) {
-                            triggerVibration(SMALL_VIBRATION);
-                            lastTriggerStep = currentStep;
-                        } else if (lastTriggerStep === 0 && Math.abs(accumulatedDelta) >= 2) {
-                            triggerVibration(SMALL_VIBRATION);
-                            lastTriggerStep = 1;
-                            console.log("⚡ 首次有效角度變化 → 立即震動");
+                        // 僅在按住期間嘗試小震，確保手勢上下文
+                        if (window.__spinIsPointerDown) {
+                            // === ✅ 終極修正版：第一次角度變化立即震動 ===
+                            if (currentStep !== lastTriggerStep) {
+                                triggerVibration(SMALL_VIBRATION);
+                                lastTriggerStep = currentStep;
+                            } else if (lastTriggerStep === 0 && Math.abs(accumulatedDelta) >= 2) {
+                                triggerVibration(SMALL_VIBRATION);
+                                lastTriggerStep = 1;
+                                console.log("⚡ 首次有效角度變化 → 立即震動");
+                            }
                         }
                         
                         // 实时更新角度显示
