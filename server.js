@@ -28,6 +28,29 @@ const stats = {
     startTime: Date.now()
 };
 
+// 單控制者機制：全局唯一控制者（如需分房可擴展為按房間 Map）
+let currentController = null;      // 當前控制者的 ws 連線
+let controllerSince = 0;           // 佔用開始時間
+const CONTROL_TYPES = new Set(['gyroscope', 'shake', 'spin', 'screen_capture_header']);
+const SIGNALING_TYPES = new Set(['offer', 'answer', 'candidate', 'join', 'ready']);
+
+function setController(ws) {
+    if (currentController && currentController !== ws) {
+        try {
+            currentController.send(JSON.stringify({ type: 'ejected', reason: 'new-controller' }));
+        } catch (_) {}
+    }
+    currentController = ws;
+    controllerSince = Date.now();
+    try {
+        ws.send(JSON.stringify({ type: 'you-are-controller', since: controllerSince }));
+    } catch (_) {}
+}
+
+function isController(ws) {
+    return currentController === ws;
+}
+
 wss.on('connection', (ws, req) => {
     console.log('🔌 新的WebSocket連接來自:', req.socket.remoteAddress);
     clients.add(ws);
@@ -42,81 +65,74 @@ wss.on('connection', (ws, req) => {
         clientId: stats.totalConnections
     }));
     
-    ws.on('message', (message) => {
+    ws.on('message', (message, isBinary) => {
         try {
+            // 二進位資料（螢幕幀等）：僅允許控制者轉發；若非控制者，直接搶佔
+            if (isBinary) {
+                if (!isController(ws)) {
+                    setController(ws);
+                }
+                clients.forEach(client => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN) {
+                        client.send(message, { binary: true });
+                    }
+                });
+                return;
+            }
+
             const msg = JSON.parse(message);
             stats.totalMessages++;
-            
-            let out;
-            if (msg.type === 'shake') {
-                // 處理搖晃數據
-                console.log('📳 收到搖晃數據:', {
-                    count: msg.data?.count,
-                    intensity: msg.data?.intensity,
-                    shakeType: msg.data?.shakeType,
-                    clientId: stats.totalConnections
-                });
-                
-                out = { 
-                    type: 'shake', 
-                    data: msg.data, 
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
-            } else if (msg.type === 'spin') {
-                // 🌀 新增旋轉事件處理
-                console.log('🎯 收到旋轉事件:', {
-                    angle: msg.data?.angle,
-                    triggered: msg.data?.triggered,
-                    clientId: stats.totalConnections
-                });
-                
-                out = {
-                    type: 'spin',
-                    data: msg.data,
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
-            } else {
-                // 預設當作陀螺儀角度（向後相容）
-                console.log('📱 收到陀螺儀數據:', {
-                    alpha: msg.alpha,
-                    beta: msg.beta,
-                    gamma: msg.gamma,
-                    clientId: stats.totalConnections
-                });
-                
-                const gyroData = {
-                    alpha: msg.alpha,
-                    beta: msg.beta,
-                    gamma: msg.gamma,
-                    timestamp: msg.timestamp,
-                    clientId: stats.totalConnections
-                };
-                
-                out = { 
-                    type: 'gyroscope', 
-                    data: gyroData, 
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
+
+            // 主動宣告搶佔（可選）
+            if (msg.type === 'claim') {
+                setController(ws);
+                ws.send(JSON.stringify({ type: 'ack', message: 'claimed' }));
+                return;
             }
-            
-            // 廣播給所有其他客戶端（包括Unity）
+
+            // 信令類型：不受控制者限制，直接廣播
+            if (SIGNALING_TYPES.has(msg.type)) {
+                clients.forEach(client => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify(msg));
+                    }
+                });
+                return;
+            }
+
+            // 控制類數據：僅允許當前控制者；若不是，直接搶佔
+            if (CONTROL_TYPES.has(msg.type)) {
+                if (!isController(ws)) {
+                    setController(ws);
+                }
+                const out = { ...msg, timestamp: Date.now() };
+                clients.forEach(client => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify(out));
+                    }
+                });
+                ws.send(JSON.stringify({ type: 'ack', message: 'broadcasted', timestamp: Date.now(), clientsCount: clients.size }));
+                return;
+            }
+
+            // 其他/舊格式：按陀螺儀數據處理，同樣要求控制者
+            if (!isController(ws)) {
+                setController(ws);
+            }
+            const gyroData = {
+                alpha: msg.alpha,
+                beta: msg.beta,
+                gamma: msg.gamma,
+                timestamp: msg.timestamp
+            };
+            const out = { type: 'gyroscope', data: gyroData, timestamp: Date.now() };
             clients.forEach(client => {
                 if (client !== ws && client.readyState === WebSocket.OPEN) {
                     client.send(JSON.stringify(out));
                 }
             });
-            
-            // 回應發送者確認收到
-            ws.send(JSON.stringify({
-                type: 'ack',
-                message: '數據已廣播',
-                timestamp: Date.now(),
-                clientsCount: clients.size
-            }));
-            
+            ws.send(JSON.stringify({ type: 'ack', message: 'broadcasted', timestamp: Date.now(), clientsCount: clients.size }));
+
         } catch (error) {
             console.error('❌ 解析訊息錯誤:', error);
             ws.send(JSON.stringify({
@@ -129,6 +145,16 @@ wss.on('connection', (ws, req) => {
     
     ws.on('close', (code, reason) => {
         console.log('🔌 WebSocket連接關閉:', code, reason.toString());
+        // 控制者離線則釋放佔用並通知其他人
+        if (isController(ws)) {
+            currentController = null;
+            controllerSince = 0;
+            clients.forEach(client => {
+                if (client !== ws && client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({ type: 'controller-left' }));
+                }
+            });
+        }
         clients.delete(ws);
         stats.activeConnections = clients.size;
     });

@@ -828,6 +828,10 @@
                 this.ws.onopen = () => {
                     console.log('✅ WebSocket連接已建立');
                     this.isConnected = true;
+                    // 連上即宣告搶佔控制權（可依需求調整時機）
+                    try {
+                        this.ws.send(JSON.stringify({ type: 'claim' }));
+                    } catch (_) {}
                     if (this.onConnectedCallback) {
                         this.onConnectedCallback();
                     }
@@ -843,6 +847,19 @@
                             // 不要 return，讓後續信令也能被處理
                         }
                         
+                        // 被擠出通知：停止發送並關閉當前連線
+                        if (data.type === 'ejected') {
+                            console.warn('你已被新的控制者擠出，停止發送資料。原因：', data.reason);
+                            this.isConnected = false;
+                            try { this.ws.close(); } catch (_) {}
+                            return;
+                        }
+
+                        if (data.type === 'you-are-controller') {
+                            console.log('你現在是控制者，起始於：', new Date(data.since).toLocaleTimeString());
+                            // 可在此處開啟本地的發送開關（若有）
+                        }
+
                         // WebRTC 原生三型別
                         if (['offer', 'answer', 'candidate'].includes(data.type)) {
                             if (this.webrtcCapture) {
