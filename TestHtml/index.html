@@ -1991,10 +1991,15 @@
                     type: "rotation",
                     inertia: true,
                     onPress: function() {
-                        // 使用者同步手勢回呼：立即小震建立首感
+                        // 使用者同步手勢回呼：立即小震 + 80ms 再震一次（同一 activation 期間）
                         window.__spinIsPointerDown = true;
                         lastPointerAngle = gsap.getProperty("#spinKnob", "rotation"); // 初始化角度基準
-                        try { triggerVibration(SMALL_VIBRATION); } catch(e) {}
+                        try { navigator.vibrate(SMALL_VIBRATION); } catch(e) {}
+                        console.log("🖐️ onPress → 立即震動 (activation token)");
+                        setTimeout(() => {
+                            try { navigator.vibrate(SMALL_VIBRATION); } catch(e) {}
+                            console.log("🔁 onPress 延遲預震 (保持 activation)");
+                        }, 80);
                     },
                     onRelease: function() {
                         window.__spinIsPointerDown = false;
@@ -2295,13 +2300,13 @@
                     }
                 });
 
-                // === 在同步 pointermove 手勢上下文中代為震動 ===
+                // === 在同步 pointermove 手勢上下文中代為震動（直接 vibrate） ===
                 window.addEventListener("pointermove", (e) => {
                     if (!window.__spinIsPointerDown) return;
                     const currentRotation = gsap.getProperty("#spinKnob", "rotation");
                     const diff = Math.abs(currentRotation - lastPointerAngle);
                     if (diff >= ROTATE_THRESHOLD) { // 每 15° 震一次
-                        try { triggerVibration(SMALL_VIBRATION); } catch (err) {}
+                        try { navigator.vibrate(SMALL_VIBRATION); } catch (err) {}
                         lastPointerAngle = currentRotation;
                         console.log("📳 pointermove → 震動觸發 (同步手勢上下文)");
                     }
