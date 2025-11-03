@@ -1866,8 +1866,8 @@
         function triggerVibration(pattern = SMALL_VIBRATION) {
             const now = Date.now();
 
-            // 🔹 避免過密觸發：與上次震動間隔 <130ms 則略過
-            if (now - lastVibrationTime < 130) return;
+            // 🔹 避免過密觸發：與上次震動間隔 <80ms 則略過
+            if (now - lastVibrationTime < 80) return;
             lastVibrationTime = now;
 
             // 僅限 Android
@@ -2154,9 +2154,7 @@
                                 gyroWS.sendSpinEvent(proposedTargetAngle);
                             }
                             
-                            // 重置累积角度基准（用于震动检测）
-                            accumulatedDelta = 0;
-                            lastTriggerStep = 0;
+                            // 保留累積角度基準（用于震动检测），避免大幅旋轉時丟失小步進回饋
                             
                             // ⚠️ 重要：不要重置 prevAngle，保持使用当前的 actualAngle
                             // 否则会导致角度计算出现跳跃，让数值从几千度突然变成几百度
