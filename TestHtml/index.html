@@ -1968,7 +1968,7 @@
                     __lastUserActivationTs = Date.now();
                     try { navigator.vibrate(SMALL_VIBRATION); } catch (_) {}
                     console.log("🖐️ pointerdown → 立即預震 (確保激活)");
-                }, { passive: true });
+                });
 
                 // pointermove：activation 窗口內於同步手勢上下文再震一次（含節流）
                 window.addEventListener("pointermove", () => {
@@ -1978,7 +1978,7 @@
                         __lastPointerVibeTs = now;
                         console.log("📳 pointermove(activation續用) → 震動觸發");
                     }
-                }, { passive: true });
+                });
                 
                 // 375度总旋转限制相关变量
                 let initialRotationAngle = null; // 初始角度（第一次拖拽时的角度）
