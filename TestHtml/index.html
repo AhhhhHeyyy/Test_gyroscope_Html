@@ -700,26 +700,6 @@
     </div>
 
     <script>
-        // === 手勢同步激活修復（必須最早註冊，且不可 passive）===
-        const ACTIVATION_WINDOW_MS = 300;   // activation 續用窗口
-        const VIBE_THROTTLE_MS    = 120;    // 避免過密震動
-        let __lastUserActivationTs = 0;
-        let __lastPointerVibeTs    = 0;
-
-        window.addEventListener("pointerdown", () => {
-            __lastUserActivationTs = Date.now();
-            try { navigator.vibrate(40); } catch (_) {}
-            console.log("🖐️ pointerdown → 立即預震 (確保激活)");
-        });
-
-        window.addEventListener("pointermove", () => {
-            const now = Date.now();
-            if (now - __lastUserActivationTs < ACTIVATION_WINDOW_MS && now - __lastPointerVibeTs >= VIBE_THROTTLE_MS) {
-                try { navigator.vibrate(40); } catch (_) {}
-                __lastPointerVibeTs = now;
-                console.log("📳 pointermove(activation續用) → 震動觸發");
-            }
-        });
         // 搖晃偵測相關變數 - 基於推薦方式優化
         let shakeCount = 0;
         let lastShakeTime = 0;
@@ -1890,35 +1870,19 @@
             if (now - lastVibrationTime < 130) return;
             lastVibrationTime = now;
 
-            const hasActivation = !!(navigator.userActivation && navigator.userActivation.isActive);
+            // 僅限 Android
             const isAndroid = /Android/i.test(navigator.userAgent);
+            if (!isAndroid) return;
 
-            // 優先原生震動：必須在使用者啟動上下文內
-            if (isAndroid && hasActivation && navigator.vibrate) {
+            // 🔹 使用 vibrate API
+            if (navigator.vibrate) {
                 try {
                     const result = navigator.vibrate(pattern);
                     console.log("📳 Android震動觸發:", pattern, "result:", result);
-                    return;
                 } catch (e) {
                     console.warn("震動執行錯誤:", e);
                 }
             }
-
-            // 回退：極短音效模擬“咔嗒”觸感（iOS/桌面也有效）
-            try {
-                const backupVolume = rotateSound.volume;
-                rotateSound.volume = 0.15;
-                rotateSound.currentTime = 0;
-                rotateSound.play().then(() => {
-                    setTimeout(() => {
-                        rotateSound.pause();
-                        rotateSound.currentTime = 0;
-                        rotateSound.volume = backupVolume;
-                    }, Array.isArray(pattern) ? pattern[0] : pattern);
-                }).catch(() => {
-                    rotateSound.volume = backupVolume;
-                });
-            } catch (_) {}
         }
         
         // === 强制触发大震动（不受节流限制）===
@@ -1975,9 +1939,6 @@
                 let lastTriggerStep = 0;  // 上次触发的步数
                 const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
                 let isDragging = false; // 追踪是否正在拖拽
-                let lastPointerAngle = 0; // 指針同步回呼的角度基準
-
-                // （已移至全域：pointerdown/pointermove activation 維持機制）
                 
                 // 375度总旋转限制相关变量
                 let initialRotationAngle = null; // 初始角度（第一次拖拽时的角度）
@@ -2012,20 +1973,6 @@
                 const draggable = Draggable.create("#spinKnob", {
                     type: "rotation",
                     inertia: true,
-                    onPress: function() {
-                        // 使用者同步手勢回呼：立即小震 + 80ms 再震一次（同一 activation 期間）
-                        window.__spinIsPointerDown = true;
-                        lastPointerAngle = gsap.getProperty("#spinKnob", "rotation"); // 初始化角度基準
-                        try { navigator.vibrate(SMALL_VIBRATION); } catch(e) {}
-                        console.log("🖐️ onPress → 立即震動 (activation token)");
-                        setTimeout(() => {
-                            try { navigator.vibrate(SMALL_VIBRATION); } catch(e) {}
-                            console.log("🔁 onPress 延遲預震 (保持 activation)");
-                        }, 80);
-                    },
-                    onRelease: function() {
-                        window.__spinIsPointerDown = false;
-                    },
                     onDragStart: function() {
                         // 如果是第一次拖拽，记录初始角度
                         if (initialRotationAngle === null) {
@@ -2069,7 +2016,6 @@
                         }
                         
                         console.log("开始拖拽，开始播放音效。起始角度:", this.startAngle);
-
                     },
                     onDrag: function() {
                         let currentAngle = this.rotation;
@@ -2135,18 +2081,11 @@
                         // 计算当前累积步数
                         let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
                         
-                        // === ✅ 修正版：按下即震；首次移動 ≥0.5° 再震；之後每15° ===
-                        if (window.__spinIsPointerDown) {
-                            // 首次拖動放寬到 0.5° 立即震動
-                            if (lastTriggerStep === 0 && Math.abs(accumulatedDelta) >= 0.5) {
-                                triggerVibration(SMALL_VIBRATION);
-                                lastTriggerStep = 1;
-                                console.log("⚡ 首次有效角度變化 → 立即震動");
-                            } else if (currentStep !== lastTriggerStep) {
-                                // 後續每 15° 震動一次
-                                triggerVibration(SMALL_VIBRATION);
-                                lastTriggerStep = currentStep;
-                            }
+                        // 如果累积步数增加，触发震动
+                        if (currentStep !== lastTriggerStep) {
+                            triggerVibration(SMALL_VIBRATION);
+                            lastTriggerStep = currentStep;
+                            console.log(`齿轮震动触发：${currentAngle.toFixed(1)}°，累积旋转: ${accumulatedDelta.toFixed(1)}°，步数: ${currentStep}，总旋转: ${totalAbsoluteRotation.toFixed(1)}°`);
                         }
                         
                         // 实时更新角度显示
@@ -2321,18 +2260,6 @@
                         updateSpinAngleDisplay();
                     }
                 });
-
-                // === 在同步 pointermove 手勢上下文中代為震動（直接 vibrate） ===
-                window.addEventListener("pointermove", (e) => {
-                    if (!window.__spinIsPointerDown) return;
-                    const currentRotation = gsap.getProperty("#spinKnob", "rotation");
-                    const diff = Math.abs(currentRotation - lastPointerAngle);
-                    if (diff >= ROTATE_THRESHOLD) { // 每 15° 震一次
-                        try { navigator.vibrate(SMALL_VIBRATION); } catch (err) {}
-                        lastPointerAngle = currentRotation;
-                        console.log("📳 pointermove → 震動觸發 (同步手勢上下文)");
-                    }
-                });
                 
                 console.log("旋转控制器创建成功:", draggable);
                 
@@ -2359,3 +2286,5 @@
     </script>
 </body>
 </html>
+
+
