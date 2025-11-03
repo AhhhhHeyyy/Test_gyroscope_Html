@@ -81,6 +81,45 @@ wss.on('connection', (ws, req) => {
                 return; // 註冊消息處理完畢
             }
 
+            // 兼容 JOIN 消息：如果 Unity 發送的是 join 而不是 register，也標記為 unity
+            if (msg.type === 'join') {
+                const joinRole = (msg.role || '').toLowerCase();
+                
+                if (joinRole.includes('unity') || joinRole.includes('receiver')) {
+                    // Unity 接收端
+                    roles.set(ws, 'unity');
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'granted', role: 'unity' }));
+                    }
+                    console.log('✅ Unity 已註冊為接收端 (via join)');
+                    return;
+                }
+                
+                if (joinRole.includes('controller') || joinRole.includes('web') || joinRole.includes('sender')) {
+                    // 網頁控制者 (兼容舊格式)
+                    roles.set(ws, 'controller');
+                    
+                    // 踢掉舊控制者
+                    if (activeController && activeController !== ws) {
+                        try {
+                            if (activeController.readyState === WebSocket.OPEN) {
+                                activeController.send(JSON.stringify({ type: 'kicked', reason: 'Replaced by new controller' }));
+                            }
+                        } catch {}
+                        try { activeController.close(1000, 'Replaced'); } catch {}
+                    }
+                    activeController = ws;
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'granted', role: 'controller' }));
+                    }
+                    console.log('✅ 控制者已註冊 (via join)');
+                    return;
+                }
+                
+                // 其他 join 消息不處理，繼續後續流程
+                return;
+            }
+
             // 僅允許當前控制者發送控制數據，其它來源丟棄
             const senderRole = roles.get(ws);
             if (senderRole !== 'controller') {
