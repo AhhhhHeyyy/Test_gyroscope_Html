@@ -1955,6 +1955,7 @@
                 let lastTriggerStep = 0;  // 上次触发的步数
                 const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
                 let isDragging = false; // 追踪是否正在拖拽
+                let lastPointerAngle = 0; // 指針同步回呼的角度基準
                 
                 // 375度总旋转限制相关变量
                 let initialRotationAngle = null; // 初始角度（第一次拖拽时的角度）
@@ -1992,6 +1993,7 @@
                     onPress: function() {
                         // 使用者同步手勢回呼：立即小震建立首感
                         window.__spinIsPointerDown = true;
+                        lastPointerAngle = gsap.getProperty("#spinKnob", "rotation"); // 初始化角度基準
                         try { triggerVibration(SMALL_VIBRATION); } catch(e) {}
                     },
                     onRelease: function() {
@@ -2292,6 +2294,18 @@
                         updateSpinAngleDisplay();
                     }
                 });
+
+                // === 在同步 pointermove 手勢上下文中代為震動 ===
+                window.addEventListener("pointermove", (e) => {
+                    if (!window.__spinIsPointerDown) return;
+                    const currentRotation = gsap.getProperty("#spinKnob", "rotation");
+                    const diff = Math.abs(currentRotation - lastPointerAngle);
+                    if (diff >= ROTATE_THRESHOLD) { // 每 15° 震一次
+                        try { triggerVibration(SMALL_VIBRATION); } catch (err) {}
+                        lastPointerAngle = currentRotation;
+                        console.log("📳 pointermove → 震動觸發 (同步手勢上下文)");
+                    }
+                }, { passive: true });
                 
                 console.log("旋转控制器创建成功:", draggable);
                 
