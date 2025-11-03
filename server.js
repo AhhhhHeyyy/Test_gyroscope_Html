@@ -20,6 +20,10 @@ const wss = new WebSocket.Server({ server });
 // 儲存所有連接的客戶端
 const clients = new Set();
 
+// 角色與控制者管理
+let activeController = null;  // 當前唯一控制者（最新進入者）
+const roles = new Map();      // ws -> 'controller' | 'unity'
+
 // 連接統計
 const stats = {
     totalConnections: 0,
@@ -35,18 +39,54 @@ wss.on('connection', (ws, req) => {
     stats.activeConnections = clients.size;
     
     // 發送歡迎訊息
-    ws.send(JSON.stringify({
-        type: 'connection',
-        message: 'WebSocket連接已建立',
-        timestamp: Date.now(),
-        clientId: stats.totalConnections
-    }));
+    try {
+        ws.send(JSON.stringify({
+            type: 'connection',
+            message: 'WebSocket連接已建立',
+            timestamp: Date.now(),
+            clientId: stats.totalConnections
+        }));
+    } catch {}
     
     ws.on('message', (message) => {
         try {
             const msg = JSON.parse(message);
             stats.totalMessages++;
             
+            // 註冊角色：{ type: 'register', role: 'controller' | 'unity' }
+            if (msg.type === 'register') {
+                const role = msg.role;
+                roles.set(ws, role);
+
+                if (role === 'controller') {
+                    // 踢掉舊控制者
+                    if (activeController && activeController !== ws) {
+                        try {
+                            if (activeController.readyState === WebSocket.OPEN) {
+                                activeController.send(JSON.stringify({ type: 'kicked', reason: 'Replaced by new controller' }));
+                            }
+                        } catch {}
+                        try { activeController.close(1000, 'Replaced'); } catch {}
+                    }
+                    activeController = ws;
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'granted', role: 'controller' }));
+                    }
+                } else if (role === 'unity') {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'granted', role: 'unity' }));
+                    }
+                }
+
+                return; // 註冊消息處理完畢
+            }
+
+            // 僅允許當前控制者發送控制數據，其它來源丟棄
+            const senderRole = roles.get(ws);
+            if (senderRole !== 'controller') {
+                return;
+            }
+
             let out;
             if (msg.type === 'shake') {
                 // 處理搖晃數據
@@ -77,8 +117,7 @@ wss.on('connection', (ws, req) => {
                     timestamp: Date.now(),
                     clientId: stats.totalConnections
                 };
-            } else {
-                // 預設當作陀螺儀角度（向後相容）
+            } else if (msg.type === 'gyroscope') {
                 console.log('📱 收到陀螺儀數據:', {
                     alpha: msg.alpha,
                     beta: msg.beta,
@@ -100,11 +139,14 @@ wss.on('connection', (ws, req) => {
                     timestamp: Date.now(),
                     clientId: stats.totalConnections
                 };
+            } else {
+                // 未知型別直接忽略
+                return;
             }
             
-            // 廣播給所有其他客戶端（包括Unity）
+            // 僅轉發給 Unity 角色
             clients.forEach(client => {
-                if (client !== ws && client.readyState === WebSocket.OPEN) {
+                if (client !== ws && client.readyState === WebSocket.OPEN && roles.get(client) === 'unity') {
                     client.send(JSON.stringify(out));
                 }
             });
@@ -112,7 +154,7 @@ wss.on('connection', (ws, req) => {
             // 回應發送者確認收到
             ws.send(JSON.stringify({
                 type: 'ack',
-                message: '數據已廣播',
+                message: '已發送至 Unity',
                 timestamp: Date.now(),
                 clientsCount: clients.size
             }));
@@ -130,12 +172,17 @@ wss.on('connection', (ws, req) => {
     ws.on('close', (code, reason) => {
         console.log('🔌 WebSocket連接關閉:', code, reason.toString());
         clients.delete(ws);
+        // 清理角色/控制者
+        if (activeController === ws) activeController = null;
+        roles.delete(ws);
         stats.activeConnections = clients.size;
     });
     
     ws.on('error', (error) => {
         console.error('❌ WebSocket錯誤:', error);
         clients.delete(ws);
+        if (activeController === ws) activeController = null;
+        roles.delete(ws);
         stats.activeConnections = clients.size;
     });
 });

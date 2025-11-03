@@ -828,6 +828,10 @@
                 this.ws.onopen = () => {
                     console.log('✅ WebSocket連接已建立');
                     this.isConnected = true;
+                    // 註冊為唯一控制者
+                    try {
+                        this.ws.send(JSON.stringify({ type: 'register', role: 'controller' }));
+                    } catch (e) { console.warn('註冊控制者失敗:', e); }
                     if (this.onConnectedCallback) {
                         this.onConnectedCallback();
                     }
@@ -837,6 +841,19 @@
                     try {
                         const data = JSON.parse(event.data);
                         
+                        // 被新進使用者取代
+                        if (data.type === 'kicked') {
+                            alert('您已被新的使用者接管控制權');
+                            try { this.ws.close(); } catch (e) {}
+                            return;
+                        }
+
+                        // 取得控制權/註冊回覆
+                        if (data.type === 'granted' && data.role === 'controller') {
+                            console.log('🎮 已取得控制權');
+                            return;
+                        }
+
                         // 處理 ready 消息（房間配對完成）
                         if (data.type === 'ready') {
                             console.log('🤝 房間配對完成:', data.message);
