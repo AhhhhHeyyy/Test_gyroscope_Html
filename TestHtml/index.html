@@ -2017,15 +2017,6 @@
                         
                         console.log("开始拖拽，开始播放音效。起始角度:", this.startAngle);
 
-                        // 預防第一次拖動時累積角度太小導致不震動（預熱，給 GSAP 一幀時間）
-                        setTimeout(() => {
-                            try {
-                                triggerVibration(SMALL_VIBRATION);
-                                console.log("✨ 首次拖動立即震動預熱");
-                            } catch (e) {
-                                console.warn("首次震動失敗:", e);
-                            }
-                        }, 10);
                     },
                     onDrag: function() {
                         let currentAngle = this.rotation;
@@ -2091,13 +2082,14 @@
                         // 计算当前累积步数
                         let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
                         
-                        // === ✅ 觸發條件修正版：放寬首次 10° 立即觸發 ===
+                        // === ✅ 終極修正版：第一次角度變化立即震動 ===
                         if (currentStep !== lastTriggerStep) {
                             triggerVibration(SMALL_VIBRATION);
                             lastTriggerStep = currentStep;
-                        } else if (lastTriggerStep === 0 && Math.abs(accumulatedDelta) >= 10) {
+                        } else if (lastTriggerStep === 0 && Math.abs(accumulatedDelta) >= 2) {
                             triggerVibration(SMALL_VIBRATION);
                             lastTriggerStep = 1;
+                            console.log("⚡ 首次有效角度變化 → 立即震動");
                         }
                         
                         // 实时更新角度显示
