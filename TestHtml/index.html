@@ -1996,6 +1996,11 @@
                         lastTriggerStep = 0;  // 重置触发步数
                         isDragging = true; // 标记开始拖拽
                         
+                        // 首次拖动：立即给一次小震动，确保有触感（Android 有效）
+                        try {
+                            triggerVibration(SMALL_VIBRATION);
+                        } catch (e) {}
+                        
                         // 开始播放音效 - 立即播放，不等待
                         try {
                             rotateSound.loop = true; // 设置循环播放
