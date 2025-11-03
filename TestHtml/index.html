@@ -1870,10 +1870,10 @@
             if (now - lastVibrationTime < 130) return;
             lastVibrationTime = now;
 
-            const isAndroid = /Android/i.test(navigator.userAgent);
             const hasActivation = !!(navigator.userActivation && navigator.userActivation.isActive);
+            const isAndroid = /Android/i.test(navigator.userAgent);
 
-            // ✅ 原生震動（需 Android 且在使用者啟動上下文內）
+            // 優先原生震動：必須在使用者啟動上下文內
             if (isAndroid && hasActivation && navigator.vibrate) {
                 try {
                     const result = navigator.vibrate(pattern);
@@ -1883,6 +1883,22 @@
                     console.warn("震動執行錯誤:", e);
                 }
             }
+
+            // 回退：極短音效模擬“咔嗒”觸感（iOS/桌面也有效）
+            try {
+                const backupVolume = rotateSound.volume;
+                rotateSound.volume = 0.15;
+                rotateSound.currentTime = 0;
+                rotateSound.play().then(() => {
+                    setTimeout(() => {
+                        rotateSound.pause();
+                        rotateSound.currentTime = 0;
+                        rotateSound.volume = backupVolume;
+                    }, Array.isArray(pattern) ? pattern[0] : pattern);
+                }).catch(() => {
+                    rotateSound.volume = backupVolume;
+                });
+            } catch (_) {}
         }
         
         // === 强制触发大震动（不受节流限制）===
@@ -1974,9 +1990,9 @@
                     type: "rotation",
                     inertia: true,
                     onPress: function() {
-                        // 手勢同步回呼：立即小震建立首感
-                        try { triggerVibration(SMALL_VIBRATION); } catch(e) {}
+                        // 使用者同步手勢回呼：立即小震建立首感
                         window.__spinIsPointerDown = true;
+                        try { triggerVibration(SMALL_VIBRATION); } catch(e) {}
                     },
                     onRelease: function() {
                         window.__spinIsPointerDown = false;
@@ -2090,9 +2106,8 @@
                         // 计算当前累积步数
                         let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
                         
-                        // 僅在按住期間嘗試小震，確保手勢上下文
+                        // === ✅ 終極修正版：第一次角度變化立即震動（僅在按住期間嘗試）===
                         if (window.__spinIsPointerDown) {
-                            // === ✅ 終極修正版：第一次角度變化立即震動 ===
                             if (currentStep !== lastTriggerStep) {
                                 triggerVibration(SMALL_VIBRATION);
                                 lastTriggerStep = currentStep;
