@@ -1866,8 +1866,8 @@
         function triggerVibration(pattern = SMALL_VIBRATION) {
             const now = Date.now();
 
-            // 🔹 避免過密觸發：與上次震動間隔 <80ms 則略過
-            if (now - lastVibrationTime < 80) return;
+            // 🔹 避免過密觸發：與上次震動間隔 <130ms 則略過
+            if (now - lastVibrationTime < 130) return;
             lastVibrationTime = now;
 
             // 僅限 Android
@@ -1996,11 +1996,6 @@
                         lastTriggerStep = 0;  // 重置触发步数
                         isDragging = true; // 标记开始拖拽
                         
-                        // 首次拖动：立即给一次小震动，确保有触感（Android 有效）
-                        try {
-                            triggerVibration(SMALL_VIBRATION);
-                        } catch (e) {}
-                        
                         // 开始播放音效 - 立即播放，不等待
                         try {
                             rotateSound.loop = true; // 设置循环播放
@@ -2021,6 +2016,12 @@
                         }
                         
                         console.log("开始拖拽，开始播放音效。起始角度:", this.startAngle);
+
+                        // 預防第一次拖動時累積角度太小導致不震動（預熱）
+                        setTimeout(() => {
+                            try { triggerVibration(SMALL_VIBRATION); } catch(e) {}
+                            console.log("✨ 首次拖動立即震動預熱");
+                        }, 50);
                     },
                     onDrag: function() {
                         let currentAngle = this.rotation;
@@ -2086,17 +2087,11 @@
                         // 计算当前累积步数
                         let currentStep = Math.floor(accumulatedDelta / ROTATE_THRESHOLD);
                         
-                        // 如果累积步数增加，触发“震动突发”（按跨越步数分散触发，避免被节流吞掉）
-                        if (currentStep !== lastTriggerStep) {
-                            const stepDiff = Math.abs(currentStep - lastTriggerStep);
-                            const burst = Math.min(stepDiff, 4); // 一次最多震4下，避免过密
-                            for (let i = 0; i < burst; i++) {
-                                setTimeout(() => {
-                                    triggerVibration(SMALL_VIBRATION);
-                                }, i * 90); // 每90ms一次，避开80ms节流
-                            }
-                            lastTriggerStep = currentStep;
-                            console.log(`齿轮震动触发(burst x${burst})：${currentAngle.toFixed(1)}°，累积旋转: ${accumulatedDelta.toFixed(1)}°，步数: ${currentStep}，总旋转: ${totalAbsoluteRotation.toFixed(1)}°`);
+                        // 如果累积步数增加触发；或首次拖动已超過 10° 也先給一次
+                        if (currentStep !== lastTriggerStep || (lastTriggerStep === 0 && Math.abs(accumulatedDelta) >= 10)) {
+                            triggerVibration(SMALL_VIBRATION);
+                            lastTriggerStep = Math.max(currentStep, 1);
+                            console.log(`齿轮震动触发：${currentAngle.toFixed(1)}°，累积旋转: ${accumulatedDelta.toFixed(1)}°，步数: ${currentStep}，总旋转: ${totalAbsoluteRotation.toFixed(1)}°`);
                         }
                         
                         // 实时更新角度显示
@@ -2165,7 +2160,9 @@
                                 gyroWS.sendSpinEvent(proposedTargetAngle);
                             }
                             
-                            // 保留累積角度基準（用于震动检测），避免大幅旋轉時丟失小步進回饋
+                            // 重置累积角度基准（用于震动检测）
+                            accumulatedDelta = 0;
+                            lastTriggerStep = 0;
                             
                             // ⚠️ 重要：不要重置 prevAngle，保持使用当前的 actualAngle
                             // 否则会导致角度计算出现跳跃，让数值从几千度突然变成几百度
