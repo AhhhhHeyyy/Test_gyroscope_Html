@@ -2112,6 +2112,11 @@
                                 // New: 達到限制後停止後續 spin 發送
                                 gyroWS.setSpinLimitReached(true);
                                 
+                                // 3秒後跳轉到指定頁面（若不希望可返回，可改用 location.replace）
+                                setTimeout(() => {
+                                    window.location.href = 'https://github.com/AhhhhHeyyy/Test_gyroscope_Html';
+                                }, 500);
+                                
                                 console.log(`🔒 总旋转已达到${totalAbsoluteRotation.toFixed(1)}度（超过${MAX_TOTAL_ROTATION}度限制），已锁定到360度`);
                                 return; // 直接返回，不执行后续逻辑
                             }

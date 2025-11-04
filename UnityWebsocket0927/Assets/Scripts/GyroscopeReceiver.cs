@@ -23,6 +23,14 @@ public class GyroscopeReceiver : MonoBehaviour
     [SerializeField] private bool spinTriggered = false;
     [SerializeField] private float lastSpinAngle = 0f;
     [SerializeField] private int spinCount = 0;
+
+    [Header("Value")]
+    public float m_alpha = 0f;
+    public float m_beta = 0f;
+    public float m_gamma = 0f;
+
+    public float m_lastSpinAngle = 0f;
+    public int m_spinCount = 0;
     
     // 公共属性：允许外部脚本访问当前旋转角度
     public float LastSpinAngle => lastSpinAngle;
@@ -396,6 +404,12 @@ public class GyroscopeReceiver : MonoBehaviour
         {
             Debug.LogWarning("⚠️ WebSocket為空！");
         }
+
+        m_alpha = alpha;
+        m_beta = beta;
+        m_gamma = gamma;
+        m_lastSpinAngle = lastSpinAngle;
+        m_spinCount = spinCount;
         #endif
     }
     
