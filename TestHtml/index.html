@@ -1995,12 +1995,9 @@
                 const ROTATE_THRESHOLD = 15; // 每15度触发一次震动
                 let isDragging = false; // 追踪是否正在拖拽
                 
-                // 375度总旋转限制相关变量
+                // 旋转角度追踪相关变量
                 let initialRotationAngle = null; // 初始角度（第一次拖拽时的角度）
-                let totalAbsoluteRotation = 0; // 从初始位置开始的总绝对旋转角度
-                const MAX_TOTAL_ROTATION = 375; // 最大总旋转角度
-                const LOCK_ANGLE = 360; // 锁定到360度
-                let isLocked = false; // 是否已锁定
+                let totalAbsoluteRotation = 0; // 从初始位置开始的总绝对旋转角度（用于日志显示）
                 
                 // 实时角度发送节流（每50ms发送一次，避免过于频繁）
                 let lastAngleSendTime = 0;
@@ -2033,15 +2030,7 @@
                         if (initialRotationAngle === null) {
                             initialRotationAngle = this.rotation;
                             totalAbsoluteRotation = 0;
-                            isLocked = false;
                             console.log("初始化旋转角度:", initialRotationAngle);
-                        }
-                        
-                        // 如果已锁定，不允许继续拖拽
-                        if (isLocked) {
-                            console.log("🔒 转盘已锁定在360度，无法继续旋转");
-                            this.endDrag(); // 立即结束拖拽
-                            return;
                         }
                         
                         // 记录开始拖拽时的角度
@@ -2075,59 +2064,6 @@
                     onDrag: function() {
                         let currentAngle = this.rotation;
                         
-                        // 🔒 375度总旋转限制检查（优先级最高）
-                        if (initialRotationAngle !== null && !isLocked) {
-                            totalAbsoluteRotation = calculateTotalRotation(currentAngle);
-                            
-                            // 如果总旋转达到或超过375度，强制锁定到360度
-                            if (totalAbsoluteRotation >= MAX_TOTAL_ROTATION) {
-                                isLocked = true;
-                                
-                                // 计算目标角度（从初始角度旋转360度）
-                                let direction = currentAngle > initialRotationAngle ? 1 : -1;
-                                let targetAngle = initialRotationAngle + (LOCK_ANGLE * direction);
-                                
-                                // 立即更新当前角度到锁定位置，防止继续旋转
-                                this.rotation = targetAngle;
-                                
-                                // 强制设定到360度，使用回弹动画
-                                gsap.to(this.target, {
-                                    rotation: targetAngle,
-                                    duration: 0.5,
-                                    ease: "power2.out"
-                                });
-                                
-                                // 更新startAngle为锁定角度
-                                this.startAngle = targetAngle;
-                                prevAngle = targetAngle;
-                                
-                                // 停止拖拽效果
-                                this.endDrag();
-                                
-                                // 触发大震动提示
-                                triggerBigVibrationForce();
-                                
-                                // 发送锁定后的角度到Unity
-                                gyroWS.sendSpinEvent(targetAngle);
-                                // New: 達到限制後停止後續 spin 發送
-                                gyroWS.setSpinLimitReached(true);
-                                
-                                // 3秒後跳轉到指定頁面（若不希望可返回，可改用 location.replace）
-                                setTimeout(() => {
-                                    window.location.href = 'https://github.com/AhhhhHeyyy/Test_gyroscope_Html';
-                                }, 500);
-                                
-                                console.log(`🔒 总旋转已达到${totalAbsoluteRotation.toFixed(1)}度（超过${MAX_TOTAL_ROTATION}度限制），已锁定到360度`);
-                                return; // 直接返回，不执行后续逻辑
-                            }
-                        }
-                        
-                        // 如果已锁定，不允许继续旋转
-                        if (isLocked) {
-                            this.endDrag();
-                            return;
-                        }
-                        
                         // 更新总旋转角度（用于日志显示）
                         if (initialRotationAngle !== null) {
                             totalAbsoluteRotation = calculateTotalRotation(currentAngle);
@@ -2154,45 +2090,16 @@
                         updateSpinAngleDisplay();
                         
                         // 实时发送角度数据到Unity（节流：每50ms发送一次）
-                        // 🔒 如果总旋转已接近375度，不发送超过360度的角度
                         const now = Date.now();
                         if (now - lastAngleSendTime >= ANGLE_SEND_INTERVAL) {
-                            if (totalAbsoluteRotation >= MAX_TOTAL_ROTATION) {
-                                // 如果已超过375度，发送锁定角度（360度）
-                                let direction = currentAngle > initialRotationAngle ? 1 : -1;
-                                let lockAngle = initialRotationAngle + (LOCK_ANGLE * direction);
-                                gyroWS.sendSpinEvent(lockAngle);
-                                gyroWS.setSpinLimitReached(true);
-                            } else {
-                                gyroWS.sendSpinEvent(currentAngle);
-                            }
+                            gyroWS.sendSpinEvent(currentAngle);
                             lastAngleSendTime = now;
                         }
                         
-                        // 限制旋转增量在 90 度以内，同时检查375度总限制
+                        // 限制旋转增量在 90 度以内
                         if (Math.abs(rotationDelta) > 45) {
                             // 计算90度增量后的目标角度
                             let proposedTargetAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
-                            
-                            // 🔒 检查90度增量后是否会超过375度总限制
-                            if (initialRotationAngle !== null) {
-                                let proposedTotalRotation = Math.abs(proposedTargetAngle - initialRotationAngle);
-                                
-                                if (proposedTotalRotation >= MAX_TOTAL_ROTATION) {
-                                    // 如果90度增量会超过375度，改为锁定到360度
-                                    isLocked = true;
-                                    let direction = currentAngle > initialRotationAngle ? 1 : -1;
-                                    proposedTargetAngle = initialRotationAngle + (LOCK_ANGLE * direction);
-                                    
-                                    // 停止拖拽效果
-                                    this.endDrag();
-                                    
-                                    // 触发大震动提示
-                                    triggerBigVibrationForce();
-                                    
-                                    console.log(`🔒 90度增量会超过${MAX_TOTAL_ROTATION}度，强制锁定到360度`);
-                                }
-                            }
                             
                             // 强制设定到限制的角度，使用回弹动画
                             gsap.to(this.target, {
@@ -2212,12 +2119,6 @@
                             // 这样下一轮的90度限制会基于新的基准角度，保持角度累积的正确性
                             this.startAngle = proposedTargetAngle;
                             
-                            // 如果已锁定，发送锁定角度
-                            if (isLocked) {
-                                gyroWS.sendSpinEvent(proposedTargetAngle);
-                                gyroWS.setSpinLimitReached(true);
-                            }
-                            
                             // 重置累积角度基准（用于震动检测）
                             accumulatedDelta = 0;
                             lastTriggerStep = 0;
@@ -2231,11 +2132,6 @@
                             }
                             
                             console.log(`旋转被限制到: ${proposedTargetAngle}° (增量: ${rotationDelta.toFixed(1)}°)，已更新基准角度，总旋转: ${totalAbsoluteRotation.toFixed(1)}°`);
-                            
-                            // 如果已锁定，直接返回
-                            if (isLocked) {
-                                return;
-                            }
                         } else {
                             console.log("拖拽中，旋转角度:", this.rotation, "增量:", rotationDelta.toFixed(1), "总旋转:", totalAbsoluteRotation.toFixed(1) + "°");
                         }
@@ -2253,41 +2149,9 @@
                         // 拖拽结束时进行最终吸附
                         let currentAngle = this.rotation;
                         
-                        // 🔒 375度总旋转限制检查：如果总旋转达到或超过375度，强制锁定到360度
-                        if (initialRotationAngle !== null && !isLocked) {
+                        // 更新总旋转角度（用于日志显示）
+                        if (initialRotationAngle !== null) {
                             totalAbsoluteRotation = calculateTotalRotation(currentAngle);
-                            
-                            if (totalAbsoluteRotation >= MAX_TOTAL_ROTATION) {
-                                isLocked = true;
-                                
-                                // 计算目标角度（从初始角度旋转360度）
-                                let direction = currentAngle > initialRotationAngle ? 1 : -1;
-                                let targetAngle = initialRotationAngle + (LOCK_ANGLE * direction);
-                                
-                                // 使用强烈的回弹动画吸附到360度
-                                gsap.to(this.target, {
-                                    rotation: targetAngle,
-                                    duration: 0.6,
-                                    ease: "elastic.out(1, 0.3)"
-                                });
-                                
-                                // 发送锁定后的角度到Unity
-                                console.log('🔒 总旋转达到375度，锁定到360度，发送角度:', targetAngle);
-                                gyroWS.sendSpinEvent(targetAngle);
-                                
-                                // 触发大震动提示
-                                spinSoundEffect.currentTime = 0;
-                                spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
-                                triggerBigVibrationForce();
-                                
-                                // 更新最终角度显示
-                                updateSpinAngleDisplay();
-                                
-                                console.log(`🔒 拖拽结束，总旋转已达到${MAX_TOTAL_ROTATION}度，已锁定到360度`);
-                                // New: 達到限制後停止後續 spin 發送
-                                gyroWS.setSpinLimitReached(true);
-                                return; // 直接返回，不执行后续逻辑
-                            }
                         }
                         
                         let rotationDelta = currentAngle - this.startAngle;
