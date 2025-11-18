@@ -2307,7 +2307,10 @@
                                 duration: 0.4,
                                 ease: "elastic.out(1, 0.4)",
                                 onUpdate: updateSpinAngleDisplay,
-                                onComplete: updateSpinAngleDisplay
+                                onComplete: () => {
+                                    updateSpinAngleDisplay();
+                                    gyroWS.sendSpinEvent(displayedSpinAngle);
+                                }
                             });
                             
                             // 注意：90度限制时不播放音效，只在松开手时播放
@@ -2381,7 +2384,10 @@
                             duration: 0.6,
                             ease: "elastic.out(1, 0.3)",
                             onUpdate: updateSpinAngleDisplay,
-                            onComplete: updateSpinAngleDisplay
+                            onComplete: () => {
+                                updateSpinAngleDisplay();
+                                gyroWS.sendSpinEvent(displayedSpinAngle);
+                            }
                         });
 
                         // 检查总旋转角度（从开始到结束）
