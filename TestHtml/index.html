@@ -1913,7 +1913,10 @@
             LOCK_THRESHOLD: 375,
             LOCK_WAIT_DURATION: 5000
         };
+        const ANGLE_SEND_INTERVAL = 50;
         let displayedSpinAngle = 0;
+        let lastAngleSendTime = 0;
+        let lastSentDisplayedAngle = null;
         
         // 创建音效对象
         const spinSoundEffect = new Audio('se_door_hanekaeri.mp3');
@@ -2039,12 +2042,12 @@
                     return;
                 }
                 
-                console.log("开始创建旋轉控制器...");
+                console.log("开始创建旋转控制器...");
                 
                 const selectModeButton = document.getElementById("selectThisButton");
                 const spinModeStatusEl = document.getElementById("spinModeStatus");
                 
-                // 追踪已播放的角度区间（使用累積角度方案，支持多圈旋转）
+                // 追踪已播放的角度区间（使用累积角度方案，支持多圈旋转）
                 let prevAngle = 0;  // 上一帧角度
                 let accumulatedDelta = 0;  // 累积角度差
                 let lastTriggerStep = 0;  // 上次触发的步数
@@ -2054,10 +2057,6 @@
                 // 旋转角度追踪相关变量
                 let initialRotationAngle = null; // 初始角度（第一次拖拽时的角度）
                 let totalAbsoluteRotation = 0; // 从初始位置开始的总绝对旋转角度（用于日志显示）
-                
-                // 实时角度发送节流（每50ms发送一次，避免过于频繁）
-                let lastAngleSendTime = 0;
-                const ANGLE_SEND_INTERVAL = 50; // 毫秒
                 
                 // 模式控制相關變數
                 let currentSnapAngle = SPIN_SNAP_SETTINGS.DEFAULT;
@@ -2121,7 +2120,7 @@
                     totalAbsoluteRotation = 0;
                     showSelectButton(true);
                     gsap.set(knobElement, { rotation: 0 });
-                    updateSpinAngleDisplay();
+                    updateSpinAngleDisplay(true);
                     if (spinDraggable) {
                         spinDraggable.enable();
                     }
@@ -2138,7 +2137,7 @@
                     initialRotationAngle = null;
                     totalAbsoluteRotation = 0;
                     gsap.set(knobElement, { rotation: 0 });
-                    updateSpinAngleDisplay();
+                    updateSpinAngleDisplay(true);
                     showSelectButton(false);
                     if (spinDraggable) {
                         spinDraggable.enable();
@@ -2161,19 +2160,16 @@
                         console.warn('停用旋钮拖拽失败:', error);
                     }
                     
-                    // 先吸附至360度
-                    gyroWS.sendSpinEvent(360);
                     gsap.to(knobElement, {
                         rotation: 360,
                         duration: 0.4,
                         ease: "power2.out",
                         onUpdate: updateSpinAngleDisplay,
                         onComplete: () => {
-                            updateSpinAngleDisplay();
+                            updateSpinAngleDisplay(true);
                             // 清空為0度
                             gsap.set(knobElement, { rotation: 0 });
-                            updateSpinAngleDisplay();
-                            gyroWS.sendSpinEvent(0);
+                            updateSpinAngleDisplay(true);
                         }
                     });
                     
@@ -2273,13 +2269,6 @@
                         // 实时更新角度显示
                         updateSpinAngleDisplay();
                         
-                        // 实时发送角度数据到Unity（节流：每50ms发送一次）
-                        const now = Date.now();
-                        if (now - lastAngleSendTime >= ANGLE_SEND_INTERVAL) {
-                            gyroWS.sendSpinEvent(displayedSpinAngle);
-                            lastAngleSendTime = now;
-                        }
-                        
                         // 90度模式下的總旋轉累積檢查
                         if (isIn90Mode && !spinLocked) {
                             if (lastModeAngleForThreshold === null) {
@@ -2307,7 +2296,7 @@
                                 duration: 0.4,
                                 ease: "elastic.out(1, 0.4)",
                                 onUpdate: updateSpinAngleDisplay,
-                                onComplete: updateSpinAngleDisplay
+                                onComplete: () => updateSpinAngleDisplay(true)
                             });
                             
                             // 注意：90度限制时不播放音效，只在松开手时播放
@@ -2381,7 +2370,7 @@
                             duration: 0.6,
                             ease: "elastic.out(1, 0.3)",
                             onUpdate: updateSpinAngleDisplay,
-                            onComplete: updateSpinAngleDisplay
+                            onComplete: () => updateSpinAngleDisplay(true)
                         });
 
                         // 检查总旋转角度（从开始到结束）
@@ -2393,8 +2382,7 @@
                         triggerBigVibrationForce(); // 强制触发大震动，不受节流限制
                         
                         // 发送当前实际角度到Unity（不是吸附后的角度，而是真实的累积角度）
-                        console.log('🎯 准备发送旋转事件（onDragEnd），显示角度:', displayedSpinAngle, "总旋转:", totalAbsoluteRotation.toFixed(1) + "°");
-                        gyroWS.sendSpinEvent(displayedSpinAngle);
+                    console.log('🎯 准备发送旋转事件（onDragEnd），显示角度:', displayedSpinAngle, "总旋转:", totalAbsoluteRotation.toFixed(1) + "°");
 
                         console.log(`拖拽结束，最终角度: ${finalAngle}° (增量: ${rotationDelta.toFixed(1)}°)`);
                         
@@ -2420,10 +2408,22 @@
         }
         
         // 更新角度显示的函數
-        function updateSpinAngleDisplay() {
+        function syncDisplayedAngleWithUnity(force = false) {
+            if (!gyroWS || typeof gyroWS.sendSpinEvent !== 'function') return;
+            const now = Date.now();
+            if (!force && (now - lastAngleSendTime < ANGLE_SEND_INTERVAL) && lastSentDisplayedAngle === displayedSpinAngle) {
+                return;
+            }
+            gyroWS.sendSpinEvent(displayedSpinAngle);
+            lastAngleSendTime = now;
+            lastSentDisplayedAngle = displayedSpinAngle;
+        }
+        
+        function updateSpinAngleDisplay(force = false) {
             const currentRotation = gsap.getProperty("#spinKnob", "rotation");
             displayedSpinAngle = currentRotation;
             $("#spinAngleDisplay").text("当前角度: " + currentRotation.toFixed(1) + "°");
+            syncDisplayedAngleWithUnity(force);
         }
         
         // 页面载入时初始化旋转控制器
