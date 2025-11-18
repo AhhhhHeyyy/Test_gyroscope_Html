@@ -224,14 +224,53 @@ public class GyroscopeReceiver : MonoBehaviour
                 {
                     string message = System.Text.Encoding.UTF8.GetString(bytes);
                     Debug.Log($"📱 收到原始訊息: {message}");
+                    Debug.Log($"📱 訊息長度: {message.Length} 字元");
+                    
+                    // 檢查是否包含 spin_mode
+                    if (message.Contains("spin_mode"))
+                    {
+                        Debug.Log($"🎯 檢測到 spin_mode 消息！");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"⚠️ 消息中不包含 'spin_mode' 字串");
+                        Debug.LogWarning($"⚠️ 消息前100字元: {(message.Length > 100 ? message.Substring(0, 100) : message)}");
+                    }
                     
                     // 觸發原始訊息事件
                     OnRawMessage?.Invoke(message);
                     
                     // 解析服務器消息格式
                     var serverMessage = JsonUtility.FromJson<ServerMessage>(message);
-                    Debug.Log($"🔍 解析後的消息類型: {serverMessage.type}");
+                    
+                    if (serverMessage == null)
+                    {
+                        Debug.LogError($"❌ 解析失敗：serverMessage 為 null");
+                        return;
+                    }
+                    
+                    Debug.Log($"🔍 解析後的消息類型: '{serverMessage.type}' (長度: {(serverMessage.type?.Length ?? 0)})");
+                    
+                    if (string.IsNullOrEmpty(serverMessage.type))
+                    {
+                        Debug.LogWarning($"⚠️ 消息類型為空或 null！");
+                    }
+                    
+                    if (serverMessage.type == "spin_mode")
+                    {
+                        Debug.Log($"🎯 確認消息類型為 spin_mode，準備處理...");
+                    }
+                    
                     Debug.Log($"🔍 消息內容: {JsonUtility.ToJson(serverMessage, true)}");
+                    
+                    if (serverMessage.data != null)
+                    {
+                        Debug.Log($"🔍 data 不為 null，檢查 data 內容...");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"⚠️ serverMessage.data 為 null");
+                    }
                     
                     // 處理不同類型的消息
                     switch (serverMessage.type)

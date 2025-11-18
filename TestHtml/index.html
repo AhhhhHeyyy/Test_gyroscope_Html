@@ -2107,18 +2107,34 @@
                 }
                 
                 function updateSpinModeStatus(modeKey) {
+                    console.log('🔄 updateSpinModeStatus 被調用，modeKey=', modeKey);
                     const config = SPIN_MODE_CONFIG[modeKey];
-                    if (!config) return;
+                    if (!config) {
+                        console.warn('⚠️ 找不到模式配置:', modeKey);
+                        return;
+                    }
+                    console.log('📋 模式配置:', config);
                     if (spinModeStatusEl) {
                         spinModeStatusEl.textContent = `目前模式：${config.label}`;
+                        console.log('✅ 已更新模式狀態顯示:', spinModeStatusEl.textContent);
+                    } else {
+                        console.warn('⚠️ spinModeStatusEl 不存在');
                     }
                     if (gyroWS) {
                         if (typeof gyroWS.updateSpinModeInfo === 'function') {
                             gyroWS.updateSpinModeInfo(modeKey, config.snapAngle, config.label);
+                            console.log('✅ 已更新本地模式資訊');
+                        } else {
+                            console.warn('⚠️ gyroWS.updateSpinModeInfo 不存在');
                         }
                         if (typeof gyroWS.sendSpinMode === 'function') {
+                            console.log('📤 準備發送模式到 Unity:', { modeKey, snapAngle: config.snapAngle, label: config.label });
                             gyroWS.sendSpinMode(modeKey, config.snapAngle, config.label);
+                        } else {
+                            console.warn('⚠️ gyroWS.sendSpinMode 不存在');
                         }
+                    } else {
+                        console.error('❌ gyroWS 不存在！');
                     }
                 }
                 
@@ -2141,10 +2157,16 @@
                 }
                 
                 function switchTo90Mode() {
-                    if (spinLocked || isIn90Mode) return;
+                    console.log('🔄 switchTo90Mode 被調用');
+                    if (spinLocked || isIn90Mode) {
+                        console.log('⚠️ 無法切換：spinLocked=', spinLocked, 'isIn90Mode=', isIn90Mode);
+                        return;
+                    }
+                    console.log('✅ 開始切換到90°模式');
                     clearSnapResetTimer();
                     isIn90Mode = true;
                     currentSnapAngle = SPIN_SNAP_SETTINGS.SELECTED;
+                    console.log('✅ 已更新：isIn90Mode=', isIn90Mode, 'currentSnapAngle=', currentSnapAngle);
                     rotationAccumulatedForMode = 0;
                     lastModeAngleForThreshold = null;
                     initialRotationAngle = null;
@@ -2156,6 +2178,7 @@
                         spinDraggable.enable();
                     }
                     updateSpinModeStatus('selected');
+                    console.log('✅ 90°模式切換完成');
                 }
                 
                 function enforceFullRotationLock() {
