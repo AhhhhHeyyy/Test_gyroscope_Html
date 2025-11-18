@@ -974,32 +974,56 @@
                 
                 console.log('🔄 sendSpinMode 被調用:', { mode, snapAngle, label, isConnected: this.isConnected, wsState: this.ws?.readyState });
                 
-                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    const payload = {
-                        type: 'spin_mode',
-                        data: {
-                            mode: mode || 'default',
-                            snapAngle: typeof snapAngle === 'number' ? snapAngle : 120,
-                            label: label || (mode === 'selected' ? '90° 吸附' : '120° 吸附'),
-                            timestamp: Date.now()
+                const sendMessage = () => {
+                    if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        const payload = {
+                            type: 'spin_mode',
+                            data: {
+                                mode: mode || 'default',
+                                snapAngle: typeof snapAngle === 'number' ? snapAngle : 120,
+                                label: label || (mode === 'selected' ? '90° 吸附' : '120° 吸附'),
+                                timestamp: Date.now()
+                            }
+                        };
+                        const jsonPayload = JSON.stringify(payload);
+                        console.log('📤 準備發送旋鈕模式資訊:', payload);
+                        console.log('📤 JSON 字串:', jsonPayload);
+                        try {
+                            this.ws.send(jsonPayload);
+                            console.log('✅ 旋鈕模式資訊已成功發送');
+                            return true;
+                        } catch (error) {
+                            console.error('❌ 發送旋鈕模式資訊失敗:', error);
+                            return false;
                         }
-                    };
-                    const jsonPayload = JSON.stringify(payload);
-                    console.log('📤 準備發送旋鈕模式資訊:', payload);
-                    console.log('📤 JSON 字串:', jsonPayload);
-                    try {
-                        this.ws.send(jsonPayload);
-                        console.log('✅ 旋鈕模式資訊已成功發送');
-                    } catch (error) {
-                        console.error('❌ 發送旋鈕模式資訊失敗:', error);
                     }
-                } else {
-                    console.warn('⚠️ WebSocket 未連線，無法發送旋鈕模式', {
-                        isConnected: this.isConnected,
-                        wsState: this.ws?.readyState,
-                        wsExists: !!this.ws
-                    });
+                    return false;
+                };
+                
+                // 如果已連接，立即發送
+                if (sendMessage()) {
+                    return;
                 }
+                
+                // 如果未連接，等待連接完成後再發送（最多等待3秒）
+                console.warn('⚠️ WebSocket 未連線，等待連接...', {
+                    isConnected: this.isConnected,
+                    wsState: this.ws?.readyState,
+                    wsExists: !!this.ws
+                });
+                
+                let retryCount = 0;
+                const maxRetries = 30; // 3秒，每100ms檢查一次
+                const retryInterval = setInterval(() => {
+                    retryCount++;
+                    if (sendMessage()) {
+                        clearInterval(retryInterval);
+                        console.log('✅ 連接完成後成功發送旋鈕模式資訊');
+                    } else if (retryCount >= maxRetries) {
+                        clearInterval(retryInterval);
+                        console.error('❌ 等待連接超時，無法發送旋鈕模式資訊');
+                    }
+                }, 100);
             }
             
             updateSpinModeInfo(mode, snapAngle, label) {
@@ -2154,6 +2178,12 @@
                         spinDraggable.enable();
                     }
                     updateSpinModeStatus('default');
+                    
+                    // 立即發送一次 spin 消息（角度為0），確保 Unity 立即收到模式信息
+                    if (gyroWS && typeof gyroWS.sendSpinEvent === 'function') {
+                        console.log('📤 立即發送 spin 消息以同步模式信息到 Unity（切回120°模式）');
+                        gyroWS.sendSpinEvent(0, Date.now());
+                    }
                 }
                 
                 function switchTo90Mode() {
@@ -2178,6 +2208,13 @@
                         spinDraggable.enable();
                     }
                     updateSpinModeStatus('selected');
+                    
+                    // 立即發送一次 spin 消息（角度為0），確保 Unity 立即收到模式信息
+                    if (gyroWS && typeof gyroWS.sendSpinEvent === 'function') {
+                        console.log('📤 立即發送 spin 消息以同步模式信息到 Unity');
+                        gyroWS.sendSpinEvent(0, Date.now());
+                    }
+                    
                     console.log('✅ 90°模式切換完成');
                 }
                 

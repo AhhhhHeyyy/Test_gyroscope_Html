@@ -224,17 +224,11 @@ public class GyroscopeReceiver : MonoBehaviour
                 {
                     string message = System.Text.Encoding.UTF8.GetString(bytes);
                     Debug.Log($"📱 收到原始訊息: {message}");
-                    Debug.Log($"📱 訊息長度: {message.Length} 字元");
                     
-                    // 檢查是否包含 spin_mode
+                    // 檢查是否包含 spin_mode（只對 spin_mode 消息顯示特殊標記）
                     if (message.Contains("spin_mode"))
                     {
                         Debug.Log($"🎯 檢測到 spin_mode 消息！");
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"⚠️ 消息中不包含 'spin_mode' 字串");
-                        Debug.LogWarning($"⚠️ 消息前100字元: {(message.Length > 100 ? message.Substring(0, 100) : message)}");
                     }
                     
                     // 觸發原始訊息事件
