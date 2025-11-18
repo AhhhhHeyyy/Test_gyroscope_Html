@@ -383,10 +383,14 @@ public class GyroscopeReceiver : MonoBehaviour
                             {
                                 if (serverMessage.data != null)
                                 {
+                                    Debug.Log($"🔍 解析模式數據: mode={serverMessage.data.mode}, snapAngle={serverMessage.data.snapAngle}, label={serverMessage.data.label}");
+                                    
                                     currentSpinModeKey = string.IsNullOrEmpty(serverMessage.data.mode) ? "unknown" : serverMessage.data.mode;
                                     currentSpinMode = string.IsNullOrEmpty(serverMessage.data.label) ? currentSpinModeKey : serverMessage.data.label;
                                     currentSpinSnapAngle = serverMessage.data.snapAngle;
                                     lastSpinModeTimestamp = serverMessage.data.timestamp;
+                                    
+                                    Debug.Log($"✅ 模式已更新: {currentSpinMode} ({currentSpinModeKey}, {currentSpinSnapAngle}°)");
                                     
                                     var modeStatus = new SpinModeStatus
                                     {
@@ -398,10 +402,15 @@ public class GyroscopeReceiver : MonoBehaviour
                                     
                                     OnSpinModeStatusReceived?.Invoke(modeStatus);
                                 }
+                                else
+                                {
+                                    Debug.LogWarning("⚠️ spin_mode 消息的 data 字段為 null");
+                                }
                             }
                             catch (System.Exception e)
                             {
                                 Debug.LogError($"❌ 解析旋钮模式訊息錯誤: {e.Message}");
+                                Debug.LogError($"❌ 堆疊追蹤: {e.StackTrace}");
                             }
                             break;
                             

@@ -828,7 +828,6 @@
                     snapAngle: 120,
                     label: '120° 吸附'
                 };
-                this.pendingSpinModePayload = null;
             }
             
             connect() {
@@ -850,32 +849,6 @@
                     } catch (_) {}
                     if (this.onConnectedCallback) {
                         this.onConnectedCallback();
-                    }
-                    if (this.pendingSpinModePayload) {
-                        try {
-                            this.ws.send(JSON.stringify(this.pendingSpinModePayload));
-                            console.log('📤 連線後補送旋鈕模式資訊:', this.pendingSpinModePayload);
-                            this.pendingSpinModePayload = null;
-                        } catch (err) {
-                            console.warn('⚠️ 連線後補送旋鈕模式失敗:', err);
-                        }
-                    } else if (this.spinModeInfo) {
-                        const data = {
-                            type: 'spin_mode',
-                            data: {
-                                mode: this.spinModeInfo.mode,
-                                snapAngle: this.spinModeInfo.snapAngle,
-                                label: this.spinModeInfo.label,
-                                timestamp: Date.now()
-                            }
-                        };
-                        try {
-                            this.ws.send(JSON.stringify(data));
-                            console.log('📤 連線後同步當前旋鈕模式:', data);
-                        } catch (err) {
-                            console.warn('⚠️ 連線後同步當前旋鈕模式失敗:', err);
-                            this.pendingSpinModePayload = data;
-                        }
                     }
                 };
                 
@@ -999,29 +972,33 @@
             sendSpinMode(mode, snapAngle, label) {
                 this.updateSpinModeInfo(mode, snapAngle, label);
                 
+                console.log('🔄 sendSpinMode 被調用:', { mode, snapAngle, label, isConnected: this.isConnected, wsState: this.ws?.readyState });
+                
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     const payload = {
                         type: 'spin_mode',
                         data: {
-                            mode,
-                            snapAngle,
-                            label,
+                            mode: mode || 'default',
+                            snapAngle: typeof snapAngle === 'number' ? snapAngle : 120,
+                            label: label || (mode === 'selected' ? '90° 吸附' : '120° 吸附'),
                             timestamp: Date.now()
                         }
                     };
-                    this.ws.send(JSON.stringify(payload));
-                    console.log('📤 發送旋鈕模式資訊:', payload);
+                    const jsonPayload = JSON.stringify(payload);
+                    console.log('📤 準備發送旋鈕模式資訊:', payload);
+                    console.log('📤 JSON 字串:', jsonPayload);
+                    try {
+                        this.ws.send(jsonPayload);
+                        console.log('✅ 旋鈕模式資訊已成功發送');
+                    } catch (error) {
+                        console.error('❌ 發送旋鈕模式資訊失敗:', error);
+                    }
                 } else {
-                    console.warn('⚠️ WebSocket 未連線，無法發送旋鈕模式');
-                    this.pendingSpinModePayload = {
-                        type: 'spin_mode',
-                        data: {
-                            mode,
-                            snapAngle,
-                            label,
-                            timestamp: Date.now()
-                        }
-                    };
+                    console.warn('⚠️ WebSocket 未連線，無法發送旋鈕模式', {
+                        isConnected: this.isConnected,
+                        wsState: this.ws?.readyState,
+                        wsExists: !!this.ws
+                    });
                 }
             }
             
