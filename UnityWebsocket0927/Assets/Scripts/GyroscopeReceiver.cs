@@ -341,6 +341,29 @@ public class GyroscopeReceiver : MonoBehaviour
                                 lastSpinAngle = spinData.angle;
                                 spinCount++;
                                 
+                                if (serverMessage.data != null)
+                                {
+                                    if (serverMessage.data.snapAngle != 0)
+                                    {
+                                        currentSpinSnapAngle = serverMessage.data.snapAngle;
+                                    }
+
+                                    if (!string.IsNullOrEmpty(serverMessage.data.mode))
+                                    {
+                                        currentSpinModeKey = serverMessage.data.mode;
+                                    }
+
+                                    if (!string.IsNullOrEmpty(serverMessage.data.label))
+                                    {
+                                        currentSpinMode = serverMessage.data.label;
+                                    }
+
+                                    if (serverMessage.data.timestamp != 0)
+                                    {
+                                        lastSpinModeTimestamp = serverMessage.data.timestamp;
+                                    }
+                                }
+                                
                                 Debug.Log($"🎯 旋转触发! Count={spinCount}, Angle={spinData.angle:F2}");
                                 
                                 OnSpinDataReceived?.Invoke(spinData);

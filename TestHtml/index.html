@@ -820,6 +820,11 @@
                 this.room = null;
                 this.role = null;
                 this.spinLimitReached = false; // 新增：旋轉發送限制
+                this.spinModeInfo = {
+                    mode: 'default',
+                    snapAngle: 120,
+                    label: '120° 吸附'
+                };
             }
             
             connect() {
@@ -962,6 +967,8 @@
             }
             
             sendSpinMode(mode, snapAngle, label) {
+                this.updateSpinModeInfo(mode, snapAngle, label);
+                
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     const payload = {
                         type: 'spin_mode',
@@ -977,6 +984,14 @@
                 } else {
                     console.warn('⚠️ WebSocket 未連線，無法發送旋鈕模式');
                 }
+            }
+            
+            updateSpinModeInfo(mode, snapAngle, label) {
+                this.spinModeInfo = {
+                    mode: mode || 'default',
+                    snapAngle: typeof snapAngle === 'number' ? snapAngle : 120,
+                    label: label || (mode === 'selected' ? '90° 吸附' : '120° 吸附')
+                };
             }
             
             // 新增：設定/查詢旋轉限制
@@ -999,7 +1014,10 @@
                         data: {
                             triggered: true,
                             angle: angle,
-                            timestamp: timestamp || Date.now()
+                            timestamp: timestamp || Date.now(),
+                            snapAngle: this.spinModeInfo?.snapAngle || 120,
+                            mode: this.spinModeInfo?.mode || 'default',
+                            label: this.spinModeInfo?.label || ''
                         }
                     };
                     console.log('📤 发送旋转事件:', data);
@@ -2078,8 +2096,13 @@
                     if (spinModeStatusEl) {
                         spinModeStatusEl.textContent = `目前模式：${config.label}`;
                     }
-                    if (gyroWS && typeof gyroWS.sendSpinMode === 'function') {
-                        gyroWS.sendSpinMode(modeKey, config.snapAngle, config.label);
+                    if (gyroWS) {
+                        if (typeof gyroWS.updateSpinModeInfo === 'function') {
+                            gyroWS.updateSpinModeInfo(modeKey, config.snapAngle, config.label);
+                        }
+                        if (typeof gyroWS.sendSpinMode === 'function') {
+                            gyroWS.sendSpinMode(modeKey, config.snapAngle, config.label);
+                        }
                     }
                 }
                 
