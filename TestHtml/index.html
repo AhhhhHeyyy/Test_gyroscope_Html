@@ -603,12 +603,18 @@
             </div>
         </div>
         
-        <div id="spinnerSection" class="cube-feature" style="display: none; justify-content: center; align-items: center; min-height: 70vh; background: none; box-shadow: none; border-left: none; padding: 0; margin: 0; border: none; border-radius: 0;">
+        <div id="spinnerSection" class="cube-feature" style="display: none; justify-content: center; align-items: center; flex-direction: column; gap: 25px; min-height: 70vh; background: none; box-shadow: none; border-left: none; padding: 0; margin: 0; border: none; border-radius: 0;">
             <div class="cube-preview" style="display: block; margin: 0 auto;">
                 <div style="position: relative; width: min(300px, 80vw); height: min(300px, 80vw); margin: 0 auto;">
-                    <img id="spinKnob" src="https://i.postimg.cc/mr45tyXJ/Hi-Paint-1760323869267.png" 
-                         style="width: 100%; height: 100%; cursor: grab;">
+                    <div id="spinKnob" style="width: 100%; height: 100%; cursor: grab;">
+                        <img id="spinKnobImage" src="https://i.postimg.cc/mr45tyXJ/Hi-Paint-1760323869267.png" 
+                             style="width: 100%; height: 100%; display: block; transform: rotate(-90deg); transform-origin: center;">
+                    </div>
                 </div>
+            </div>
+            <div id="spinModeActions" style="width: 100%; text-align: center; margin-top: 0;">
+                <button id="selectThisButton" class="cube-link" style="cursor: pointer; display: inline-block; width: auto; padding: 12px 48px;">選這台!</button>
+                <div id="spinModeStatus" style="margin-top: 16px; font-size: 1.1em; color: #FFD700; font-weight: bold;">目前模式：120° 吸附</div>
             </div>
             
             <div class="cube-info" style="display: none;"></div>
@@ -952,6 +958,24 @@
                         size: size, 
                         timestamp: header.timestamp 
                     });
+                }
+            }
+            
+            sendSpinMode(mode, snapAngle, label) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const payload = {
+                        type: 'spin_mode',
+                        data: {
+                            mode,
+                            snapAngle,
+                            label,
+                            timestamp: Date.now()
+                        }
+                    };
+                    this.ws.send(JSON.stringify(payload));
+                    console.log('📤 發送旋鈕模式資訊:', payload);
+                } else {
+                    console.warn('⚠️ WebSocket 未連線，無法發送旋鈕模式');
                 }
             }
             
@@ -1862,6 +1886,13 @@
         
         // ===== SpinTest 旋转控制功能 =====
         
+        const SPIN_SNAP_SETTINGS = {
+            DEFAULT: 120,
+            SELECTED: 90,
+            LOCK_THRESHOLD: 375,
+            LOCK_WAIT_DURATION: 5000
+        };
+        
         // 创建音效对象
         const spinSoundEffect = new Audio('se_door_hanekaeri.mp3');
         const rotateSound = new Audio('cada7.MP3'); // 每5度触发震动音效
@@ -1988,6 +2019,9 @@
                 
                 console.log("开始创建旋转控制器...");
                 
+                const selectModeButton = document.getElementById("selectThisButton");
+                const spinModeStatusEl = document.getElementById("spinModeStatus");
+                
                 // 追踪已播放的角度区间（使用累积角度方案，支持多圈旋转）
                 let prevAngle = 0;  // 上一帧角度
                 let accumulatedDelta = 0;  // 累积角度差
@@ -2003,6 +2037,19 @@
                 let lastAngleSendTime = 0;
                 const ANGLE_SEND_INTERVAL = 50; // 毫秒
                 
+                // 模式控制相關變數
+                let currentSnapAngle = SPIN_SNAP_SETTINGS.DEFAULT;
+                let isIn90Mode = false;
+                let spinLocked = false;
+                let snapResetTimer = null;
+                let rotationAccumulatedForMode = 0;
+                let lastModeAngleForThreshold = null;
+                let spinDraggable = null;
+                const SPIN_MODE_CONFIG = {
+                    default: { label: '120° 吸附', snapAngle: SPIN_SNAP_SETTINGS.DEFAULT },
+                    selected: { label: '90° 吸附', snapAngle: SPIN_SNAP_SETTINGS.SELECTED }
+                };
+                
                 // 修正角度差（处理360度跳转）
                 function normalizeAngleDelta(current, prev) {
                     let delta = current - prev;
@@ -2010,6 +2057,105 @@
                     if (delta > 180) delta -= 360;
                     if (delta < -180) delta += 360;
                     return delta;
+                }
+                
+                function showSelectButton(shouldShow) {
+                    if (selectModeButton) {
+                        selectModeButton.style.display = shouldShow ? 'inline-block' : 'none';
+                    }
+                }
+                
+                function clearSnapResetTimer() {
+                    if (snapResetTimer) {
+                        clearTimeout(snapResetTimer);
+                        snapResetTimer = null;
+                    }
+                }
+                
+                function updateSpinModeStatus(modeKey) {
+                    const config = SPIN_MODE_CONFIG[modeKey];
+                    if (!config) return;
+                    if (spinModeStatusEl) {
+                        spinModeStatusEl.textContent = `目前模式：${config.label}`;
+                    }
+                    if (gyroWS && typeof gyroWS.sendSpinMode === 'function') {
+                        gyroWS.sendSpinMode(modeKey, config.snapAngle, config.label);
+                    }
+                }
+                
+                function switchToDefaultMode() {
+                    clearSnapResetTimer();
+                    currentSnapAngle = SPIN_SNAP_SETTINGS.DEFAULT;
+                    isIn90Mode = false;
+                    spinLocked = false;
+                    rotationAccumulatedForMode = 0;
+                    lastModeAngleForThreshold = null;
+                    initialRotationAngle = null;
+                    totalAbsoluteRotation = 0;
+                    showSelectButton(true);
+                    gsap.set(knobElement, { rotation: 0 });
+                    updateSpinAngleDisplay();
+                    if (spinDraggable) {
+                        spinDraggable.enable();
+                    }
+                    updateSpinModeStatus('default');
+                }
+                
+                function switchTo90Mode() {
+                    if (spinLocked || isIn90Mode) return;
+                    clearSnapResetTimer();
+                    isIn90Mode = true;
+                    currentSnapAngle = SPIN_SNAP_SETTINGS.SELECTED;
+                    rotationAccumulatedForMode = 0;
+                    lastModeAngleForThreshold = null;
+                    initialRotationAngle = null;
+                    totalAbsoluteRotation = 0;
+                    gsap.set(knobElement, { rotation: 0 });
+                    updateSpinAngleDisplay();
+                    showSelectButton(false);
+                    if (spinDraggable) {
+                        spinDraggable.enable();
+                    }
+                    updateSpinModeStatus('selected');
+                }
+                
+                function enforceFullRotationLock() {
+                    if (spinLocked) return;
+                    spinLocked = true;
+                    rotationAccumulatedForMode = 0;
+                    lastModeAngleForThreshold = null;
+                    clearSnapResetTimer();
+                    
+                    try {
+                        if (spinDraggable) {
+                            spinDraggable.disable();
+                        }
+                    } catch (error) {
+                        console.warn('停用旋钮拖拽失败:', error);
+                    }
+                    
+                    // 先吸附至360度
+                    gyroWS.sendSpinEvent(360);
+                    gsap.to(knobElement, {
+                        rotation: 360,
+                        duration: 0.4,
+                        ease: "power2.out",
+                        onComplete: () => {
+                            updateSpinAngleDisplay();
+                            // 清空為0度
+                            gsap.set(knobElement, { rotation: 0 });
+                            updateSpinAngleDisplay();
+                            gyroWS.sendSpinEvent(0);
+                        }
+                    });
+                    
+                    spinSoundEffect.currentTime = 0;
+                    spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
+                    triggerBigVibrationForce();
+                    
+                    snapResetTimer = setTimeout(() => {
+                        switchToDefaultMode();
+                    }, SPIN_SNAP_SETTINGS.LOCK_WAIT_DURATION);
                 }
                 
                 // 计算从初始角度开始的总旋转角度（支持多圈旋转）
@@ -2026,6 +2172,11 @@
                     type: "rotation",
                     inertia: true,
                     onDragStart: function() {
+                        if (spinLocked) {
+                            this.endDrag();
+                            return;
+                        }
+                        
                         // 如果是第一次拖拽，记录初始角度
                         if (initialRotationAngle === null) {
                             initialRotationAngle = this.rotation;
@@ -2039,6 +2190,7 @@
                         accumulatedDelta = 0;  // 重置累积角度
                         lastTriggerStep = 0;  // 重置触发步数
                         isDragging = true; // 标记开始拖拽
+                        lastModeAngleForThreshold = isIn90Mode ? this.rotation : null;
                         
                         // 开始播放音效 - 立即播放，不等待
                         try {
@@ -2062,6 +2214,10 @@
                         console.log("开始拖拽，开始播放音效。起始角度:", this.startAngle);
                     },
                     onDrag: function() {
+                        if (spinLocked) {
+                            return;
+                        }
+                        
                         let currentAngle = this.rotation;
                         
                         // 更新总旋转角度（用于日志显示）
@@ -2096,10 +2252,26 @@
                             lastAngleSendTime = now;
                         }
                         
+                        // 90度模式下的總旋轉累積檢查
+                        if (isIn90Mode && !spinLocked) {
+                            if (lastModeAngleForThreshold === null) {
+                                lastModeAngleForThreshold = currentAngle;
+                            } else {
+                                rotationAccumulatedForMode += Math.abs(normalizeAngleDelta(currentAngle, lastModeAngleForThreshold));
+                                lastModeAngleForThreshold = currentAngle;
+                                
+                                if (rotationAccumulatedForMode >= SPIN_SNAP_SETTINGS.LOCK_THRESHOLD) {
+                                    enforceFullRotationLock();
+                                    return;
+                                }
+                            }
+                        }
+                        
                         // 限制旋转增量在 90 度以内
-                        if (Math.abs(rotationDelta) > 45) {
-                            // 计算90度增量后的目标角度
-                            let proposedTargetAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
+                        const snapHalfRange = currentSnapAngle / 2;
+                        if (Math.abs(rotationDelta) > snapHalfRange) {
+                            // 计算吸附增量后的目标角度
+                            let proposedTargetAngle = this.startAngle + (rotationDelta > 0 ? currentSnapAngle : -currentSnapAngle);
                             
                             // 强制设定到限制的角度，使用回弹动画
                             gsap.to(this.target, {
@@ -2137,6 +2309,13 @@
                         }
                     },
                     onDragEnd: function() {
+                        if (spinLocked) {
+                            rotateSound.pause();
+                            rotateSound.currentTime = 0;
+                            rotateSound.loop = false;
+                            return;
+                        }
+                        
                         // 标记拖拽结束
                         isDragging = false;
                         
@@ -2156,10 +2335,11 @@
                         
                         let rotationDelta = currentAngle - this.startAngle;
                         
-                        // 计算最终角度（限制在 90 度增量内）
+                        // 计算最终角度（限制在当前吸附角度增量内）
                         let finalAngle = this.startAngle;
-                        if (Math.abs(rotationDelta) > 45) {
-                            finalAngle = this.startAngle + (rotationDelta > 0 ? 90 : -90);
+                        const snapRange = currentSnapAngle / 2;
+                        if (Math.abs(rotationDelta) > snapRange) {
+                            finalAngle = this.startAngle + (rotationDelta > 0 ? currentSnapAngle : -currentSnapAngle);
                         } else {
                             // 如果增量小于 45 度，回到起始角度
                             finalAngle = this.startAngle;
@@ -2191,6 +2371,13 @@
                     }
                 });
                 
+                spinDraggable = draggable[0];
+                
+                if (selectModeButton) {
+                    selectModeButton.addEventListener('click', switchTo90Mode);
+                }
+                
+                switchToDefaultMode();
                 console.log("旋转控制器创建成功:", draggable);
                 
                 // 初始化角度显示

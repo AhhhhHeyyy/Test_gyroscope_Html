@@ -23,6 +23,12 @@ public class GyroscopeReceiver : MonoBehaviour
     [SerializeField] private bool spinTriggered = false;
     [SerializeField] private float lastSpinAngle = 0f;
     [SerializeField] private int spinCount = 0;
+    
+    [Header("旋钮模式")]
+    [SerializeField] private string currentSpinMode = "120° 吸附";
+    [SerializeField] private string currentSpinModeKey = "default";
+    [SerializeField] private float currentSpinSnapAngle = 120f;
+    [SerializeField] private long lastSpinModeTimestamp = 0;
 
     [Header("Value")]
     public float m_alpha = 0f;
@@ -57,6 +63,9 @@ public class GyroscopeReceiver : MonoBehaviour
         public float intensity;
         public string shakeType;
         public AccelerationData acceleration;
+        public string mode;
+        public float snapAngle;
+        public string label;
         
         // 旋转数据字段（当 type 为 "spin" 时使用）
         public bool triggered;
@@ -100,6 +109,15 @@ public class GyroscopeReceiver : MonoBehaviour
         public long timestamp;
     }
     
+    [System.Serializable]
+    public class SpinModeStatus
+    {
+        public string mode;
+        public string label;
+        public float snapAngle;
+        public long timestamp;
+    }
+    
     
     // 事件 - 新增搖晃事件和螢幕捕獲事件
     public static event Action<GyroscopeData> OnGyroscopeDataReceived;
@@ -108,6 +126,7 @@ public class GyroscopeReceiver : MonoBehaviour
     public static event Action<SpinData> OnSpinDataReceived; // 新增旋转事件
     public static event Action<SignalingMessage> OnWebRTCSignaling; // 新增 WebRTC 信令事件
     public static event Action<string> OnRawMessage; // 新增原始訊息事件
+    public static event Action<SpinModeStatus> OnSpinModeStatusReceived; // 新增旋钮模式事件
     public static event Action OnConnected;
     public static event Action OnDisconnected;
     public static event Action<string> OnError;
@@ -335,6 +354,34 @@ public class GyroscopeReceiver : MonoBehaviour
                             }
                             break;
                             
+                        case "spin_mode":
+                            Debug.Log($"🎚️ 收到旋钮模式訊息: {message}");
+                            try
+                            {
+                                if (serverMessage.data != null)
+                                {
+                                    currentSpinModeKey = string.IsNullOrEmpty(serverMessage.data.mode) ? "unknown" : serverMessage.data.mode;
+                                    currentSpinMode = string.IsNullOrEmpty(serverMessage.data.label) ? currentSpinModeKey : serverMessage.data.label;
+                                    currentSpinSnapAngle = serverMessage.data.snapAngle;
+                                    lastSpinModeTimestamp = serverMessage.data.timestamp;
+                                    
+                                    var modeStatus = new SpinModeStatus
+                                    {
+                                        mode = currentSpinModeKey,
+                                        label = currentSpinMode,
+                                        snapAngle = currentSpinSnapAngle,
+                                        timestamp = lastSpinModeTimestamp
+                                    };
+                                    
+                                    OnSpinModeStatusReceived?.Invoke(modeStatus);
+                                }
+                            }
+                            catch (System.Exception e)
+                            {
+                                Debug.LogError($"❌ 解析旋钮模式訊息錯誤: {e.Message}");
+                            }
+                            break;
+                            
                         case "offer":
                         case "answer":
                         case "candidate":
@@ -537,6 +584,8 @@ public class GyroscopeReceiver : MonoBehaviour
             GUILayout.Label($"旋转状态: {(spinTriggered ? "已触发" : "未触发")}");
             GUILayout.Label($"旋转次数: {spinCount}");
             GUILayout.Label($"最后角度: {lastSpinAngle:F2}°");
+            GUILayout.Label($"旋钮模式: {currentSpinMode} ({currentSpinModeKey}, {currentSpinSnapAngle:F0}°)");
+            GUILayout.Label($"模式更新時間: {lastSpinModeTimestamp}");
             
             if (!isConnected && GUILayout.Button("重新連接"))
             {
