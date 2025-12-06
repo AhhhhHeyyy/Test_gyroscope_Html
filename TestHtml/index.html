@@ -5,18 +5,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>手機陀螺儀偵測器 v2.0 - 搖晃偵測版</title>
+    <!-- A-Frame 核心 -->
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+
+    <!-- AR.js 與 A-Frame 整合版 (支持 Marker 追踪) -->
+    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.0/aframe/build/aframe-ar.js"></script>
+
+    <!-- Three.js（部分版本需要） -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
     <!-- 引入 GSAP 核心库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
     <!-- 引入 GSAP Draggable 插件 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/Draggable.min.js"></script>
     <!-- 引入 jQuery 库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-    <!-- 8th Wall WebAR Pipeline SDK (2024-2026 最新版本) -->
-    <script async src="https://apps.8thwall.com/xrweb?appKey=YOUR_APP_KEY"></script>
-    <!-- A-Frame 核心库 (用于 AR.js) -->
-    <script src="https://cdn.jsdelivr.net/npm/aframe@1.4.2/dist/aframe.min.js"></script>
-    <!-- AR.js A-Frame 集成 (Marker 追踪版本) -->
-    <script src="https://cdn.jsdelivr.net/npm/ar.js@3.4.0/build/aframe-ar.js"></script>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -25,7 +28,8 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             color: white;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
         
         .container {
@@ -374,7 +378,7 @@
             PLAY
         </button>
     </div>
-    <div class="container" style="background: none; box-shadow: none; border: none; padding: 0; margin: 0; max-width: none; width: 100vw; min-height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden;">
+    <div class="container" style="background: none; box-shadow: none; border: none; padding: 20px; margin: 0; max-width: none; width: 100vw; min-height: 100vh; display: flex; flex-direction: column; overflow: visible;">
         <h1 style="display: none;">🎯 旋轉控制器</h1>
         <div style="display: none; text-align: center; margin-bottom: 20px; font-size: 1.2em; color: #FFD700;">
             🎮 拖拽旋轉控制 | 音效震動回饋 | Unity 即時同步
@@ -609,144 +613,6 @@
             </div>
         </div>
         
-        <!-- AR.js 位移追踪区块 -->
-        <div class="cube-feature" id="positionTrackingSection" style="border-left-color: #9C27B0; display: block;">
-            <h3>📍 AR.js 位移追踪</h3>
-            
-            <div class="cube-preview">
-                <div class="cube-mini" style="animation: miniRotate 4s infinite linear;">
-                    <div class="face front">位</div>
-                    <div class="face back">移</div>
-                    <div class="face right">追</div>
-                    <div class="face left">蹤</div>
-                    <div class="face top">AR</div>
-                    <div class="face bottom">.js</div>
-                </div>
-                
-                <div class="cube-info">
-                    <h4>基于 Marker 的 6DOF 位置追踪</h4>
-                    <p>使用 AR.js 追踪手机相对于 Marker 的位置和旋转</p>
-                    <p>实时传输到 Unity，控制 3D 物体移动</p>
-                    <p>完全免费，无需 API Key</p>
-                    <button id="startPositionTracking" class="cube-link" style="border: none; cursor: pointer;">🎬 开始追踪</button>
-                    <button id="stopPositionTracking" class="cube-link" style="border: none; cursor: pointer; background: linear-gradient(45deg, #f44336, #da190b); display: none;">⏹️ 停止追踪</button>
-                    
-                    <!-- 状态显示 -->
-                    <div style="margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.9em;">
-                        <h4 style="margin: 0 0 10px 0; color: #FFD700;">追踪状态</h4>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                            <div>AR.js: <span id="arjsStatus">未启动</span></div>
-                            <div>Marker: <span id="markerStatus">等待检测</span></div>
-                            <div>WebSocket: <span id="wsStatusPos">未连接</span></div>
-                            <div>FPS: <span id="positionFPS">0</span></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="feature-grid">
-                <div class="feature-item">
-                    <span class="icon">🎯</span>
-                    <h5>Marker 追踪</h5>
-                    <p>基于 Hiro Marker 图案</p>
-                </div>
-                <div class="feature-item">
-                    <span class="icon">📱</span>
-                    <h5>6DOF 追踪</h5>
-                    <p>位置 + 旋转完整数据</p>
-                </div>
-                <div class="feature-item">
-                    <span class="icon">⚡</span>
-                    <h5>实时传输</h5>
-                    <p>60fps 低延迟</p>
-                </div>
-                <div class="feature-item">
-                    <span class="icon">🆓</span>
-                    <h5>完全免费</h5>
-                    <p>开源库无需 API</p>
-                </div>
-            </div>
-            
-            <!-- AR 场景容器 -->
-            <div id="ar-container" style="display: none; position: relative; width: 100%; height: 60vh; min-height: 400px; margin-top: 20px; border-radius: 10px; overflow: hidden; background: #000;">
-                <a-scene 
-                    embedded 
-                    arjs="sourceType: webcam; sourceWidth: 1280; sourceHeight: 720; displayWidth: 1280; displayHeight: 720; debugUIEnabled: true; detectionMode: mono_and_matrix; matrixCodeType: 3x3; cameraParametersUrl: https://cdn.jsdelivr.net/npm/ar.js@3.4.0/data/data/camera_para.dat; maxDetectionRate: 60; canvasWidth: 1280; canvasHeight: 720;"
-                    vr-mode-ui="enabled: false"
-                    renderer="logarithmicDepthBuffer: true; colorManagement: true; sortObjects: true; antialias: true;"
-                    style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;">
-                    
-                    <!-- Marker -->
-                    <a-marker 
-                        type="pattern" 
-                        url="https://cdn.jsdelivr.net/npm/ar.js@3.4.0/data/data/hiro.patt"
-                        id="hiro-marker"
-                        smooth="true"
-                        smoothCount="10"
-                        smoothTolerance=".01"
-                        smoothThreshold="5">
-                        
-                        <!-- 视觉反馈 -->
-                        <a-box 
-                            position="0 0.5 0" 
-                            rotation="0 45 0" 
-                            color="#4CC3D9"
-                            animation="property: rotation; to: 0 405 0; loop: true; dur: 4000">
-                        </a-box>
-                    </a-marker>
-                    
-                    <!-- 相机 -->
-                    <a-camera></a-camera>
-                </a-scene>
-                
-                <!-- Marker 提示 -->
-                <div id="marker-hint" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.8); color: #fff; padding: 20px 30px; border-radius: 15px; text-align: center; z-index: 1000; border: 2px solid rgba(255, 255, 255, 0.3); pointer-events: none;">
-                    <h3 style="margin-bottom: 10px; color: #FFD700;">📱 对准 Marker</h3>
-                    <p>请将手机摄像头对准 Hiro Marker 图案</p>
-                </div>
-            </div>
-            
-            <!-- 数据面板 -->
-            <div id="positionDataPanel" style="display: none; margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px;">
-                <h4 style="color: #FFD700; margin-top: 0; margin-bottom: 15px;">实时数据</h4>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 15px;">
-                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Position X</div>
-                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="pos-x">0.000</div>
-                    </div>
-                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Position Y</div>
-                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="pos-y">0.000</div>
-                    </div>
-                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Position Z</div>
-                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="pos-z">0.000</div>
-                    </div>
-                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Delta X</div>
-                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="delta-x">0.000</div>
-                    </div>
-                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Delta Y</div>
-                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="delta-y">0.000</div>
-                    </div>
-                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
-                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Delta Z</div>
-                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="delta-z">0.000</div>
-                    </div>
-                </div>
-                
-                <!-- 控制按钮 -->
-                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px;">
-                    <button onclick="resetPositionInitial()" class="cube-link" style="border: none; cursor: pointer; padding: 8px 16px; font-size: 14px;">重置初始位置</button>
-                    <div style="display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.1); padding: 8px 12px; border-radius: 20px;">
-                        <label style="color: #fff; font-size: 12px; white-space: nowrap;">缩放:</label>
-                        <input type="number" id="positionScale" value="1.0" step="0.1" min="0.1" max="10" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 15px; padding: 4px 8px; color: #fff; font-size: 14px; width: 60px;" onchange="updatePositionScale()">
-                    </div>
-                </div>
-            </div>
-        </div>
-        
         <div id="spinnerSection" class="cube-feature" style="display: none; justify-content: center; align-items: center; flex-direction: column; gap: 25px; min-height: 70vh; background: none; box-shadow: none; border-left: none; padding: 0; margin: 0; border: none; border-radius: 0;">
             <div class="cube-preview" style="display: block; margin: 0 auto;">
                 <div style="position: relative; width: min(300px, 80vw); height: min(300px, 80vw); margin: 0 auto;">
@@ -855,6 +721,141 @@
                 </div>
             </div>
         </div>
+        
+        <!-- AR.js 位移追踪区块 -->
+        <div class="cube-feature" id="positionTrackingSection" style="border-left-color: #9C27B0; display: block; margin-top: auto;">
+            <h3>📍 AR.js 位移追踪</h3>
+            
+            <div class="cube-preview">
+                <div class="cube-mini" style="animation: miniRotate 4s infinite linear;">
+                    <div class="face front">位</div>
+                    <div class="face back">移</div>
+                    <div class="face right">追</div>
+                    <div class="face left">蹤</div>
+                    <div class="face top">AR</div>
+                    <div class="face bottom">.js</div>
+                </div>
+                
+                <div class="cube-info">
+                    <h4>基于 Marker 的 6DOF 位置追踪</h4>
+                    <p>使用 AR.js 追踪手机相对于 Marker 的位置和旋转</p>
+                    <p>实时传输到 Unity，控制 3D 物体移动</p>
+                    <p>完全免费，无需 API Key</p>
+                    <button id="startPositionTracking" class="cube-link" style="border: none; cursor: pointer;">🎬 开始追踪</button>
+                    <button id="stopPositionTracking" class="cube-link" style="border: none; cursor: pointer; background: linear-gradient(45deg, #f44336, #da190b); display: none;">⏹️ 停止追踪</button>
+                    
+                    <!-- 状态显示 -->
+                    <div style="margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 0.9em;">
+                        <h4 style="margin: 0 0 10px 0; color: #FFD700;">追踪状态</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                            <div>AR.js: <span id="arjsStatus">未启动</span></div>
+                            <div>Marker: <span id="markerStatus">等待检测</span></div>
+                            <div>WebSocket: <span id="wsStatusPos">未连接</span></div>
+                            <div>FPS: <span id="positionFPS">0</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <span class="icon">🎯</span>
+                    <h5>Marker 追踪</h5>
+                    <p>基于 Hiro Marker 图案</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">📱</span>
+                    <h5>6DOF 追踪</h5>
+                    <p>位置 + 旋转完整数据</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">⚡</span>
+                    <h5>实时传输</h5>
+                    <p>60fps 低延迟</p>
+                </div>
+                <div class="feature-item">
+                    <span class="icon">🆓</span>
+                    <h5>完全免费</h5>
+                    <p>开源库无需 API</p>
+                </div>
+            </div>
+            
+            <!-- AR 场景容器 -->
+            <div id="ar-container" style="display: none; position: relative; width: 100%; height: 60vh; min-height: 400px; margin-top: 20px; border-radius: 10px; overflow: hidden; background: #000;">
+                <a-scene 
+                    id="ar-scene"
+                    embedded 
+                    vr-mode-ui="enabled: false"
+                    renderer="logarithmicDepthBuffer: true;"
+                    arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled: false;"
+                    style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; display: block; z-index: 1;">
+                    
+                    <!-- Marker：預設 Hiro -->
+                    <!-- Marker：使用官方推荐的 preset="hiro" -->
+                    <a-marker 
+                        preset="hiro" 
+                        id="hiro-marker">
+                        
+                        <!-- 视觉反馈 -->
+                        <a-box 
+                            position="0 0.5 0" 
+                            rotation="0 45 0" 
+                            material="color: #4CC3D9"
+                            animation="property: rotation; to: 0 405 0; loop: true; dur: 4000">
+                        </a-box>
+                    </a-marker>
+                    
+                    <!-- AR 相機 -->
+                    <a-entity camera id="ar-camera"></a-entity>
+                </a-scene>
+                
+                <!-- Marker 提示 -->
+                <div id="marker-hint" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.8); color: #fff; padding: 20px 30px; border-radius: 15px; text-align: center; z-index: 1000; border: 2px solid rgba(255, 255, 255, 0.3); pointer-events: none;">
+                    <h3 style="margin-bottom: 10px; color: #FFD700;">📱 对准 Marker</h3>
+                    <p>请将手机摄像头对准 Hiro Marker 图案</p>
+                </div>
+            </div>
+            
+            <!-- 数据面板 -->
+            <div id="positionDataPanel" style="display: none; margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px;">
+                <h4 style="color: #FFD700; margin-top: 0; margin-bottom: 15px;">实时数据</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 15px;">
+                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Position X</div>
+                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="pos-x">0.000</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Position Y</div>
+                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="pos-y">0.000</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Position Z</div>
+                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="pos-z">0.000</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Delta X</div>
+                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="delta-x">0.000</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Delta Y</div>
+                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="delta-y">0.000</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; text-align: center;">
+                        <div style="color: #4ECDC4; font-size: 12px; margin-bottom: 5px;">Delta Z</div>
+                        <div style="font-size: 18px; font-weight: bold; font-family: monospace;" id="delta-z">0.000</div>
+                    </div>
+                </div>
+                
+                <!-- 控制按钮 -->
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px;">
+                    <button onclick="resetPositionInitial()" class="cube-link" style="border: none; cursor: pointer; padding: 8px 16px; font-size: 14px;">重置初始位置</button>
+                    <div style="display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.1); padding: 8px 12px; border-radius: 20px;">
+                        <label style="color: #fff; font-size: 12px; white-space: nowrap;">缩放:</label>
+                        <input type="number" id="positionScale" value="1.0" step="0.1" min="0.1" max="10" style="background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 15px; padding: 4px 8px; color: #fff; font-size: 14px; width: 60px;" onchange="updatePositionScale()">
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -885,151 +886,6 @@
         const SHAKE_COOLDOWN = 1000; // 搖晃冷卻時間 (毫秒)
         const HISTORY_LENGTH = 20; // 加速度歷史記錄長度
         const GRAVITY = 9.8; // 重力加速度
-        
-        // 8th Wall 世界追蹤管理器
-        class EighthWallWorldTracker {
-            constructor(websocket) {
-                this.ws = websocket;
-                this.isTracking = false;
-                this.lastPosition = null;
-                this.initialPosition = null;
-                this.isInitialized = false;
-            }
-            
-            // 初始化 8th Wall 世界追蹤
-            init() {
-                // 檢查 XR8 是否已載入
-                if (typeof XR8 === 'undefined') {
-                    console.warn('⚠️ 8th Wall SDK 尚未載入，等待載入...');
-                    // 等待 SDK 載入
-                    const checkInterval = setInterval(() => {
-                        if (typeof XR8 !== 'undefined') {
-                            clearInterval(checkInterval);
-                            this.startWorldTracking();
-                        }
-                    }, 100);
-                    
-                    // 10秒超時
-                    setTimeout(() => {
-                        if (typeof XR8 === 'undefined') {
-                            clearInterval(checkInterval);
-                            console.error('❌ 8th Wall SDK 載入超時，請檢查 App Key 是否正確');
-                        }
-                    }, 10000);
-                    return;
-                }
-                
-                this.startWorldTracking();
-            }
-            
-            // 啟動世界追蹤
-            startWorldTracking() {
-                if (this.isInitialized) {
-                    console.warn('⚠️ 8th Wall 已經初始化，跳過重複初始化');
-                    return;
-                }
-                
-                try {
-                    console.log('🚀 啟動 8th Wall 世界追蹤...');
-                    
-                    // 添加必要的 pipeline modules
-                    XR8.addCameraPipelineModules([
-                        XR8.GlTextureRenderer.pipelineModule(),
-                        XR8.XrController.pipelineModule(),
-                        XR8.RuntimeError.pipelineModule(),
-                        XR8.WorldTracking.pipelineModule(),  // 世界追蹤核心模組
-                    ]);
-                    
-                    // 自定義 pipeline module 獲取相機 pose
-                    XR8.addCameraPipelineModule({
-                        name: 'worldpose',
-                        onUpdate: ({processCpuResult}) => {
-                            this.onCameraUpdate(processCpuResult);
-                        }
-                    });
-                    
-                    // 監聽世界追蹤狀態
-                    XR8.addCameraPipelineModule({
-                        name: 'worldtrackingstatus',
-                        onStart: () => {
-                            console.log('✅ 8th Wall 世界追蹤已啟動');
-                            this.isTracking = true;
-                        },
-                        onDetach: () => {
-                            console.log('⚠️ 8th Wall 世界追蹤已停止');
-                            this.isTracking = false;
-                        }
-                    });
-                    
-                    this.isInitialized = true;
-                    console.log('✅ 8th Wall 初始化完成');
-                } catch (error) {
-                    console.error('❌ 8th Wall 初始化失敗:', error);
-                }
-            }
-            
-            // 處理相機位置更新
-            onCameraUpdate(processCpuResult) {
-                if (!this.isTracking) return;
-                
-                const camera = processCpuResult.reality;
-                if (!camera || !camera.position || !camera.rotation) {
-                    return;
-                }
-                
-                // 獲取位置 (X, Y, Z)
-                const position = {
-                    x: camera.position.x || 0,
-                    y: camera.position.y || 0,
-                    z: camera.position.z || 0
-                };
-                
-                // 獲取旋轉 (四元數)
-                const rotation = {
-                    x: camera.rotation.x || 0,
-                    y: camera.rotation.y || 0,
-                    z: camera.rotation.z || 0,
-                    w: camera.rotation.w !== undefined ? camera.rotation.w : 1.0
-                };
-                
-                // 計算相對位移（相對於初始位置）
-                let delta = { x: 0, y: 0, z: 0 };
-                
-                if (this.initialPosition === null) {
-                    // 記錄初始位置
-                    this.initialPosition = { ...position };
-                    this.lastPosition = { ...position };
-                } else {
-                    // 計算相對初始位置的位移
-                    delta = {
-                        x: position.x - this.initialPosition.x,
-                        y: position.y - this.initialPosition.y,
-                        z: position.z - this.initialPosition.z
-                    };
-                    
-                    // 計算與上次位置的增量（用於平滑移動）
-                    const frameDelta = {
-                        x: position.x - (this.lastPosition?.x || 0),
-                        y: position.y - (this.lastPosition?.y || 0),
-                        z: position.z - (this.lastPosition?.z || 0)
-                    };
-                    
-                    // 透過 WebSocket 發送位置數據
-                    if (this.ws && this.ws.isConnected) {
-                        this.ws.sendPositionData(position, rotation, delta);
-                    }
-                    
-                    this.lastPosition = { ...position };
-                }
-            }
-            
-            // 重置初始位置
-            resetInitialPosition() {
-                this.initialPosition = null;
-                this.lastPosition = null;
-                console.log('🔄 已重置初始位置');
-            }
-        }
         
         // AR.js Marker 追踪管理器
         class ARjsMarkerTracker {
@@ -1082,11 +938,18 @@
                     }
                     
                     // 场景已准备好，等待 A-Frame 完全加载
+                    // 按照官方文档，AR.js 需要容器显示后才能正确初始化摄像头
                     setTimeout(() => {
                         this.setupScene();
                         this.setupMarkerEvents();
                         this.startTracking();
-                    }, 1000);
+                        
+                        // 额外检查：确保 canvas 有正确的尺寸和摄像头流
+                        setTimeout(() => {
+                            this.ensureCanvasSize();
+                            this.checkVideoStream();
+                        }, 2000);
+                    }, 1500);
                 };
                 
                 checkScene();
@@ -1106,30 +969,75 @@
                     return;
                 }
                 
-                this.scene = arContainer.querySelector('a-scene');
-                this.camera = arContainer.querySelector('a-camera');
-                this.marker = arContainer.querySelector('a-marker');
+                // 按照官方文档，使用 id 选择器
+                this.scene = document.getElementById('ar-scene');
+                this.camera = document.getElementById('ar-camera');
+                this.marker = document.getElementById('hiro-marker');
                 
-                if (!this.scene || !this.camera || !this.marker) {
-                    console.error('❌ 无法找到 AR 场景元素');
+                if (!this.scene) {
+                    console.error('❌ 无法找到 AR 场景 (ar-scene)');
                     updateARjsStatus('错误：场景元素未找到', false);
                     return;
+                }
+                
+                if (!this.marker) {
+                    console.error('❌ 无法找到 Marker (hiro-marker)');
+                    updateARjsStatus('错误：Marker 未找到', false);
+                    return;
+                }
+                
+                if (!this.camera) {
+                    console.warn('⚠️ 未找到相机 (ar-camera)，使用默认相机');
+                    this.camera = this.scene.querySelector('a-camera') || this.scene.querySelector('[camera]');
                 }
                 
                 // 监听场景加载事件
                 this.scene.addEventListener('loaded', () => {
                     console.log('✅ AR 场景已加载');
+                    
+                    // 强制刷新 canvas 尺寸
+                    setTimeout(() => {
+                        const canvas = this.scene.canvas;
+                        if (canvas) {
+                            const container = arContainer;
+                            if (container && container.offsetWidth > 0) {
+                                // 强制设置 canvas 尺寸
+                                canvas.width = container.offsetWidth;
+                                canvas.height = container.offsetHeight;
+                                console.log('📷 场景加载后设置 Canvas 尺寸:', canvas.width, 'x', canvas.height);
+                            }
+                        }
+                    }, 500);
                 });
                 
                 this.scene.addEventListener('renderstart', () => {
                     console.log('✅ AR 场景渲染已启动');
                     updateARjsStatus('运行中', true);
                     
-                    // 检查 AR.js 是否成功获取摄像头
+                    // 强制设置 canvas 尺寸
                     setTimeout(() => {
                         const canvas = this.scene.canvas;
                         if (canvas) {
-                            console.log('📷 Canvas 尺寸:', canvas.width, 'x', canvas.height);
+                            const container = arContainer;
+                            if (container) {
+                                const containerWidth = container.offsetWidth;
+                                const containerHeight = container.offsetHeight;
+                                
+                                // 如果 canvas 尺寸为 0，强制设置
+                                if (canvas.width === 0 || canvas.height === 0) {
+                                    console.warn('⚠️ Canvas 尺寸为 0，强制设置...');
+                                    canvas.width = containerWidth || 1280;
+                                    canvas.height = containerHeight || 720;
+                                    console.log('📷 强制设置 Canvas 尺寸:', canvas.width, 'x', canvas.height);
+                                }
+                                
+                                // 确保 canvas 样式正确
+                                canvas.style.width = '100%';
+                                canvas.style.height = '100%';
+                                canvas.style.display = 'block';
+                            }
+                            
+                            console.log('📷 Canvas 最终尺寸:', canvas.width, 'x', canvas.height);
                             
                             // 检查 AR.js 的视频元素
                             const video = this.scene.querySelector('video');
@@ -1144,12 +1052,20 @@
                                     console.error('❌ 视频播放失败:', err);
                                 });
                             } else {
-                                console.warn('⚠️ 未找到视频元素');
+                                console.warn('⚠️ 未找到视频元素，等待 AR.js 创建...');
+                                // 等待视频元素创建
+                                setTimeout(() => {
+                                    const videoRetry = this.scene.querySelector('video');
+                                    if (videoRetry) {
+                                        console.log('📹 找到视频元素（重试）:', videoRetry.videoWidth, 'x', videoRetry.videoHeight);
+                                        videoRetry.play().catch(err => console.error('视频播放失败:', err));
+                                    }
+                                }, 2000);
                             }
                         } else {
                             console.warn('⚠️ 未找到 Canvas');
                         }
-                    }, 2000);
+                    }, 1000);
                 });
                 
                 // 监听场景错误
@@ -1172,8 +1088,9 @@
                     return;
                 }
                 
-                this.marker.addEventListener('markerFound', () => {
-                    console.log('✅ Marker 已检测到');
+                // 按照 AR.js 官方文档，使用标准事件监听
+                this.marker.addEventListener('markerFound', (event) => {
+                    console.log('✅ Marker 已检测到', event);
                     this.markerFound = true;
                     this.isTracking = true;
                     updateMarkerStatus('已检测', true);
@@ -1182,8 +1099,8 @@
                     this.onMarkerFound();
                 });
                 
-                this.marker.addEventListener('markerLost', () => {
-                    console.log('⚠️ Marker 丢失');
+                this.marker.addEventListener('markerLost', (event) => {
+                    console.log('⚠️ Marker 丢失', event);
                     this.markerFound = false;
                     this.isTracking = false;
                     updateMarkerStatus('等待检测...', false);
@@ -1217,41 +1134,51 @@
             getMarkerPose() {
                 if (!this.marker || !this.camera) return null;
                 
+                // 按照官方文档，使用 object3D 获取变换矩阵
                 const markerObject = this.marker.object3D;
-                const cameraObject = this.camera.object3D;
+                const cameraObject = this.camera.object3D || this.camera.object3DMap.mesh;
                 
-                if (!markerObject || !cameraObject) return null;
+                if (!markerObject || !cameraObject) {
+                    console.warn('⚠️ Marker 或 Camera object3D 未找到');
+                    return null;
+                }
                 
-                const markerMatrix = new THREE.Matrix4();
-                markerMatrix.copy(markerObject.matrixWorld);
+                // 更新世界矩阵
+                markerObject.updateMatrixWorld(true);
+                cameraObject.updateMatrixWorld(true);
+                
+                // 获取世界坐标
+                const markerWorldPos = new THREE.Vector3();
+                markerObject.getWorldPosition(markerWorldPos);
                 
                 const cameraWorldPos = new THREE.Vector3();
                 cameraObject.getWorldPosition(cameraWorldPos);
                 
-                const markerWorldPos = new THREE.Vector3();
-                markerObject.getWorldPosition(markerWorldPos);
-                
+                // 计算相对位置（相机相对于 Marker）
                 const relativePosition = new THREE.Vector3();
                 relativePosition.subVectors(cameraWorldPos, markerWorldPos);
                 
+                // 将相对位置转换到 Marker 的本地坐标系
                 const markerInverseMatrix = new THREE.Matrix4();
                 markerInverseMatrix.copy(markerObject.matrixWorld).invert();
                 relativePosition.applyMatrix4(markerInverseMatrix);
                 
+                // 获取旋转（四元数）
                 const cameraQuaternion = new THREE.Quaternion();
                 cameraObject.getWorldQuaternion(cameraQuaternion);
                 
                 const markerQuaternion = new THREE.Quaternion();
                 markerObject.getWorldQuaternion(markerQuaternion);
                 
+                // 计算相对旋转
                 const relativeQuaternion = new THREE.Quaternion();
                 relativeQuaternion.copy(markerQuaternion).invert().multiply(cameraQuaternion);
                 
                 return {
                     position: {
-                        x: (relativePosition.x * this.scale),
-                        y: (relativePosition.y * this.scale),
-                        z: (relativePosition.z * this.scale)
+                        x: relativePosition.x * this.scale,
+                        y: relativePosition.y * this.scale,
+                        z: relativePosition.z * this.scale
                     },
                     rotation: {
                         x: relativeQuaternion.x,
@@ -1297,6 +1224,89 @@
                     this.lastFPSUpdate = now;
                     const fpsEl = document.getElementById('positionFPS');
                     if (fpsEl) fpsEl.textContent = fps;
+                }
+            }
+            
+            // 确保 canvas 有正确的尺寸
+            ensureCanvasSize() {
+                if (!this.scene) return;
+                
+                const canvas = this.scene.canvas;
+                if (!canvas) {
+                    console.warn('⚠️ Canvas 未找到');
+                    return;
+                }
+                
+                const arContainer = document.getElementById('ar-container');
+                if (!arContainer) return;
+                
+                const containerWidth = arContainer.offsetWidth;
+                const containerHeight = arContainer.offsetHeight;
+                
+                if (containerWidth > 0 && containerHeight > 0) {
+                    // 如果 canvas 尺寸不正确，强制设置
+                    if (canvas.width !== containerWidth || canvas.height !== containerHeight) {
+                        console.log('🔧 修复 Canvas 尺寸:', canvas.width, 'x', canvas.height, '->', containerWidth, 'x', containerHeight);
+                        canvas.width = containerWidth;
+                        canvas.height = containerHeight;
+                    }
+                    
+                    // 确保样式正确
+                    canvas.style.width = '100%';
+                    canvas.style.height = '100%';
+                    canvas.style.display = 'block';
+                    canvas.style.zIndex = '1';
+                }
+            }
+            
+            // 检查视频流（按照官方文档）
+            checkVideoStream() {
+                if (!this.scene) return;
+                
+                // 查找 AR.js 创建的视频元素
+                const video = this.scene.querySelector('video');
+                if (video) {
+                    console.log('📹 找到视频元素:', {
+                        width: video.videoWidth,
+                        height: video.videoHeight,
+                        paused: video.paused,
+                        readyState: video.readyState,
+                        srcObject: video.srcObject ? '存在' : '不存在'
+                    });
+                    
+                    // 确保视频播放
+                    if (video.paused) {
+                        video.play().then(() => {
+                            console.log('✅ 视频开始播放');
+                        }).catch(err => {
+                            console.error('❌ 视频播放失败:', err);
+                        });
+                    }
+                    
+                    // 检查视频流
+                    if (video.srcObject) {
+                        const stream = video.srcObject;
+                        const tracks = stream.getVideoTracks();
+                        if (tracks.length > 0) {
+                            console.log('✅ 视频流正常，轨道数:', tracks.length);
+                        } else {
+                            console.warn('⚠️ 视频流没有轨道');
+                        }
+                    } else {
+                        console.warn('⚠️ 视频元素没有 srcObject，AR.js 可能未正确初始化');
+                    }
+                } else {
+                    console.warn('⚠️ 未找到视频元素，AR.js 可能未创建视频元素');
+                    // 尝试等待 AR.js 创建视频元素
+                    setTimeout(() => {
+                        const videoRetry = this.scene.querySelector('video');
+                        if (videoRetry) {
+                            console.log('📹 找到视频元素（重试）');
+                            this.checkVideoStream();
+                        } else {
+                            console.error('❌ AR.js 未创建视频元素，可能需要重新初始化场景');
+                        }
+                    }, 2000);
                 }
             }
             
@@ -1400,40 +1410,38 @@
                 return;
             }
             
-            // 主动请求摄像头权限
+            // 按照官方文档，AR.js 会自动请求摄像头权限
+            // 我们只需要确保容器显示，然后让 AR.js 自己处理
             try {
-                console.log('📷 请求摄像头权限...');
-                updateARjsStatus('请求摄像头权限...', false);
+                console.log('📷 准备启动 AR.js（AR.js 会自动请求摄像头权限）...');
+                updateARjsStatus('初始化中...', false);
                 
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: 'environment', // 使用后置摄像头
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    } 
-                });
-                
-                console.log('✅ 摄像头权限已获得，视频轨道:', stream.getVideoTracks()[0].label);
-                
-                // 停止流（AR.js 会自己创建）
-                stream.getTracks().forEach(track => {
-                    track.stop();
-                    console.log('🛑 停止测试流:', track.label);
-                });
-                
-                // 等待容器完全显示后再初始化
+                // 等待容器完全显示
                 await new Promise(resolve => setTimeout(resolve, 300));
                 
+                // 确保容器已显示且有尺寸
+                const containerRect = arContainer.getBoundingClientRect();
+                if (containerRect.width === 0 || containerRect.height === 0) {
+                    console.warn('⚠️ 容器尺寸为 0，等待...');
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+                
                 // 初始化 AR.js 追踪器
+                // AR.js 会在场景初始化时自动请求摄像头权限
                 if (!arjsTracker) {
                     console.log('🆕 创建新的 AR.js 追踪器');
                     arjsTracker = new ARjsMarkerTracker(gyroWS);
-                    arjsTracker.init();
+                    // 延迟初始化，确保容器完全显示
+                    setTimeout(() => {
+                        arjsTracker.init();
+                    }, 500);
                 } else {
                     console.log('🔄 重新初始化现有追踪器');
                     // 如果已存在，重新初始化场景
-                    arjsTracker.setupScene();
-                    arjsTracker.setupMarkerEvents();
+                    setTimeout(() => {
+                        arjsTracker.setupScene();
+                        arjsTracker.setupMarkerEvents();
+                    }, 500);
                 }
                 
             } catch (error) {
@@ -2693,9 +2701,6 @@
             setInterval(updateScreenCaptureStats, 1000);
         });
         
-        // 8th Wall 世界追蹤實例（全局變數）
-        let eighthWallTracker = null;
-        
         // 頁面載入時：先連上 WebSocket，再檢查/請求感測器權限（授權後才開始送資料）
         window.addEventListener('load', function () {
             try {
@@ -2704,19 +2709,6 @@
                 }
             } catch (e) {
                 console.error('初始化 WebSocket 連線時出錯:', e);
-            }
-            
-            // 初始化 8th Wall 世界追蹤（自動啟動，無需用戶點擊）
-            try {
-                eighthWallTracker = new EighthWallWorldTracker(gyroWS);
-                // 等待 WebSocket 連接後再初始化 8th Wall
-                gyroWS.setOnConnectedCallback(() => {
-                    setTimeout(() => {
-                        eighthWallTracker.init();
-                    }, 500); // 延遲 500ms 確保 WebSocket 完全就緒
-                });
-            } catch (e) {
-                console.error('初始化 8th Wall 追蹤器時出錯:', e);
             }
             
             checkSensorSupport();
