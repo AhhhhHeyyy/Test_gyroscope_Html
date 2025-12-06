@@ -90,8 +90,9 @@ public class PositionController : MonoBehaviour
                 data.rotation.w
             );
             
-            // 將旋轉應用到目標旋轉
-            targetRotation = initialRotation * rotation;
+            // 將旋轉應用到目標旋轉（應用敏感度）
+            // 使用 Slerp 來應用敏感度，類似於位置敏感度的處理方式
+            targetRotation = initialRotation * Quaternion.Slerp(Quaternion.identity, rotation, rotationSensitivity);
         }
         
         if (showDebugInfo)
