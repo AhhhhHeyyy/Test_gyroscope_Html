@@ -668,13 +668,13 @@
             </div>
             
             <!-- AR 场景容器 -->
-            <div id="ar-container" style="display: none; position: relative; width: 100%; height: 400px; margin-top: 20px; border-radius: 10px; overflow: hidden; background: #000;">
+            <div id="ar-container" style="display: none; position: relative; width: 100%; height: 60vh; min-height: 400px; margin-top: 20px; border-radius: 10px; overflow: hidden; background: #000;">
                 <a-scene 
                     embedded 
-                    arjs="sourceType: webcam; sourceWidth: 1280; sourceHeight: 720; displayWidth: 1280; displayHeight: 720; debugUIEnabled: false; detectionMode: mono_and_matrix; matrixCodeType: 3x3; cameraParametersUrl: https://cdn.jsdelivr.net/npm/ar.js@3.4.0/data/data/camera_para.dat; maxDetectionRate: 60; canvasWidth: 1280; canvasHeight: 720;"
+                    arjs="sourceType: webcam; sourceWidth: 1280; sourceHeight: 720; displayWidth: 1280; displayHeight: 720; debugUIEnabled: true; detectionMode: mono_and_matrix; matrixCodeType: 3x3; cameraParametersUrl: https://cdn.jsdelivr.net/npm/ar.js@3.4.0/data/data/camera_para.dat; maxDetectionRate: 60; canvasWidth: 1280; canvasHeight: 720;"
                     vr-mode-ui="enabled: false"
-                    renderer="logarithmicDepthBuffer: true; colorManagement: true; sortObjects: true"
-                    gesture-detector>
+                    renderer="logarithmicDepthBuffer: true; colorManagement: true; sortObjects: true; antialias: true;"
+                    style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;">
                     
                     <!-- Marker -->
                     <a-marker 
@@ -696,11 +696,11 @@
                     </a-marker>
                     
                     <!-- 相机 -->
-                    <a-camera gps-camera rotation-reader></a-camera>
+                    <a-camera></a-camera>
                 </a-scene>
                 
                 <!-- Marker 提示 -->
-                <div id="marker-hint" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.8); color: #fff; padding: 20px 30px; border-radius: 15px; text-align: center; z-index: 1000; border: 2px solid rgba(255, 255, 255, 0.3);">
+                <div id="marker-hint" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.8); color: #fff; padding: 20px 30px; border-radius: 15px; text-align: center; z-index: 1000; border: 2px solid rgba(255, 255, 255, 0.3); pointer-events: none;">
                     <h3 style="margin-bottom: 10px; color: #FFD700;">📱 对准 Marker</h3>
                     <p>请将手机摄像头对准 Hiro Marker 图案</p>
                 </div>
@@ -1057,18 +1057,52 @@
                     return;
                 }
                 
-                setTimeout(() => {
-                    this.setupScene();
-                    this.setupMarkerEvents();
-                    this.startTracking();
-                    updateARjsStatus('已就绪', true);
-                }, 1000);
+                // 等待场景元素创建和显示
+                const checkScene = () => {
+                    const arContainer = document.getElementById('ar-container');
+                    if (!arContainer) {
+                        console.warn('⚠️ AR 容器未找到，等待...');
+                        setTimeout(checkScene, 500);
+                        return;
+                    }
+                    
+                    // 检查容器是否显示
+                    const computedStyle = window.getComputedStyle(arContainer);
+                    if (computedStyle.display === 'none') {
+                        console.warn('⚠️ AR 容器未显示，等待...');
+                        setTimeout(checkScene, 500);
+                        return;
+                    }
+                    
+                    const scene = arContainer.querySelector('a-scene');
+                    if (!scene) {
+                        console.warn('⚠️ a-scene 未找到，等待...');
+                        setTimeout(checkScene, 500);
+                        return;
+                    }
+                    
+                    // 场景已准备好，等待 A-Frame 完全加载
+                    setTimeout(() => {
+                        this.setupScene();
+                        this.setupMarkerEvents();
+                        this.startTracking();
+                    }, 1000);
+                };
+                
+                checkScene();
             }
             
             setupScene() {
                 const arContainer = document.getElementById('ar-container');
                 if (!arContainer) {
                     console.error('❌ 无法找到 AR 容器');
+                    return;
+                }
+                
+                // 确保容器是可见的
+                if (arContainer.style.display === 'none') {
+                    console.warn('⚠️ AR 容器未显示，等待显示...');
+                    setTimeout(() => this.setupScene(), 500);
                     return;
                 }
                 
@@ -1082,9 +1116,54 @@
                     return;
                 }
                 
+                // 监听场景加载事件
+                this.scene.addEventListener('loaded', () => {
+                    console.log('✅ AR 场景已加载');
+                });
+                
                 this.scene.addEventListener('renderstart', () => {
                     console.log('✅ AR 场景渲染已启动');
+                    updateARjsStatus('运行中', true);
+                    
+                    // 检查 AR.js 是否成功获取摄像头
+                    setTimeout(() => {
+                        const canvas = this.scene.canvas;
+                        if (canvas) {
+                            console.log('📷 Canvas 尺寸:', canvas.width, 'x', canvas.height);
+                            
+                            // 检查 AR.js 的视频元素
+                            const video = this.scene.querySelector('video');
+                            if (video) {
+                                console.log('📹 找到视频元素:', video.videoWidth, 'x', video.videoHeight);
+                                console.log('📹 视频播放状态:', !video.paused, 'readyState:', video.readyState);
+                                
+                                // 确保视频播放
+                                video.play().then(() => {
+                                    console.log('✅ 视频开始播放');
+                                }).catch(err => {
+                                    console.error('❌ 视频播放失败:', err);
+                                });
+                            } else {
+                                console.warn('⚠️ 未找到视频元素');
+                            }
+                        } else {
+                            console.warn('⚠️ 未找到 Canvas');
+                        }
+                    }, 2000);
                 });
+                
+                // 监听场景错误
+                this.scene.addEventListener('error', (event) => {
+                    console.error('❌ AR 场景错误:', event);
+                    updateARjsStatus('错误', false);
+                });
+                
+                // 强制触发场景加载（如果还没加载）
+                if (this.scene.hasLoaded) {
+                    console.log('✅ 场景已加载');
+                } else {
+                    console.log('⏳ 等待场景加载...');
+                }
             }
             
             setupMarkerEvents() {
@@ -1290,23 +1369,94 @@
         }
         
         // 启动/停止追踪
-        function startPositionTracking() {
+        async function startPositionTracking() {
             const section = document.getElementById('positionTrackingSection');
             const arContainer = document.getElementById('ar-container');
             const dataPanel = document.getElementById('positionDataPanel');
             const startBtn = document.getElementById('startPositionTracking');
             const stopBtn = document.getElementById('stopPositionTracking');
             
+            console.log('🎬 开始位移追踪...');
+            
+            // 先显示容器
             if (section) section.style.display = 'block';
-            if (arContainer) arContainer.style.display = 'block';
+            if (arContainer) {
+                arContainer.style.display = 'block';
+                // 确保容器可见
+                arContainer.style.visibility = 'visible';
+                arContainer.style.opacity = '1';
+            }
             if (dataPanel) dataPanel.style.display = 'block';
             if (startBtn) startBtn.style.display = 'none';
             if (stopBtn) stopBtn.style.display = 'inline-block';
             
-            // 初始化 AR.js 追踪器
-            if (!arjsTracker) {
-                arjsTracker = new ARjsMarkerTracker(gyroWS);
-                arjsTracker.init();
+            // 检查媒体设备支持
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                console.error('❌ 浏览器不支持摄像头 API');
+                updateARjsStatus('不支持摄像头', false);
+                alert('您的浏览器不支持摄像头功能。请使用现代浏览器（Chrome、Safari、Edge）。');
+                if (startBtn) startBtn.style.display = 'inline-block';
+                if (stopBtn) stopBtn.style.display = 'none';
+                return;
+            }
+            
+            // 主动请求摄像头权限
+            try {
+                console.log('📷 请求摄像头权限...');
+                updateARjsStatus('请求摄像头权限...', false);
+                
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment', // 使用后置摄像头
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                
+                console.log('✅ 摄像头权限已获得，视频轨道:', stream.getVideoTracks()[0].label);
+                
+                // 停止流（AR.js 会自己创建）
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log('🛑 停止测试流:', track.label);
+                });
+                
+                // 等待容器完全显示后再初始化
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // 初始化 AR.js 追踪器
+                if (!arjsTracker) {
+                    console.log('🆕 创建新的 AR.js 追踪器');
+                    arjsTracker = new ARjsMarkerTracker(gyroWS);
+                    arjsTracker.init();
+                } else {
+                    console.log('🔄 重新初始化现有追踪器');
+                    // 如果已存在，重新初始化场景
+                    arjsTracker.setupScene();
+                    arjsTracker.setupMarkerEvents();
+                }
+                
+            } catch (error) {
+                console.error('❌ 摄像头权限请求失败:', error);
+                updateARjsStatus('权限被拒绝', false);
+                
+                let errorMsg = '需要摄像头权限才能使用 AR 追踪功能。\n\n';
+                if (error.name === 'NotAllowedError') {
+                    errorMsg += '请点击浏览器地址栏的摄像头图标，允许访问摄像头。';
+                } else if (error.name === 'NotFoundError') {
+                    errorMsg += '未找到可用的摄像头设备。';
+                } else {
+                    errorMsg += '错误: ' + error.message;
+                }
+                
+                alert(errorMsg);
+                
+                // 恢复按钮状态
+                if (startBtn) startBtn.style.display = 'inline-block';
+                if (stopBtn) stopBtn.style.display = 'none';
+                if (arContainer) arContainer.style.display = 'none';
+                if (dataPanel) dataPanel.style.display = 'none';
+                return;
             }
             
             // 更新 WebSocket 状态
