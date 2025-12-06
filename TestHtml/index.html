@@ -365,6 +365,14 @@
     </style>
 </head>
 <body>
+    <!-- 导航栏 -->
+    <nav style="position: fixed; top: 0; left: 0; right: 0; z-index: 10000; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(10px); padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.3);">
+        <a href="position-test.html" style="text-decoration: none; padding: 12px 24px; border-radius: 25px; font-weight: bold; color: #ffffff; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); transition: all 0.3s ease; display: inline-block;">
+            📍 位移测试
+        </a>
+        <div style="color: rgba(255,255,255,0.8); font-size: 14px;">手机陀螺仪检测器 v2.0</div>
+    </nav>
+    
     <div id="playOverlay" class="play-overlay" style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,0.18) 0%, rgba(0,0,0,0.35) 60%), linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); z-index: 9999;">
         <button id="playButton" class="play-button" style="appearance: none; border: none; cursor: pointer; padding: 16px 42px; border-radius: 999px; font-size: 22px; letter-spacing: 2px; font-weight: 800; color: #ffffff; background: linear-gradient(135deg, #ff8a00 0%, #e52e71 100%); box-shadow: 0 10px 30px rgba(229,46,113,0.45), inset 0 1px 0 rgba(255,255,255,0.25); transition: transform .15s ease, box-shadow .2s ease; text-transform: uppercase;">
             PLAY
@@ -421,30 +429,6 @@
                 <h3>搖晃強度</h3>
                 <div id="shake-intensity" class="data-value">靜止</div>
                 <div class="unit">狀態</div>
-            </div>
-            
-            <div class="data-card" id="position-tracking-card" style="display: none;">
-                <h3>📍 位置追蹤</h3>
-                <div id="position-status" class="data-value">等待中</div>
-                <div class="unit">狀態</div>
-            </div>
-            
-            <div class="data-card" id="position-x-card" style="display: none;">
-                <h3>X 位置</h3>
-                <div id="position-x" class="data-value">0.00</div>
-                <div class="unit">m</div>
-            </div>
-            
-            <div class="data-card" id="position-y-card" style="display: none;">
-                <h3>Y 位置</h3>
-                <div id="position-y" class="data-value">0.00</div>
-                <div class="unit">m</div>
-            </div>
-            
-            <div class="data-card" id="position-z-card" style="display: none;">
-                <h3>Z 位置</h3>
-                <div id="position-z" class="data-value">0.00</div>
-                <div class="unit">m</div>
             </div>
         </div>
         
@@ -912,248 +896,6 @@
                 console.log('🔄 已重置初始位置');
             }
         }
-        
-        // DeviceMotion 位置追蹤類
-        class DeviceMotionPositionTracker {
-            constructor(websocket) {
-                this.ws = websocket;
-                this.isTracking = false;
-                
-                // 原點設定（自動設定為第一個加速度數據）
-                this.originAcceleration = null;
-                this.isOriginSet = false;
-                
-                // 位置追蹤變數
-                this.velocity = { x: 0, y: 0, z: 0 }; // 速度（m/s）
-                this.position = { x: 0, y: 0, z: 0 }; // 位置（m）
-                this.lastAcceleration = null; // 上一次的加速度
-                this.lastTimestamp = null; // 上一次的時間戳
-                
-                // 平滑處理
-                this.accelerationHistory = [];
-                this.historySize = 5; // 使用最近5個數據點進行平滑
-                
-                // 重力補償
-                this.gravity = { x: 0, y: 0, z: 9.81 }; // 預設重力（m/s²）
-                this.useGravityCompensation = true;
-                
-                // 縮放因子（可調整）
-                this.scaleFactor = 0.01; // 將加速度轉換為位置的縮放因子
-                
-                // 低通濾波器（用於平滑加速度）
-                this.alpha = 0.8; // 濾波係數（0-1，越大越平滑）
-            }
-            
-            // 啟動追蹤
-            start() {
-                if (this.isTracking) {
-                    console.log('⚠️ 位置追蹤已在運行中');
-                    return;
-                }
-                
-                console.log('🚀 啟動 DeviceMotion 位置追蹤');
-                this.isTracking = true;
-                this.reset();
-                
-                // 監聽 devicemotion 事件
-                window.addEventListener('devicemotion', this.handleDeviceMotion.bind(this));
-            }
-            
-            // 停止追蹤
-            stop() {
-                if (!this.isTracking) {
-                    return;
-                }
-                
-                console.log('🛑 停止 DeviceMotion 位置追蹤');
-                this.isTracking = false;
-                window.removeEventListener('devicemotion', this.handleDeviceMotion.bind(this));
-            }
-            
-            // 重置追蹤狀態
-            reset() {
-                this.originAcceleration = null;
-                this.isOriginSet = false;
-                this.velocity = { x: 0, y: 0, z: 0 };
-                this.position = { x: 0, y: 0, z: 0 };
-                this.lastAcceleration = null;
-                this.lastTimestamp = null;
-                this.accelerationHistory = [];
-                console.log('🔄 位置追蹤已重置');
-            }
-            
-            // 處理 DeviceMotion 事件
-            handleDeviceMotion(event) {
-                if (!this.isTracking) return;
-                
-                // 獲取加速度數據（不含重力）
-                const acceleration = event.acceleration;
-                const accelerationWithGravity = event.accelerationIncludingGravity;
-                const rotationRate = event.rotationRate;
-                
-                // 檢查數據有效性
-                if (!acceleration || acceleration.x === null || acceleration.y === null || acceleration.z === null) {
-                    return;
-                }
-                
-                const currentTimestamp = event.timeStamp || Date.now();
-                
-                // 自動設定原點（第一個有效的加速度數據）
-                if (!this.isOriginSet) {
-                    this.originAcceleration = {
-                        x: acceleration.x || 0,
-                        y: acceleration.y || 0,
-                        z: acceleration.z || 0
-                    };
-                    this.isOriginSet = true;
-                    console.log('📍 原點已自動設定:', this.originAcceleration);
-                    
-                    // 初始化時間戳
-                    this.lastTimestamp = currentTimestamp;
-                    this.lastAcceleration = { ...this.originAcceleration };
-                    return;
-                }
-                
-                // 計算時間差（秒）
-                const deltaTime = (currentTimestamp - this.lastTimestamp) / 1000.0;
-                
-                // 防止時間差過大（可能是暫停後恢復）
-                if (deltaTime > 1.0 || deltaTime <= 0) {
-                    this.lastTimestamp = currentTimestamp;
-                    this.lastAcceleration = {
-                        x: acceleration.x || 0,
-                        y: acceleration.y || 0,
-                        z: acceleration.z || 0
-                    };
-                    return;
-                }
-                
-                // 平滑處理加速度
-                const smoothedAcceleration = this.smoothAcceleration(acceleration);
-                
-                // 重力補償（移除重力影響）
-                let compensatedAcceleration = smoothedAcceleration;
-                if (this.useGravityCompensation && accelerationWithGravity) {
-                    // 使用加速度計的重力分量來補償
-                    compensatedAcceleration = {
-                        x: smoothedAcceleration.x,
-                        y: smoothedAcceleration.y,
-                        z: smoothedAcceleration.z
-                    };
-                }
-                
-                // 相對於原點的加速度變化
-                const deltaAcceleration = {
-                    x: compensatedAcceleration.x - this.originAcceleration.x,
-                    y: compensatedAcceleration.y - this.originAcceleration.y,
-                    z: compensatedAcceleration.z - this.originAcceleration.z
-                };
-                
-                // 雙重積分計算位置
-                // 第一步：加速度 → 速度（積分）
-                this.velocity.x += deltaAcceleration.x * deltaTime;
-                this.velocity.y += deltaAcceleration.y * deltaTime;
-                this.velocity.z += deltaAcceleration.z * deltaTime;
-                
-                // 速度衰減（防止累積誤差）
-                const velocityDamping = 0.95; // 每幀衰減5%
-                this.velocity.x *= velocityDamping;
-                this.velocity.y *= velocityDamping;
-                this.velocity.z *= velocityDamping;
-                
-                // 第二步：速度 → 位置（積分）
-                const deltaPosition = {
-                    x: this.velocity.x * deltaTime * this.scaleFactor,
-                    y: this.velocity.y * deltaTime * this.scaleFactor,
-                    z: this.velocity.z * deltaTime * this.scaleFactor
-                };
-                
-                // 更新位置
-                this.position.x += deltaPosition.x;
-                this.position.y += deltaPosition.y;
-                this.position.z += deltaPosition.z;
-                
-                // 計算相對於原點的絕對位置
-                const absolutePosition = {
-                    x: this.position.x,
-                    y: this.position.y,
-                    z: this.position.z
-                };
-                
-                // 計算旋轉（使用 rotationRate，如果可用）
-                const rotation = rotationRate ? {
-                    x: rotationRate.alpha || 0,
-                    y: rotationRate.beta || 0,
-                    z: rotationRate.gamma || 0,
-                    w: 1.0
-                } : {
-                    x: 0,
-                    y: 0,
-                    z: 0,
-                    w: 1.0
-                };
-                
-                // 透過 WebSocket 發送位置數據
-                if (this.ws && this.ws.isConnected) {
-                    this.ws.sendPositionData(absolutePosition, rotation, deltaPosition);
-                }
-                
-                // 更新上次的數據
-                this.lastAcceleration = { ...compensatedAcceleration };
-                this.lastTimestamp = currentTimestamp;
-            }
-            
-            // 平滑處理加速度（移動平均）
-            smoothAcceleration(acceleration) {
-                // 添加到歷史記錄
-                this.accelerationHistory.push({
-                    x: acceleration.x || 0,
-                    y: acceleration.y || 0,
-                    z: acceleration.z || 0
-                });
-                
-                // 限制歷史記錄大小
-                if (this.accelerationHistory.length > this.historySize) {
-                    this.accelerationHistory.shift();
-                }
-                
-                // 計算平均值
-                if (this.accelerationHistory.length === 0) {
-                    return { x: 0, y: 0, z: 0 };
-                }
-                
-                const sum = this.accelerationHistory.reduce((acc, curr) => ({
-                    x: acc.x + curr.x,
-                    y: acc.y + curr.y,
-                    z: acc.z + curr.z
-                }), { x: 0, y: 0, z: 0 });
-                
-                const count = this.accelerationHistory.length;
-                return {
-                    x: sum.x / count,
-                    y: sum.y / count,
-                    z: sum.z / count
-                };
-            }
-            
-            // 獲取當前位置
-            getPosition() {
-                return { ...this.position };
-            }
-            
-            // 獲取當前速度
-            getVelocity() {
-                return { ...this.velocity };
-            }
-            
-            // 設置縮放因子
-            setScaleFactor(factor) {
-                this.scaleFactor = factor;
-            }
-        }
-        
-        // 創建全局位置追蹤實例
-        let positionTracker = null;
         
         // 檢查感測器支援
         function checkSensorSupport() {
@@ -1967,15 +1709,6 @@
             // 設置連接成功後的回調
             gyroWS.setOnConnectedCallback(() => {
                 console.log('🎯 WebSocket連接成功，開始感測器監聽');
-                
-                // 自動啟動位置追蹤
-                if (!positionTracker) {
-                    positionTracker = new DeviceMotionPositionTracker(gyroWS);
-                }
-                positionTracker.start();
-                
-                // 顯示位置追蹤 UI
-                updatePositionTrackingUI(true);
             });
             
             let dataHistory = [];
@@ -2006,7 +1739,7 @@
                 }
             });
             
-            // 加速度感測器監聽（保留原有的搖晃偵測功能）
+            // 加速度感測器監聽
             window.addEventListener('devicemotion', function(event) {
                 const acceleration = event.accelerationIncludingGravity;
                 
@@ -2052,78 +1785,6 @@
             document.getElementById('alpha-line').style.left = Math.max(0, Math.min(100, alphaPos)) + '%';
             document.getElementById('beta-line').style.left = Math.max(0, Math.min(100, betaPos)) + '%';
             document.getElementById('gamma-line').style.left = Math.max(0, Math.min(100, gammaPos)) + '%';
-        }
-        
-        // 更新位置追蹤 UI
-        function updatePositionTrackingUI(isActive) {
-            const positionCard = document.getElementById('position-tracking-card');
-            const positionXCard = document.getElementById('position-x-card');
-            const positionYCard = document.getElementById('position-y-card');
-            const positionZCard = document.getElementById('position-z-card');
-            const positionStatus = document.getElementById('position-status');
-            
-            if (isActive && positionTracker) {
-                // 顯示位置追蹤卡片
-                if (positionCard) positionCard.style.display = 'block';
-                if (positionXCard) positionXCard.style.display = 'block';
-                if (positionYCard) positionYCard.style.display = 'block';
-                if (positionZCard) positionZCard.style.display = 'block';
-                
-                // 更新狀態
-                if (positionStatus) {
-                    if (positionTracker.isOriginSet) {
-                        positionStatus.textContent = '追蹤中';
-                        positionStatus.style.color = '#4CAF50';
-                    } else {
-                        positionStatus.textContent = '設定原點中...';
-                        positionStatus.style.color = '#FFD700';
-                    }
-                }
-                
-                // 定期更新位置顯示
-                if (window.positionUpdateInterval) {
-                    clearInterval(window.positionUpdateInterval);
-                }
-                
-                window.positionUpdateInterval = setInterval(() => {
-                    if (positionTracker && positionTracker.isTracking) {
-                        const pos = positionTracker.getPosition();
-                        const vel = positionTracker.getVelocity();
-                        
-                        // 更新位置顯示
-                        const posX = document.getElementById('position-x');
-                        const posY = document.getElementById('position-y');
-                        const posZ = document.getElementById('position-z');
-                        
-                        if (posX) posX.textContent = pos.x.toFixed(3);
-                        if (posY) posY.textContent = pos.y.toFixed(3);
-                        if (posZ) posZ.textContent = pos.z.toFixed(3);
-                        
-                        // 更新狀態
-                        if (positionStatus && positionTracker.isOriginSet) {
-                            const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
-                            if (speed > 0.01) {
-                                positionStatus.textContent = '移動中';
-                                positionStatus.style.color = '#4ECDC4';
-                            } else {
-                                positionStatus.textContent = '靜止';
-                                positionStatus.style.color = '#4CAF50';
-                            }
-                        }
-                    }
-                }, 100); // 每100ms更新一次
-            } else {
-                // 隱藏位置追蹤卡片
-                if (positionCard) positionCard.style.display = 'none';
-                if (positionXCard) positionXCard.style.display = 'none';
-                if (positionYCard) positionYCard.style.display = 'none';
-                if (positionZCard) positionZCard.style.display = 'none';
-                
-                if (window.positionUpdateInterval) {
-                    clearInterval(window.positionUpdateInterval);
-                    window.positionUpdateInterval = null;
-                }
-            }
         }
         
         // 等待 WebSocket 連接就緒
@@ -3037,5 +2698,7 @@
     </script>
 </body>
 </html>
+
+
 
 
