@@ -11,6 +11,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/Draggable.min.js"></script>
     <!-- 引入 jQuery 库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <!-- 8th Wall WebAR Pipeline SDK (2024-2026 最新版本) -->
+    <script async src="https://apps.8thwall.com/xrweb?appKey=YOUR_APP_KEY"></script>
     <style>
         body {
             font-family: 'Arial', sans-serif;
@@ -420,6 +422,30 @@
                 <div id="shake-intensity" class="data-value">靜止</div>
                 <div class="unit">狀態</div>
             </div>
+            
+            <div class="data-card" id="position-tracking-card" style="display: none;">
+                <h3>📍 位置追蹤</h3>
+                <div id="position-status" class="data-value">等待中</div>
+                <div class="unit">狀態</div>
+            </div>
+            
+            <div class="data-card" id="position-x-card" style="display: none;">
+                <h3>X 位置</h3>
+                <div id="position-x" class="data-value">0.00</div>
+                <div class="unit">m</div>
+            </div>
+            
+            <div class="data-card" id="position-y-card" style="display: none;">
+                <h3>Y 位置</h3>
+                <div id="position-y" class="data-value">0.00</div>
+                <div class="unit">m</div>
+            </div>
+            
+            <div class="data-card" id="position-z-card" style="display: none;">
+                <h3>Z 位置</h3>
+                <div id="position-z" class="data-value">0.00</div>
+                <div class="unit">m</div>
+            </div>
         </div>
         
         <div class="chart-container" style="display: none;">
@@ -742,6 +768,393 @@
         const HISTORY_LENGTH = 20; // 加速度歷史記錄長度
         const GRAVITY = 9.8; // 重力加速度
         
+        // 8th Wall 世界追蹤管理器
+        class EighthWallWorldTracker {
+            constructor(websocket) {
+                this.ws = websocket;
+                this.isTracking = false;
+                this.lastPosition = null;
+                this.initialPosition = null;
+                this.isInitialized = false;
+            }
+            
+            // 初始化 8th Wall 世界追蹤
+            init() {
+                // 檢查 XR8 是否已載入
+                if (typeof XR8 === 'undefined') {
+                    console.warn('⚠️ 8th Wall SDK 尚未載入，等待載入...');
+                    // 等待 SDK 載入
+                    const checkInterval = setInterval(() => {
+                        if (typeof XR8 !== 'undefined') {
+                            clearInterval(checkInterval);
+                            this.startWorldTracking();
+                        }
+                    }, 100);
+                    
+                    // 10秒超時
+                    setTimeout(() => {
+                        if (typeof XR8 === 'undefined') {
+                            clearInterval(checkInterval);
+                            console.error('❌ 8th Wall SDK 載入超時，請檢查 App Key 是否正確');
+                        }
+                    }, 10000);
+                    return;
+                }
+                
+                this.startWorldTracking();
+            }
+            
+            // 啟動世界追蹤
+            startWorldTracking() {
+                if (this.isInitialized) {
+                    console.warn('⚠️ 8th Wall 已經初始化，跳過重複初始化');
+                    return;
+                }
+                
+                try {
+                    console.log('🚀 啟動 8th Wall 世界追蹤...');
+                    
+                    // 添加必要的 pipeline modules
+                    XR8.addCameraPipelineModules([
+                        XR8.GlTextureRenderer.pipelineModule(),
+                        XR8.XrController.pipelineModule(),
+                        XR8.RuntimeError.pipelineModule(),
+                        XR8.WorldTracking.pipelineModule(),  // 世界追蹤核心模組
+                    ]);
+                    
+                    // 自定義 pipeline module 獲取相機 pose
+                    XR8.addCameraPipelineModule({
+                        name: 'worldpose',
+                        onUpdate: ({processCpuResult}) => {
+                            this.onCameraUpdate(processCpuResult);
+                        }
+                    });
+                    
+                    // 監聽世界追蹤狀態
+                    XR8.addCameraPipelineModule({
+                        name: 'worldtrackingstatus',
+                        onStart: () => {
+                            console.log('✅ 8th Wall 世界追蹤已啟動');
+                            this.isTracking = true;
+                        },
+                        onDetach: () => {
+                            console.log('⚠️ 8th Wall 世界追蹤已停止');
+                            this.isTracking = false;
+                        }
+                    });
+                    
+                    this.isInitialized = true;
+                    console.log('✅ 8th Wall 初始化完成');
+                } catch (error) {
+                    console.error('❌ 8th Wall 初始化失敗:', error);
+                }
+            }
+            
+            // 處理相機位置更新
+            onCameraUpdate(processCpuResult) {
+                if (!this.isTracking) return;
+                
+                const camera = processCpuResult.reality;
+                if (!camera || !camera.position || !camera.rotation) {
+                    return;
+                }
+                
+                // 獲取位置 (X, Y, Z)
+                const position = {
+                    x: camera.position.x || 0,
+                    y: camera.position.y || 0,
+                    z: camera.position.z || 0
+                };
+                
+                // 獲取旋轉 (四元數)
+                const rotation = {
+                    x: camera.rotation.x || 0,
+                    y: camera.rotation.y || 0,
+                    z: camera.rotation.z || 0,
+                    w: camera.rotation.w !== undefined ? camera.rotation.w : 1.0
+                };
+                
+                // 計算相對位移（相對於初始位置）
+                let delta = { x: 0, y: 0, z: 0 };
+                
+                if (this.initialPosition === null) {
+                    // 記錄初始位置
+                    this.initialPosition = { ...position };
+                    this.lastPosition = { ...position };
+                } else {
+                    // 計算相對初始位置的位移
+                    delta = {
+                        x: position.x - this.initialPosition.x,
+                        y: position.y - this.initialPosition.y,
+                        z: position.z - this.initialPosition.z
+                    };
+                    
+                    // 計算與上次位置的增量（用於平滑移動）
+                    const frameDelta = {
+                        x: position.x - (this.lastPosition?.x || 0),
+                        y: position.y - (this.lastPosition?.y || 0),
+                        z: position.z - (this.lastPosition?.z || 0)
+                    };
+                    
+                    // 透過 WebSocket 發送位置數據
+                    if (this.ws && this.ws.isConnected) {
+                        this.ws.sendPositionData(position, rotation, delta);
+                    }
+                    
+                    this.lastPosition = { ...position };
+                }
+            }
+            
+            // 重置初始位置
+            resetInitialPosition() {
+                this.initialPosition = null;
+                this.lastPosition = null;
+                console.log('🔄 已重置初始位置');
+            }
+        }
+        
+        // DeviceMotion 位置追蹤類
+        class DeviceMotionPositionTracker {
+            constructor(websocket) {
+                this.ws = websocket;
+                this.isTracking = false;
+                
+                // 原點設定（自動設定為第一個加速度數據）
+                this.originAcceleration = null;
+                this.isOriginSet = false;
+                
+                // 位置追蹤變數
+                this.velocity = { x: 0, y: 0, z: 0 }; // 速度（m/s）
+                this.position = { x: 0, y: 0, z: 0 }; // 位置（m）
+                this.lastAcceleration = null; // 上一次的加速度
+                this.lastTimestamp = null; // 上一次的時間戳
+                
+                // 平滑處理
+                this.accelerationHistory = [];
+                this.historySize = 5; // 使用最近5個數據點進行平滑
+                
+                // 重力補償
+                this.gravity = { x: 0, y: 0, z: 9.81 }; // 預設重力（m/s²）
+                this.useGravityCompensation = true;
+                
+                // 縮放因子（可調整）
+                this.scaleFactor = 0.01; // 將加速度轉換為位置的縮放因子
+                
+                // 低通濾波器（用於平滑加速度）
+                this.alpha = 0.8; // 濾波係數（0-1，越大越平滑）
+            }
+            
+            // 啟動追蹤
+            start() {
+                if (this.isTracking) {
+                    console.log('⚠️ 位置追蹤已在運行中');
+                    return;
+                }
+                
+                console.log('🚀 啟動 DeviceMotion 位置追蹤');
+                this.isTracking = true;
+                this.reset();
+                
+                // 監聽 devicemotion 事件
+                window.addEventListener('devicemotion', this.handleDeviceMotion.bind(this));
+            }
+            
+            // 停止追蹤
+            stop() {
+                if (!this.isTracking) {
+                    return;
+                }
+                
+                console.log('🛑 停止 DeviceMotion 位置追蹤');
+                this.isTracking = false;
+                window.removeEventListener('devicemotion', this.handleDeviceMotion.bind(this));
+            }
+            
+            // 重置追蹤狀態
+            reset() {
+                this.originAcceleration = null;
+                this.isOriginSet = false;
+                this.velocity = { x: 0, y: 0, z: 0 };
+                this.position = { x: 0, y: 0, z: 0 };
+                this.lastAcceleration = null;
+                this.lastTimestamp = null;
+                this.accelerationHistory = [];
+                console.log('🔄 位置追蹤已重置');
+            }
+            
+            // 處理 DeviceMotion 事件
+            handleDeviceMotion(event) {
+                if (!this.isTracking) return;
+                
+                // 獲取加速度數據（不含重力）
+                const acceleration = event.acceleration;
+                const accelerationWithGravity = event.accelerationIncludingGravity;
+                const rotationRate = event.rotationRate;
+                
+                // 檢查數據有效性
+                if (!acceleration || acceleration.x === null || acceleration.y === null || acceleration.z === null) {
+                    return;
+                }
+                
+                const currentTimestamp = event.timeStamp || Date.now();
+                
+                // 自動設定原點（第一個有效的加速度數據）
+                if (!this.isOriginSet) {
+                    this.originAcceleration = {
+                        x: acceleration.x || 0,
+                        y: acceleration.y || 0,
+                        z: acceleration.z || 0
+                    };
+                    this.isOriginSet = true;
+                    console.log('📍 原點已自動設定:', this.originAcceleration);
+                    
+                    // 初始化時間戳
+                    this.lastTimestamp = currentTimestamp;
+                    this.lastAcceleration = { ...this.originAcceleration };
+                    return;
+                }
+                
+                // 計算時間差（秒）
+                const deltaTime = (currentTimestamp - this.lastTimestamp) / 1000.0;
+                
+                // 防止時間差過大（可能是暫停後恢復）
+                if (deltaTime > 1.0 || deltaTime <= 0) {
+                    this.lastTimestamp = currentTimestamp;
+                    this.lastAcceleration = {
+                        x: acceleration.x || 0,
+                        y: acceleration.y || 0,
+                        z: acceleration.z || 0
+                    };
+                    return;
+                }
+                
+                // 平滑處理加速度
+                const smoothedAcceleration = this.smoothAcceleration(acceleration);
+                
+                // 重力補償（移除重力影響）
+                let compensatedAcceleration = smoothedAcceleration;
+                if (this.useGravityCompensation && accelerationWithGravity) {
+                    // 使用加速度計的重力分量來補償
+                    compensatedAcceleration = {
+                        x: smoothedAcceleration.x,
+                        y: smoothedAcceleration.y,
+                        z: smoothedAcceleration.z
+                    };
+                }
+                
+                // 相對於原點的加速度變化
+                const deltaAcceleration = {
+                    x: compensatedAcceleration.x - this.originAcceleration.x,
+                    y: compensatedAcceleration.y - this.originAcceleration.y,
+                    z: compensatedAcceleration.z - this.originAcceleration.z
+                };
+                
+                // 雙重積分計算位置
+                // 第一步：加速度 → 速度（積分）
+                this.velocity.x += deltaAcceleration.x * deltaTime;
+                this.velocity.y += deltaAcceleration.y * deltaTime;
+                this.velocity.z += deltaAcceleration.z * deltaTime;
+                
+                // 速度衰減（防止累積誤差）
+                const velocityDamping = 0.95; // 每幀衰減5%
+                this.velocity.x *= velocityDamping;
+                this.velocity.y *= velocityDamping;
+                this.velocity.z *= velocityDamping;
+                
+                // 第二步：速度 → 位置（積分）
+                const deltaPosition = {
+                    x: this.velocity.x * deltaTime * this.scaleFactor,
+                    y: this.velocity.y * deltaTime * this.scaleFactor,
+                    z: this.velocity.z * deltaTime * this.scaleFactor
+                };
+                
+                // 更新位置
+                this.position.x += deltaPosition.x;
+                this.position.y += deltaPosition.y;
+                this.position.z += deltaPosition.z;
+                
+                // 計算相對於原點的絕對位置
+                const absolutePosition = {
+                    x: this.position.x,
+                    y: this.position.y,
+                    z: this.position.z
+                };
+                
+                // 計算旋轉（使用 rotationRate，如果可用）
+                const rotation = rotationRate ? {
+                    x: rotationRate.alpha || 0,
+                    y: rotationRate.beta || 0,
+                    z: rotationRate.gamma || 0,
+                    w: 1.0
+                } : {
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                    w: 1.0
+                };
+                
+                // 透過 WebSocket 發送位置數據
+                if (this.ws && this.ws.isConnected) {
+                    this.ws.sendPositionData(absolutePosition, rotation, deltaPosition);
+                }
+                
+                // 更新上次的數據
+                this.lastAcceleration = { ...compensatedAcceleration };
+                this.lastTimestamp = currentTimestamp;
+            }
+            
+            // 平滑處理加速度（移動平均）
+            smoothAcceleration(acceleration) {
+                // 添加到歷史記錄
+                this.accelerationHistory.push({
+                    x: acceleration.x || 0,
+                    y: acceleration.y || 0,
+                    z: acceleration.z || 0
+                });
+                
+                // 限制歷史記錄大小
+                if (this.accelerationHistory.length > this.historySize) {
+                    this.accelerationHistory.shift();
+                }
+                
+                // 計算平均值
+                if (this.accelerationHistory.length === 0) {
+                    return { x: 0, y: 0, z: 0 };
+                }
+                
+                const sum = this.accelerationHistory.reduce((acc, curr) => ({
+                    x: acc.x + curr.x,
+                    y: acc.y + curr.y,
+                    z: acc.z + curr.z
+                }), { x: 0, y: 0, z: 0 });
+                
+                const count = this.accelerationHistory.length;
+                return {
+                    x: sum.x / count,
+                    y: sum.y / count,
+                    z: sum.z / count
+                };
+            }
+            
+            // 獲取當前位置
+            getPosition() {
+                return { ...this.position };
+            }
+            
+            // 獲取當前速度
+            getVelocity() {
+                return { ...this.velocity };
+            }
+            
+            // 設置縮放因子
+            setScaleFactor(factor) {
+                this.scaleFactor = factor;
+            }
+        }
+        
+        // 創建全局位置追蹤實例
+        let positionTracker = null;
+        
         // 檢查感測器支援
         function checkSensorSupport() {
             const statusElement = document.getElementById('status');
@@ -926,6 +1339,23 @@
                         timestamp: Date.now()
                     };
                     console.log('📤 發送陀螺儀數據:', data);
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+            
+            // 發送 8th Wall 位置數據
+            sendPositionData(position, rotation, delta) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        type: 'position',
+                        data: {
+                            position: position,
+                            rotation: rotation,
+                            delta: delta,
+                            timestamp: Date.now()
+                        }
+                    };
+                    console.log('📍 發送位置數據:', data);
                     this.ws.send(JSON.stringify(data));
                 }
             }
@@ -1537,6 +1967,15 @@
             // 設置連接成功後的回調
             gyroWS.setOnConnectedCallback(() => {
                 console.log('🎯 WebSocket連接成功，開始感測器監聽');
+                
+                // 自動啟動位置追蹤
+                if (!positionTracker) {
+                    positionTracker = new DeviceMotionPositionTracker(gyroWS);
+                }
+                positionTracker.start();
+                
+                // 顯示位置追蹤 UI
+                updatePositionTrackingUI(true);
             });
             
             let dataHistory = [];
@@ -1567,7 +2006,7 @@
                 }
             });
             
-            // 加速度感測器監聽
+            // 加速度感測器監聽（保留原有的搖晃偵測功能）
             window.addEventListener('devicemotion', function(event) {
                 const acceleration = event.accelerationIncludingGravity;
                 
@@ -1613,6 +2052,78 @@
             document.getElementById('alpha-line').style.left = Math.max(0, Math.min(100, alphaPos)) + '%';
             document.getElementById('beta-line').style.left = Math.max(0, Math.min(100, betaPos)) + '%';
             document.getElementById('gamma-line').style.left = Math.max(0, Math.min(100, gammaPos)) + '%';
+        }
+        
+        // 更新位置追蹤 UI
+        function updatePositionTrackingUI(isActive) {
+            const positionCard = document.getElementById('position-tracking-card');
+            const positionXCard = document.getElementById('position-x-card');
+            const positionYCard = document.getElementById('position-y-card');
+            const positionZCard = document.getElementById('position-z-card');
+            const positionStatus = document.getElementById('position-status');
+            
+            if (isActive && positionTracker) {
+                // 顯示位置追蹤卡片
+                if (positionCard) positionCard.style.display = 'block';
+                if (positionXCard) positionXCard.style.display = 'block';
+                if (positionYCard) positionYCard.style.display = 'block';
+                if (positionZCard) positionZCard.style.display = 'block';
+                
+                // 更新狀態
+                if (positionStatus) {
+                    if (positionTracker.isOriginSet) {
+                        positionStatus.textContent = '追蹤中';
+                        positionStatus.style.color = '#4CAF50';
+                    } else {
+                        positionStatus.textContent = '設定原點中...';
+                        positionStatus.style.color = '#FFD700';
+                    }
+                }
+                
+                // 定期更新位置顯示
+                if (window.positionUpdateInterval) {
+                    clearInterval(window.positionUpdateInterval);
+                }
+                
+                window.positionUpdateInterval = setInterval(() => {
+                    if (positionTracker && positionTracker.isTracking) {
+                        const pos = positionTracker.getPosition();
+                        const vel = positionTracker.getVelocity();
+                        
+                        // 更新位置顯示
+                        const posX = document.getElementById('position-x');
+                        const posY = document.getElementById('position-y');
+                        const posZ = document.getElementById('position-z');
+                        
+                        if (posX) posX.textContent = pos.x.toFixed(3);
+                        if (posY) posY.textContent = pos.y.toFixed(3);
+                        if (posZ) posZ.textContent = pos.z.toFixed(3);
+                        
+                        // 更新狀態
+                        if (positionStatus && positionTracker.isOriginSet) {
+                            const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+                            if (speed > 0.01) {
+                                positionStatus.textContent = '移動中';
+                                positionStatus.style.color = '#4ECDC4';
+                            } else {
+                                positionStatus.textContent = '靜止';
+                                positionStatus.style.color = '#4CAF50';
+                            }
+                        }
+                    }
+                }, 100); // 每100ms更新一次
+            } else {
+                // 隱藏位置追蹤卡片
+                if (positionCard) positionCard.style.display = 'none';
+                if (positionXCard) positionXCard.style.display = 'none';
+                if (positionYCard) positionYCard.style.display = 'none';
+                if (positionZCard) positionZCard.style.display = 'none';
+                
+                if (window.positionUpdateInterval) {
+                    clearInterval(window.positionUpdateInterval);
+                    window.positionUpdateInterval = null;
+                }
+            }
         }
         
         // 等待 WebSocket 連接就緒
@@ -1918,6 +2429,9 @@
             setInterval(updateScreenCaptureStats, 1000);
         });
         
+        // 8th Wall 世界追蹤實例（全局變數）
+        let eighthWallTracker = null;
+        
         // 頁面載入時：先連上 WebSocket，再檢查/請求感測器權限（授權後才開始送資料）
         window.addEventListener('load', function () {
             try {
@@ -1927,6 +2441,20 @@
             } catch (e) {
                 console.error('初始化 WebSocket 連線時出錯:', e);
             }
+            
+            // 初始化 8th Wall 世界追蹤（自動啟動，無需用戶點擊）
+            try {
+                eighthWallTracker = new EighthWallWorldTracker(gyroWS);
+                // 等待 WebSocket 連接後再初始化 8th Wall
+                gyroWS.setOnConnectedCallback(() => {
+                    setTimeout(() => {
+                        eighthWallTracker.init();
+                    }, 500); // 延遲 500ms 確保 WebSocket 完全就緒
+                });
+            } catch (e) {
+                console.error('初始化 8th Wall 追蹤器時出錯:', e);
+            }
+            
             checkSensorSupport();
         });
         

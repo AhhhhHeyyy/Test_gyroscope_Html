@@ -86,10 +86,29 @@ public class GyroscopeReceiver : MonoBehaviour
         public string type;
         public string message;
         public GyroscopeData data;
+        public PositionData positionData; // 位置數據（當 type 為 "position" 時使用）
         public long timestamp;
         public int clientId;
         public int size;
         public int[] image; // 螢幕捕獲數據
+    }
+    
+    [System.Serializable]
+    public class PositionDataMessage
+    {
+        public string type;
+        public PositionDataContent data;
+        public long timestamp;
+        public int clientId;
+    }
+    
+    [System.Serializable]
+    public class PositionDataContent
+    {
+        public PositionVector position;
+        public RotationQuaternion rotation;
+        public PositionVector delta;
+        public long timestamp;
     }
     
     [System.Serializable]
@@ -118,6 +137,32 @@ public class GyroscopeReceiver : MonoBehaviour
         public long timestamp;
     }
     
+    [System.Serializable]
+    public class PositionData
+    {
+        public PositionVector position;
+        public RotationQuaternion rotation;
+        public PositionVector delta;
+        public long timestamp;
+    }
+    
+    [System.Serializable]
+    public class PositionVector
+    {
+        public float x;
+        public float y;
+        public float z;
+    }
+    
+    [System.Serializable]
+    public class RotationQuaternion
+    {
+        public float x;
+        public float y;
+        public float z;
+        public float w;
+    }
+    
     
     // 事件 - 新增搖晃事件和螢幕捕獲事件
     public static event Action<GyroscopeData> OnGyroscopeDataReceived;
@@ -127,6 +172,7 @@ public class GyroscopeReceiver : MonoBehaviour
     public static event Action<SignalingMessage> OnWebRTCSignaling; // 新增 WebRTC 信令事件
     public static event Action<string> OnRawMessage; // 新增原始訊息事件
     public static event Action<SpinModeStatus> OnSpinModeStatusReceived; // 新增旋钮模式事件
+    public static event Action<PositionData> OnPositionDataReceived; // 新增位置數據事件
     public static event Action OnConnected;
     public static event Action OnDisconnected;
     public static event Action<string> OnError;
@@ -443,6 +489,63 @@ public class GyroscopeReceiver : MonoBehaviour
                             catch (System.Exception e)
                             {
                                 Debug.LogError($"❌ 解析旋钮模式訊息錯誤: {e.Message}");
+                                Debug.LogError($"❌ 堆疊追蹤: {e.StackTrace}");
+                            }
+                            break;
+                            
+                        case "position":
+                            // 處理 8th Wall 位置數據
+                            Debug.Log($"📍 收到位置數據: {message}");
+                            try
+                            {
+                                // 使用 PositionDataMessage 解析位置數據
+                                var positionMsg = JsonUtility.FromJson<PositionDataMessage>(message);
+                                
+                                if (positionMsg.data == null)
+                                {
+                                    Debug.LogWarning("⚠️ 位置數據的 data 字段為 null");
+                                    break;
+                                }
+                                
+                                // 構建 PositionData
+                                var posData = new PositionData
+                                {
+                                    position = positionMsg.data.position != null
+                                        ? new PositionVector
+                                        {
+                                            x = positionMsg.data.position.x,
+                                            y = positionMsg.data.position.y,
+                                            z = positionMsg.data.position.z
+                                        }
+                                        : new PositionVector { x = 0, y = 0, z = 0 },
+                                    rotation = positionMsg.data.rotation != null
+                                        ? new RotationQuaternion
+                                        {
+                                            x = positionMsg.data.rotation.x,
+                                            y = positionMsg.data.rotation.y,
+                                            z = positionMsg.data.rotation.z,
+                                            w = positionMsg.data.rotation.w != 0 ? positionMsg.data.rotation.w : 1.0f
+                                        }
+                                        : new RotationQuaternion { x = 0, y = 0, z = 0, w = 1.0f },
+                                    delta = positionMsg.data.delta != null
+                                        ? new PositionVector
+                                        {
+                                            x = positionMsg.data.delta.x,
+                                            y = positionMsg.data.delta.y,
+                                            z = positionMsg.data.delta.z
+                                        }
+                                        : new PositionVector { x = 0, y = 0, z = 0 },
+                                    timestamp = positionMsg.data.timestamp != 0 ? positionMsg.data.timestamp : positionMsg.timestamp
+                                };
+                                
+                                Debug.Log($"📍 位置數據: Pos=({posData.position.x:F3}, {posData.position.y:F3}, {posData.position.z:F3}), Delta=({posData.delta.x:F3}, {posData.delta.y:F3}, {posData.delta.z:F3})");
+                                
+                                // 觸發位置數據事件
+                                OnPositionDataReceived?.Invoke(posData);
+                            }
+                            catch (System.Exception e)
+                            {
+                                Debug.LogError($"❌ 解析位置數據錯誤: {e.Message}");
                                 Debug.LogError($"❌ 堆疊追蹤: {e.StackTrace}");
                             }
                             break;

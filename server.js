@@ -77,6 +77,20 @@ wss.on('connection', (ws, req) => {
                     timestamp: Date.now(),
                     clientId: stats.totalConnections
                 };
+            } else if (msg.type === 'position') {
+                // 📍 處理 8th Wall 位置數據
+                console.log('📍 收到位置數據:', {
+                    position: msg.data?.position,
+                    delta: msg.data?.delta,
+                    clientId: stats.totalConnections
+                });
+                
+                out = {
+                    type: 'position',
+                    data: msg.data,
+                    timestamp: Date.now(),
+                    clientId: stats.totalConnections
+                };
             } else {
                 // 預設當作陀螺儀角度（向後相容）
                 console.log('📱 收到陀螺儀數據:', {
