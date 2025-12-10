@@ -25,6 +25,12 @@ public class LightSpotTracker : MonoBehaviour
     [Tooltip("目標處理幀率（0=使用processingInterval，>0=使用協程控制）")]
     public int targetFPS = 0;
 
+    [Header("Filtering")]
+    [Tooltip("是否使用高級過濾器（LightSpotFilter）")]
+    public bool useAdvancedFilter = false;
+    [Tooltip("高級過濾器組件引用（可選）")]
+    public LightSpotFilter advancedFilter = null;
+
     [Header("Debug")]
     public bool showDebug = false;
     [Tooltip("顯示性能統計")]
@@ -73,6 +79,16 @@ public class LightSpotTracker : MonoBehaviour
 
         // 初始化性能統計
         lastStatsTime = Time.time;
+
+        // 自動查找過濾器組件（如果未手動指定）
+        if (useAdvancedFilter && advancedFilter == null)
+        {
+            advancedFilter = GetComponent<LightSpotFilter>();
+            if (advancedFilter == null)
+            {
+                Debug.LogWarning("LightSpotTracker: 已啟用高級過濾器，但未找到 LightSpotFilter 組件。請在同一個 GameObject 上添加 LightSpotFilter 組件。");
+            }
+        }
 
         // 如果使用目標FPS，啟動協程處理
         if (targetFPS > 0)
@@ -127,7 +143,14 @@ public class LightSpotTracker : MonoBehaviour
         int height = webcamTexture.height;
 
         bool found;
-        Vector2 uv = FindBrightestPointFromPixels(pixels, width, height, out found);
+        Vector2 rawUV = FindBrightestPointFromPixels(pixels, width, height, out found);
+
+        // 如果啟用高級過濾器，對原始 UV 進行過濾
+        Vector2 uv = rawUV;
+        if (useAdvancedFilter && advancedFilter != null && found)
+        {
+            uv = advancedFilter.FilterPosition(rawUV);
+        }
 
         UpdateTrackingState(found, uv);
 

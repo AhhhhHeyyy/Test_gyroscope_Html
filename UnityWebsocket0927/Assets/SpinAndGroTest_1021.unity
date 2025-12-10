@@ -385,8 +385,10 @@ MonoBehaviour:
   lostTolerance: 4
   processingInterval: 2
   targetFPS: 0
-  showDebug: 0
-  showPerformanceStats: 0
+  useAdvancedFilter: 1
+  advancedFilter: {fileID: 1867793823}
+  showDebug: 1
+  showPerformanceStats: 1
   spotUV: {x: 0, y: 0}
 --- !u!4 &290027330
 Transform:
@@ -850,7 +852,7 @@ MonoBehaviour:
   yMin: 0
   yMax: 8
   fixedZ: -3
-  smoothSpeed: 1
+  smoothSpeed: 10
 --- !u!134 &1576321723
 PhysicsMaterial:
   m_ObjectHideFlags: 0
@@ -1139,7 +1141,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   useExponentialSmoothing: 1
-  smoothingTime: 0.05
+  smoothingTime: 0.37
   useMedianFilter: 1
   medianFilterWindow: 5
   useVelocityLimit: 1
