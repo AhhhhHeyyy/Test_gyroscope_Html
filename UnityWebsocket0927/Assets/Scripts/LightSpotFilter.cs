@@ -1,178 +1,130 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-/// <summary>
-/// 光点高级过滤器（可选）
-/// 功能：提供更高级的过滤算法，如卡尔曼滤波、移动平均等
-/// 用于需要更高精度和稳定性的场景
-/// </summary>
 public class LightSpotFilter : MonoBehaviour
 {
-    [Header("过滤设置")]
-    [Tooltip("使用移动平均滤波")]
-    [SerializeField] private bool useMovingAverage = true;
-    
-    [Tooltip("移动平均窗口大小")]
-    [Range(3, 20)]
-    [SerializeField] private int movingAverageWindow = 5;
-    
-    [Tooltip("使用中值滤波（去除异常值）")]
+    [Header("平滑設定")]
+    [Tooltip("是否使用指數平滑(比移動平均更即時)")]
+    [SerializeField] private bool useExponentialSmoothing = true;
+
+    [Tooltip("平滑時間常數(秒)，越小越貼合，越大越穩定")]
+    [SerializeField] private float smoothingTime = 0.05f; // 約 50ms
+
+    [Tooltip("是否使用中值濾波去除明顯突刺")]
     [SerializeField] private bool useMedianFilter = true;
-    
-    [Tooltip("中值滤波窗口大小")]
+
     [Range(3, 15)]
     [SerializeField] private int medianFilterWindow = 5;
-    
-    [Tooltip("使用速度限制（防止突然跳跃）")]
-    [SerializeField] private bool useVelocityLimit = true;
-    
-    [Tooltip("最大速度（UV单位/秒）")]
-    [SerializeField] private float maxVelocity = 2f;
-    
-    [Header("调试")]
+
+    [Header("速度限制(選用)")]
+    [SerializeField] private bool useVelocityLimit = false;
+    [SerializeField] private float maxVelocity = 10f; // UV/秒, 先調大一點
+
+    [Header("Debug")]
     [SerializeField] private bool showDebugInfo = false;
-    
-    // 私有变量
+
     private Queue<Vector2> positionQueue = new Queue<Vector2>();
-    private Queue<Vector2> velocityQueue = new Queue<Vector2>();
+
     private Vector2 lastFilteredPosition;
     private Vector2 lastRawPosition;
     private float lastUpdateTime;
-    
-    /// <summary>
-    /// 过滤输入位置
-    /// </summary>
-    /// <param name="rawPosition">原始UV位置</param>
-    /// <returns>过滤后的UV位置</returns>
+    private bool initialized = false;
+
     public Vector2 FilterPosition(Vector2 rawPosition)
     {
         float currentTime = Time.time;
         float deltaTime = currentTime - lastUpdateTime;
         lastUpdateTime = currentTime;
-        
-        // 速度限制
-        if (useVelocityLimit && deltaTime > 0.001f)
+
+        // 第一次樣本直接初始化，不要做任何濾波，避免奇怪抖動
+        if (!initialized || deltaTime <= 0.0001f)
+        {
+            initialized = true;
+            lastRawPosition = rawPosition;
+            lastFilteredPosition = rawPosition;
+            return rawPosition;
+        }
+
+        // 速度限制（可關掉或調很大）
+        if (useVelocityLimit)
         {
             Vector2 velocity = (rawPosition - lastRawPosition) / deltaTime;
             float speed = velocity.magnitude;
-            
+
             if (speed > maxVelocity)
             {
-                // 限制速度
                 velocity = velocity.normalized * maxVelocity;
                 rawPosition = lastRawPosition + velocity * deltaTime;
             }
         }
-        
+
         lastRawPosition = rawPosition;
-        
-        // 添加到队列
-        positionQueue.Enqueue(rawPosition);
-        
-        // 保持队列大小
-        if (positionQueue.Count > Mathf.Max(movingAverageWindow, medianFilterWindow))
+
+        // ----------- 中值濾波：只用來去掉怪異突刺 -----------
+        if (useMedianFilter)
         {
-            positionQueue.Dequeue();
+            positionQueue.Enqueue(rawPosition);
+            if (positionQueue.Count > medianFilterWindow)
+                positionQueue.Dequeue();
+
+            if (positionQueue.Count == medianFilterWindow)
+            {
+                rawPosition = GetMedianPosition();
+            }
         }
-        
+
+        // ----------- 指數平滑 / SmoothDamp 類似效果 -----------
         Vector2 filtered = rawPosition;
-        
-        // 中值滤波（去除异常值）
-        if (useMedianFilter && positionQueue.Count >= medianFilterWindow)
+
+        if (useExponentialSmoothing)
         {
-            filtered = GetMedianPosition();
+            // deltaTime / smoothingTime 越大 → 越貼合原始點
+            float t = 1f - Mathf.Exp(-deltaTime / Mathf.Max(0.0001f, smoothingTime));
+            filtered = Vector2.Lerp(lastFilteredPosition, rawPosition, t);
         }
-        
-        // 移动平均滤波（平滑处理）
-        if (useMovingAverage && positionQueue.Count >= movingAverageWindow)
-        {
-            filtered = GetMovingAveragePosition();
-        }
-        
+
         lastFilteredPosition = filtered;
-        
+
         if (showDebugInfo)
         {
-            Debug.Log($"🔍 过滤: 原始=({rawPosition.x:F3}, {rawPosition.y:F3}), " +
-                     $"过滤后=({filtered.x:F3}, {filtered.y:F3})");
+            Debug.Log($"🔍 Filter: raw=({lastRawPosition.x:F3},{lastRawPosition.y:F3}) " +
+                      $"filtered=({filtered.x:F3},{filtered.y:F3})");
         }
-        
+
         return filtered;
     }
-    
-    /// <summary>
-    /// 获取中值位置（去除异常值）
-    /// </summary>
-    Vector2 GetMedianPosition()
+
+    private Vector2 GetMedianPosition()
     {
-        if (positionQueue.Count < medianFilterWindow)
-        {
-            return lastFilteredPosition;
-        }
-        
         List<Vector2> positions = new List<Vector2>(positionQueue);
-        int startIndex = positions.Count - medianFilterWindow;
-        
-        // 提取最近的N个位置
-        List<Vector2> recentPositions = positions.GetRange(startIndex, medianFilterWindow);
-        
-        // 分别对X和Y进行中值计算
-        List<float> xValues = new List<float>();
-        List<float> yValues = new List<float>();
-        
-        foreach (Vector2 pos in recentPositions)
+        List<float> xs = new List<float>();
+        List<float> ys = new List<float>();
+
+        foreach (var p in positions)
         {
-            xValues.Add(pos.x);
-            yValues.Add(pos.y);
+            xs.Add(p.x);
+            ys.Add(p.y);
         }
-        
-        xValues.Sort();
-        yValues.Sort();
-        
-        float medianX = xValues[xValues.Count / 2];
-        float medianY = yValues[yValues.Count / 2];
-        
-        return new Vector2(medianX, medianY);
+
+        xs.Sort();
+        ys.Sort();
+
+        float mx = xs[xs.Count / 2];
+        float my = ys[ys.Count / 2];
+        return new Vector2(mx, my);
     }
-    
-    /// <summary>
-    /// 获取移动平均位置
-    /// </summary>
-    Vector2 GetMovingAveragePosition()
-    {
-        if (positionQueue.Count < movingAverageWindow)
-        {
-            return lastFilteredPosition;
-        }
-        
-        Vector2 sum = Vector2.zero;
-        List<Vector2> positions = new List<Vector2>(positionQueue);
-        int startIndex = positions.Count - movingAverageWindow;
-        
-        // 计算最近N个位置的平均值
-        for (int i = startIndex; i < positions.Count; i++)
-        {
-            sum += positions[i];
-        }
-        
-        return sum / movingAverageWindow;
-    }
-    
-    /// <summary>
-    /// 重置过滤器
-    /// </summary>
+
     public void Reset()
     {
         positionQueue.Clear();
-        velocityQueue.Clear();
         lastFilteredPosition = Vector2.zero;
         lastRawPosition = Vector2.zero;
         lastUpdateTime = Time.time;
+        initialized = false;
     }
-    
-    void Start()
+
+    private void Start()
     {
         lastUpdateTime = Time.time;
     }
 }
-
