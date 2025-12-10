@@ -14,19 +14,11 @@ public class FlashlightController : MonoBehaviour
     [Tooltip("要移動的目標物件")]
     public Transform targetObject;
 
-    [Tooltip("X 軸世界座標範圍")]
-    public float worldXMin = -5f;
-    public float worldXMax = 5f;
-
-    [Tooltip("Y 軸世界座標範圍")]
-    public float worldYMin = 0f;
-    public float worldYMax = 4f;
-
-    [Tooltip("Z 軸固定位置")]
-    public float fixedZ = -3f;
-
-    [Tooltip("平滑速度（越大越快）")]
-    public float smoothSpeed = 10f;
+    [SerializeField] float xRange = 3f;   // X 軸左右最大距離
+    [SerializeField] float yMin = 0.5f;   // Y 軸最下
+    [SerializeField] float yMax = 3f;     // Y 軸最高
+    [SerializeField] float fixedZ = 5f;   // 固定 Z 值（距離）
+    [SerializeField] float smoothSpeed = 10f; // 平滑速度（越大越順）
 
     void Start()
     {
@@ -41,24 +33,24 @@ public class FlashlightController : MonoBehaviour
     {
         if (tracker == null || !tracker.isTracking) return;
 
-        // 取得 UV
-        Vector2 uv = tracker.spotUV;
+        MoveObjectByUV();
+    }
 
-        // WebCamTexture Y 軸是倒的 → 翻轉
+    void MoveObjectByUV()
+    {
+        Vector2 uv = tracker.spotUV;  // 已經經過濾波，最穩定的 UV 來源
+
+        // 翻轉 Y（因為 WebCamTexture 上下顛倒）
         uv.y = 1f - uv.y;
 
-        // 映射到世界座標
-        float x = Mathf.Lerp(worldXMin, worldXMax, uv.x);
-        float y = Mathf.Lerp(worldYMin, worldYMax, uv.y);
-        float z = fixedZ;
+        // 直接把 UV(0~1) 映射到空間 X/Y
+        float x = Mathf.Lerp(-xRange, xRange, uv.x);
+        float y = Mathf.Lerp(yMin, yMax, uv.y);
 
-        Vector3 targetPos = new Vector3(x, y, z);
+        Vector3 target = new Vector3(x, y, fixedZ);
 
-        // 平滑移動
-        targetObject.position = Vector3.Lerp(
-            targetObject.position,
-            targetPos,
-            Time.deltaTime * smoothSpeed
-        );
+        // 低成本、高順暢的平滑
+        float t = 1f - Mathf.Exp(-Time.deltaTime * smoothSpeed);
+        targetObject.position = Vector3.Lerp(targetObject.position, target, t);
     }
 }
