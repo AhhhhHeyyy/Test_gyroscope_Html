@@ -377,21 +377,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 12c9b66e52c67384e8ccecedb0bcc5d0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  requestedWidth: 640
-  requestedHeight: 480
-  requestedFPS: 30
-  threshold: 200
-  smooth: 10
-  downSampleStep: 4
-  useROI: 1
-  roiSize: 0.8
-  minBrightnessDelta: 30
-  maxPositionDelta: 50
-  maxLostFrames: 10
-  useAdvancedFilter: 1
-  advancedFilter: {fileID: 1867793823}
-  showDebugInfo: 1
-  showROI: 1
+  webcamTexture: {fileID: 0}
+  isTracking: 0
+  minBrightness: 220
+  downSample: 2
+  roiRadius: 0.15
+  lostTolerance: 4
+  processingInterval: 2
+  targetFPS: 0
+  showDebug: 0
+  showPerformanceStats: 0
+  spotUV: {x: 0, y: 0}
 --- !u!4 &290027330
 Transform:
   m_ObjectHideFlags: 0
@@ -849,28 +845,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   tracker: {fileID: 290027329}
-  sceneCamera: {fileID: 1793696214}
-  rayDistance: 20
-  interactableLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  moveObjectToHitPoint: 1
-  changeColorOnHit: 0
-  hitColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
-  defaultColor: {r: 1, g: 1, b: 1, a: 1}
-  showRay: 1
-  showHitPoint: 1
-  hitPointSize: 0.1
-  useAspectRatioCorrection: 1
-  minMoveDistance: 0.08
-  targetSmooth: 6
-  positionSmoothTime: 0.05
-  fastMoveSmoothMultiplier: 0.6
-  fastMoveSpeedThreshold: 2
-  yAxisSensitivity: 3.5
-  useNonLinearYScaling: 1
-  separateAxisSmoothing: 1
-  showDebugInfo: 1
+  targetObject: {fileID: 1522646051}
+  xRange: 4
+  yMin: 0
+  yMax: 8
+  fixedZ: -3
+  smoothSpeed: 1
 --- !u!134 &1576321723
 PhysicsMaterial:
   m_ObjectHideFlags: 0

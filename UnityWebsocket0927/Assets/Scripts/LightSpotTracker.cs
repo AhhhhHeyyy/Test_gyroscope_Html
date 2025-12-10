@@ -17,15 +17,32 @@ public class LightSpotTracker : MonoBehaviour
     [Tooltip("允許幾幀找不到光點才判定丟失")]
     public int lostTolerance = 4;
 
+    [Header("Performance")]
+    [Tooltip("處理間隔（每N幀處理一次，1=每幀，2=每2幀，3=每3幀...）")]
+    [Range(1, 5)]
+    public int processingInterval = 2;
+
+    [Tooltip("目標處理幀率（0=使用processingInterval，>0=使用協程控制）")]
+    public int targetFPS = 0;
+
     [Header("Debug")]
     public bool showDebug = false;
+    [Tooltip("顯示性能統計")]
+    public bool showPerformanceStats = false;
 
     public Vector2 spotUV = Vector2.zero;
     private Vector2 lastValidUV = new Vector2(0.5f, 0.5f);
 
     private int lostCounter = 0;
+    private int frameCounter = 0;
 
-    Texture2D frameTex;
+    private int cachedWidth = 0;
+    private int cachedHeight = 0;
+
+    // 性能統計
+    private float lastStatsTime = 0f;
+    private int processedFrameCount = 0;
+    private float totalProcessTime = 0f;
 
     void Start()
     {
@@ -40,25 +57,99 @@ public class LightSpotTracker : MonoBehaviour
 
         webcamTexture.Play();
 
-        frameTex = new Texture2D(webcamTexture.width, webcamTexture.height, TextureFormat.RGB24, false);
+        // 等待一幀確保紋理已初始化
+        StartCoroutine(InitializeTexture());
+    }
+
+    System.Collections.IEnumerator InitializeTexture()
+    {
+        yield return null; // 等待一幀
+        
+        if (webcamTexture != null && webcamTexture.isPlaying)
+        {
+            cachedWidth = webcamTexture.width;
+            cachedHeight = webcamTexture.height;
+        }
+
+        // 初始化性能統計
+        lastStatsTime = Time.time;
+
+        // 如果使用目標FPS，啟動協程處理
+        if (targetFPS > 0)
+        {
+            StartCoroutine(ProcessFrameCoroutine());
+        }
     }
 
     void Update()
     {
         if (!webcamTexture.isPlaying) return;
 
-        ProcessFrame();
+        // 如果使用協程模式，Update中不處理
+        if (targetFPS > 0) return;
+
+        // 使用幀跳過機制
+        frameCounter++;
+        if (frameCounter >= processingInterval)
+        {
+            frameCounter = 0;
+            ProcessFrame();
+        }
+    }
+
+    System.Collections.IEnumerator ProcessFrameCoroutine()
+    {
+        float interval = targetFPS > 0 ? (1f / targetFPS) : (1f / 30f);
+        WaitForSeconds wait = new WaitForSeconds(interval);
+
+        while (webcamTexture != null && webcamTexture.isPlaying)
+        {
+            ProcessFrame();
+            yield return wait;
+        }
     }
 
     void ProcessFrame()
     {
-        frameTex.SetPixels(webcamTexture.GetPixels());
-        frameTex.Apply();
+        float startTime = Time.realtimeSinceStartup;
+
+        // 檢查紋理尺寸是否變化（用於緩存）
+        if (webcamTexture.width != cachedWidth || webcamTexture.height != cachedHeight)
+        {
+            cachedWidth = webcamTexture.width;
+            cachedHeight = webcamTexture.height;
+        }
+
+        // 優化：直接使用像素數組，避免中間的 SetPixels 和 Apply
+        // 獲取像素數據（這是必要的GPU到CPU傳輸，但已通過幀跳過機制優化）
+        Color32[] pixels = webcamTexture.GetPixels32();
+        int width = webcamTexture.width;
+        int height = webcamTexture.height;
 
         bool found;
-        Vector2 uv = FindBrightestPoint(frameTex, out found);
+        Vector2 uv = FindBrightestPointFromPixels(pixels, width, height, out found);
 
         UpdateTrackingState(found, uv);
+
+        // 性能統計
+        if (showPerformanceStats)
+        {
+            float processTime = (Time.realtimeSinceStartup - startTime) * 1000f; // 轉換為毫秒
+            processedFrameCount++;
+            totalProcessTime += processTime;
+
+            // 每秒更新一次統計
+            if (Time.time - lastStatsTime >= 1f)
+            {
+                float avgProcessTime = totalProcessTime / processedFrameCount;
+                float actualFPS = processedFrameCount / (Time.time - lastStatsTime);
+                Debug.Log($"📊 處理性能: {actualFPS:F1} FPS, 平均處理時間: {avgProcessTime:F2}ms");
+                
+                processedFrameCount = 0;
+                totalProcessTime = 0f;
+                lastStatsTime = Time.time;
+            }
+        }
 
         if (showDebug)
         {
@@ -67,14 +158,10 @@ public class LightSpotTracker : MonoBehaviour
     }
 
     // ================================
-    // ⭐ 動態 ROI + 最亮點擷取
+    // ⭐ 動態 ROI + 最亮點擷取（優化版：直接使用像素數組）
     // ================================
-    Vector2 FindBrightestPoint(Texture2D tex, out bool found)
+    Vector2 FindBrightestPointFromPixels(Color32[] px, int w, int h, out bool found)
     {
-        int w = tex.width;
-        int h = tex.height;
-
-        Color32[] px = tex.GetPixels32();
 
         float maxBrightness = 0f;
         int maxIndex = -1;
@@ -189,4 +276,5 @@ public class LightSpotTracker : MonoBehaviour
     {
         return webcamTexture;
     }
+
 }
