@@ -649,6 +649,7 @@
             </div>
             <div id="spinModeActions" style="width: 100%; text-align: center; margin-top: 0;">
                 <button id="selectThisButton" class="cube-link" style="cursor: pointer; display: inline-block; width: auto; padding: 12px 48px;">選這台!</button>
+                <button id="flashlightButton" class="cube-link" style="cursor: pointer; display: inline-block; width: auto; padding: 12px 32px; margin-left: 8px; background: linear-gradient(45deg, #4CAF50, #8BC34A);">🔦 手電筒</button>
                 <div id="spinModeStatus" style="margin-top: 16px; font-size: 1.1em; color: #FFD700; font-weight: bold;">目前模式：120° 吸附</div>
             </div>
             
@@ -2667,6 +2668,85 @@
             setTimeout(() => {
                 initializeSpinController();
             }, 1000);
+        });
+
+        // ===== 手電筒控制功能 (僅少數手機瀏覽器支援，例如 Android Chrome) =====
+        let flashlightStream = null;
+        let flashlightTrack = null;
+        let isFlashlightOn = false;
+
+        async function toggleFlashlight() {
+            // 若已開啟，則關閉並釋放資源
+            if (isFlashlightOn) {
+                try {
+                    if (flashlightTrack) {
+                        // 嘗試關閉 torch
+                        const capabilities = flashlightTrack.getCapabilities ? flashlightTrack.getCapabilities() : {};
+                        if (capabilities.torch) {
+                            await flashlightTrack.applyConstraints({ advanced: [{ torch: false }] });
+                        }
+                        flashlightTrack.stop();
+                    }
+                    if (flashlightStream) {
+                        flashlightStream.getTracks().forEach(t => t.stop());
+                    }
+                } catch (e) {
+                    console.warn('關閉手電筒時發生錯誤:', e);
+                } finally {
+                    flashlightStream = null;
+                    flashlightTrack = null;
+                    isFlashlightOn = false;
+                    const btn = document.getElementById('flashlightButton');
+                    if (btn) btn.textContent = '🔦 手電筒';
+                }
+                return;
+            }
+
+            // 準備開啟手電筒
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert('此瀏覽器不支援相機權限，無法控制手電筒');
+                return;
+            }
+
+            try {
+                // 使用後置相機
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'environment' } },
+                    audio: false
+                });
+
+                const track = stream.getVideoTracks()[0];
+                const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+
+                if (!capabilities.torch) {
+                    // 不支援 torch，釋放資源
+                    track.stop();
+                    stream.getTracks().forEach(t => t.stop());
+                    alert('此裝置或瀏覽器不支援手電筒控制 (torch)');
+                    return;
+                }
+
+                await track.applyConstraints({
+                    advanced: [{ torch: true }]
+                });
+
+                flashlightStream = stream;
+                flashlightTrack = track;
+                isFlashlightOn = true;
+
+                const btn = document.getElementById('flashlightButton');
+                if (btn) btn.textContent = '🛑 關閉手電筒';
+            } catch (error) {
+                console.error('開啟手電筒失敗:', error);
+                alert('開啟手電筒失敗，請確認已允許相機權限，且使用支援的手機瀏覽器 (例如 Android Chrome)。');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const flashlightButton = document.getElementById('flashlightButton');
+            if (flashlightButton) {
+                flashlightButton.addEventListener('click', toggleFlashlight);
+            }
         });
     </script>
 </body>
