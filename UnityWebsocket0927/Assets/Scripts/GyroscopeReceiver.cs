@@ -185,6 +185,13 @@ public class GyroscopeReceiver : MonoBehaviour
         public IceCandidate candidate;
     }
 
+    // 從 Unity 向前端發送簡單控制指令的消息格式
+    [System.Serializable]
+    public class ControlCommandMessage
+    {
+        public string type;
+    }
+
     [System.Serializable]
     public class IceCandidate
     {
@@ -620,10 +627,10 @@ public class GyroscopeReceiver : MonoBehaviour
             Debug.LogWarning("⚠️ WebSocket為空！");
         }
 
-        // 監聽空白鍵，向伺服器發送一次模式切換指令
+        // 監聽空白鍵，向前端發送旋鈕模式切換指令
         if (Input.GetKeyDown(KeyCode.Space))
         {
-            SendToggleSpinMode();
+            SendSpinToggleCommand();
         }
 
         m_alpha = alpha;
@@ -632,24 +639,6 @@ public class GyroscopeReceiver : MonoBehaviour
         m_lastSpinAngle = lastSpinAngle;
         m_spinCount = spinCount;
         #endif
-    }
-
-    /// <summary>
-    /// 向伺服器發送「切換旋鈕模式」指令，讓前端在 90° / 120° 模式之間切換
-    /// </summary>
-    public void SendToggleSpinMode()
-    {
-        if (websocket != null && websocket.State == WebSocketState.Open)
-        {
-            // 使用簡單字串組成 JSON，避免 JsonUtility 對匿名型別支援問題
-            string json = "{\"type\":\"toggle_spin_mode\"}";
-            websocket.SendText(json);
-            Debug.Log("📤 已發送 toggle_spin_mode 指令至伺服器");
-        }
-        else
-        {
-            Debug.LogWarning("⚠️ WebSocket 未連接，無法發送 toggle_spin_mode 指令");
-        }
     }
     
     public void Disconnect()
@@ -729,6 +718,29 @@ public class GyroscopeReceiver : MonoBehaviour
         else
         {
             Debug.LogWarning("⚠️ WebSocket未連接，無法加入房間");
+        }
+    }
+
+    /// <summary>
+    /// 從 Unity 發送一個簡單的旋鈕模式切換指令到網頁端
+    /// 網頁端收到 type = "spin_toggle" 後，會在 90°/120° 模式之間切換
+    /// </summary>
+    public void SendSpinToggleCommand()
+    {
+        if (websocket != null && websocket.State == WebSocketState.Open)
+        {
+            var cmd = new ControlCommandMessage
+            {
+                type = "spin_toggle"
+            };
+
+            string json = JsonUtility.ToJson(cmd);
+            websocket.SendText(json);
+            Debug.Log($"📤 已發送旋鈕模式切換指令: {json}");
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ WebSocket未連接，無法發送旋鈕模式切換指令");
         }
     }
     
