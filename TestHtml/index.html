@@ -1015,9 +1015,9 @@
                             return;
                         }
 
-                        // Unity 端請求：切換一次旋鈕模式（在 90° / 120° 之間互換）
-                        if (data.type === 'spin_mode_toggle') {
-                            console.log('🔁 收到來自 Unity 的旋鈕模式切換請求:', data);
+                        // Unity → Web：用 spin_mode 夾帶 toggle_request（因為 server 已知會轉發 spin_mode）
+                        if (data.type === 'spin_mode' && data.data && data.data.mode === 'toggle_request') {
+                            console.log('🔁 收到 Unity toggle_request（spin_mode）:', data);
                             if (typeof window.toggleSpinModeFromUnity === 'function') {
                                 window.toggleSpinModeFromUnity();
                             } else {

@@ -711,17 +711,14 @@ public class GyroscopeReceiver : MonoBehaviour
         // 本地記錄目前 Unity 認知的模式狀態（純記錄用，不影響前端實際邏輯）
         webSpinIs90Mode = !webSpinIs90Mode;
 
-        var toggleMessage = new
-        {
-            type = "spin_mode_toggle",
-            timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-        };
+        long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // 改用既有會轉發的 spin_mode 通道，夾帶一個自訂的 mode = \"toggle_request\"
+        string json = $"{{\"type\":\"spin_mode\",\"data\":{{\"mode\":\"toggle_request\",\"timestamp\":{ts}}}}}";
 
-        string json = JsonUtility.ToJson(toggleMessage);
         websocket.SendText(json);
 
         string modeLabel = webSpinIs90Mode ? "90° 吸附" : "120° 吸附";
-        Debug.Log($"🛰️ [Unity] 空白鍵觸發，已發送旋鈕模式切換指令給前端，目前預期模式：{modeLabel}，JSON = {json}");
+        Debug.Log($"🛰️ [Unity] toggle_request sent，目前預期模式：{modeLabel}，JSON = {json}");
     }
     
     // 加入房間
