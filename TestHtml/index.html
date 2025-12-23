@@ -1015,6 +1015,17 @@
                             return;
                         }
 
+                        // Unity 端請求：切換一次旋鈕模式（在 90° / 120° 之間互換）
+                        if (data.type === 'spin_mode_toggle') {
+                            console.log('🔁 收到來自 Unity 的旋鈕模式切換請求:', data);
+                            if (typeof window.toggleSpinModeFromUnity === 'function') {
+                                window.toggleSpinModeFromUnity();
+                            } else {
+                                console.warn('⚠️ toggleSpinModeFromUnity 尚未定義，無法切換旋鈕模式');
+                            }
+                            return;
+                        }
+
                         // 取得控制權確認
                         if (data.type === 'you-are-controller') {
                             console.log('🎯 你是目前控制者，可以傳送資料');
@@ -1038,17 +1049,6 @@
                         // 房間加入確認
                         if (data.type === 'joined') {
                             console.log(`✅ 已加入房間: ${data.room} as ${data.role}`);
-                            return;
-                        }
-
-                        // 來自 Unity 的旋鈕模式切換指令
-                        if (data.type === 'spin_toggle') {
-                            console.log('🎯 收到 Unity 發來的旋鈕模式切換指令 (spin_toggle)');
-                            if (typeof window.handleUnitySpinToggle === 'function') {
-                                window.handleUnitySpinToggle();
-                            } else {
-                                console.warn('⚠️ handleUnitySpinToggle 尚未初始化（旋轉控制器可能尚未就緒）');
-                            }
                             return;
                         }
                         
@@ -2390,6 +2390,18 @@
                     
                     console.log('✅ 90°模式切換完成');
                 }
+
+                // 提供給 Unity 端使用的全域函式：當收到 WebSocket 的 spin_mode_toggle 時呼叫
+                window.toggleSpinModeFromUnity = function () {
+                    console.log('🔁 toggleSpinModeFromUnity 被呼叫，目前 isIn90Mode =', isIn90Mode);
+                    if (isIn90Mode) {
+                        // 目前是 90° → 切回 120°
+                        switchToDefaultMode();
+                    } else {
+                        // 目前是 120° → 切到 90°
+                        switchTo90Mode();
+                    }
+                };
                 
                 function enforceFullRotationLock() {
                     if (spinLocked) return;
@@ -2650,22 +2662,6 @@
                 updateSpinAngleDisplay();
                 
                 console.log("旋转控制器初始化完成！");
-
-                // 向全域暴露一個由 Unity 觸發的模式切換函式
-                window.handleUnitySpinToggle = function () {
-                    try {
-                        console.log('🎯 handleUnitySpinToggle 被呼叫，目前 isIn90Mode =', isIn90Mode);
-                        if (isIn90Mode) {
-                            // 目前是 90° 模式 → 切回 120°
-                            switchToDefaultMode();
-                        } else {
-                            // 目前是 120° 模式 → 切換到 90°
-                            switchTo90Mode();
-                        }
-                    } catch (e) {
-                        console.error('❌ 處理 Unity 旋鈕模式切換指令時發生錯誤:', e);
-                    }
-                };
             });
         }
         
