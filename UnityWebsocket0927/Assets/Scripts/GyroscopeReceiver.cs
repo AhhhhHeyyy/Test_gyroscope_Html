@@ -465,6 +465,13 @@ public class GyroscopeReceiver : MonoBehaviour
                             {
                                 if (serverMessage.data != null)
                                 {
+                                    // 若是 Unity 自己送出的 toggle_request（用來叫 Web 切換），這裡只做 Debug，不更新模式數值
+                                    if (!string.IsNullOrEmpty(serverMessage.data.mode) && serverMessage.data.mode == "toggle_request")
+                                    {
+                                        Debug.Log($"🔁 [Unity] 收到 echo 的 toggle_request spin_mode（來自伺服器廣播），不更新模式，只用來觀察流程。timestamp={serverMessage.data.timestamp}");
+                                        break;
+                                    }
+
                                     Debug.Log($"🔍 解析模式數據: mode={serverMessage.data.mode}, snapAngle={serverMessage.data.snapAngle}, label={serverMessage.data.label}");
                                     
                                     currentSpinModeKey = string.IsNullOrEmpty(serverMessage.data.mode) ? "unknown" : serverMessage.data.mode;
@@ -483,6 +490,8 @@ public class GyroscopeReceiver : MonoBehaviour
                                     };
                                     
                                     OnSpinModeStatusReceived?.Invoke(modeStatus);
+
+                                    Debug.Log($"🌐 [Unity] 從 Web 收到模式更新並已套用: {modeStatus.label} ({modeStatus.mode}, {modeStatus.snapAngle}°) ts={modeStatus.timestamp}");
                                 }
                                 else
                                 {

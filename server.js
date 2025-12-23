@@ -77,6 +77,23 @@ wss.on('connection', (ws, req) => {
                     timestamp: Date.now(),
                     clientId: stats.totalConnections
                 };
+            } else if (msg.type === 'spin_mode') {
+                // 🎚️ 處理旋鈕模式（包含 Unity 發出的 toggle_request）
+                console.log('🎚️ 收到旋鈕模式訊息:', {
+                    mode: msg.data?.mode,
+                    snapAngle: msg.data?.snapAngle,
+                    label: msg.data?.label,
+                    timestamp: msg.data?.timestamp,
+                    fromClientId: stats.totalConnections
+                });
+
+                // 原樣轉發給其他 client（Unity / 手機彼此都能收到）
+                out = {
+                    type: 'spin_mode',
+                    data: msg.data,
+                    timestamp: Date.now(),
+                    clientId: stats.totalConnections
+                };
             } else if (msg.type === 'position') {
                 // 📍 處理 8th Wall 位置數據
                 console.log('📍 收到位置數據:', {
