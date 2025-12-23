@@ -620,12 +620,36 @@ public class GyroscopeReceiver : MonoBehaviour
             Debug.LogWarning("⚠️ WebSocket為空！");
         }
 
+        // 監聽空白鍵，向伺服器發送一次模式切換指令
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            SendToggleSpinMode();
+        }
+
         m_alpha = alpha;
         m_beta = beta;
         m_gamma = gamma;
         m_lastSpinAngle = lastSpinAngle;
         m_spinCount = spinCount;
         #endif
+    }
+
+    /// <summary>
+    /// 向伺服器發送「切換旋鈕模式」指令，讓前端在 90° / 120° 模式之間切換
+    /// </summary>
+    public void SendToggleSpinMode()
+    {
+        if (websocket != null && websocket.State == WebSocketState.Open)
+        {
+            // 使用簡單字串組成 JSON，避免 JsonUtility 對匿名型別支援問題
+            string json = "{\"type\":\"toggle_spin_mode\"}";
+            websocket.SendText(json);
+            Debug.Log("📤 已發送 toggle_spin_mode 指令至伺服器");
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ WebSocket 未連接，無法發送 toggle_spin_mode 指令");
+        }
     }
     
     public void Disconnect()
@@ -686,16 +710,6 @@ public class GyroscopeReceiver : MonoBehaviour
             Debug.LogWarning("⚠️ WebSocket未連接，無法發送JSON");
         }
     }
-
-      // 發送「請網頁切換旋鈕模式」的指令（90° <-> 120°）
-      public void SendSpinModeToggle()
-      {
-          var msg = new
-          {
-              type = "spin_mode_toggle"
-          };
-          SendJson(msg);
-      }
     
     // 加入房間
     public void JoinRoom(string roomId, string role)

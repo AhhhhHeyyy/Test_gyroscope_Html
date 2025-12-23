@@ -1021,21 +1021,25 @@
                             return;
                         }
 
-                        // Unity 要求切換旋鈕模式（90° <-> 120°）
-                        if (data.type === 'spin_mode_toggle') {
-                            console.log('🔁 收到 Unity 的 spin_mode_toggle 指令');
-                            if (typeof window.toggleSpinModeFromServer === 'function') {
-                                window.toggleSpinModeFromServer();
-                            } else {
-                                console.warn('⚠️ toggleSpinModeFromServer 尚未就緒');
-                            }
-                            return;
-                        }
-
                         // 處理 ready 消息（房間配對完成）
                         if (data.type === 'ready') {
                             console.log('🤝 房間配對完成:', data.message);
                             // 不要 return，讓後續信令也能被處理
+                        }
+                        
+                        // 從 Unity 端收到旋鈕模式切換指令
+                        if (data.type === 'toggle_spin_mode') {
+                            console.log('🎮 收到來自 Unity 的模式切換指令');
+                            if (window.toggleSpinModeFromServer) {
+                                try {
+                                    window.toggleSpinModeFromServer();
+                                } catch (e) {
+                                    console.error('執行模式切換回調時發生錯誤:', e);
+                                }
+                            } else {
+                                console.warn('尚未初始化旋轉控制器，無法切換模式');
+                            }
+                            return;
                         }
                         
                         // WebRTC 原生三型別
@@ -2390,18 +2394,16 @@
                     
                     console.log('✅ 90°模式切換完成');
                 }
-
-                // 提供給 WebSocket 消息使用的全域切換函式
-                window.toggleSpinModeFromServer = function () {
+                
+                // 給 Unity / 伺服器用的模式切換入口：每收到一次就 120° ↔ 90° 切換
+                function toggleSpinModeFromServer() {
                     console.log('🔁 toggleSpinModeFromServer 被呼叫，目前 isIn90Mode =', isIn90Mode);
                     if (isIn90Mode) {
-                        // 正在 90° 模式 → 切回 120°
                         switchToDefaultMode();
                     } else {
-                        // 正在 120° 模式 → 切到 90°
                         switchTo90Mode();
                     }
-                };
+                }
                 
                 function enforceFullRotationLock() {
                     if (spinLocked) return;
@@ -2654,6 +2656,9 @@
                 if (selectModeButton) {
                     selectModeButton.addEventListener('click', switchTo90Mode);
                 }
+                
+                // 將模式切換函數暴露到全域，讓 WebSocket 收到指令時可以呼叫
+                window.toggleSpinModeFromServer = toggleSpinModeFromServer;
                 
                 switchToDefaultMode();
                 console.log("旋转控制器创建成功:", draggable);
