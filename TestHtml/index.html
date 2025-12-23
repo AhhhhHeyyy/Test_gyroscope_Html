@@ -2435,9 +2435,11 @@
                     spinSoundEffect.play().catch(e => console.log("音效播放失败:", e));
                     triggerBigVibrationForce();
                     
-                    snapResetTimer = setTimeout(() => {
-                        switchToDefaultMode();
-                    }, SPIN_SNAP_SETTINGS.LOCK_WAIT_DURATION);
+                    // ⚠️ 取消：原本在 90° 模式下，轉完後會自動等待一段時間再切回 120° 模式
+                    // 為了讓模式完全由 Unity 控制模式切換，這裡不再自動呼叫 switchToDefaultMode()
+                    // snapResetTimer = setTimeout(() => {
+                    //     switchToDefaultMode();
+                    // }, SPIN_SNAP_SETTINGS.LOCK_WAIT_DURATION);
                 }
                 
                 // 计算从初始角度开始的总旋转角度（支持多圈旋转）
