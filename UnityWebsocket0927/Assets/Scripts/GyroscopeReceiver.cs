@@ -686,6 +686,16 @@ public class GyroscopeReceiver : MonoBehaviour
             Debug.LogWarning("⚠️ WebSocket未連接，無法發送JSON");
         }
     }
+
+      // 發送「請網頁切換旋鈕模式」的指令（90° <-> 120°）
+      public void SendSpinModeToggle()
+      {
+          var msg = new
+          {
+              type = "spin_mode_toggle"
+          };
+          SendJson(msg);
+      }
     
     // 加入房間
     public void JoinRoom(string roomId, string role)

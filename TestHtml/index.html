@@ -1021,6 +1021,17 @@
                             return;
                         }
 
+                        // Unity 要求切換旋鈕模式（90° <-> 120°）
+                        if (data.type === 'spin_mode_toggle') {
+                            console.log('🔁 收到 Unity 的 spin_mode_toggle 指令');
+                            if (typeof window.toggleSpinModeFromServer === 'function') {
+                                window.toggleSpinModeFromServer();
+                            } else {
+                                console.warn('⚠️ toggleSpinModeFromServer 尚未就緒');
+                            }
+                            return;
+                        }
+
                         // 處理 ready 消息（房間配對完成）
                         if (data.type === 'ready') {
                             console.log('🤝 房間配對完成:', data.message);
@@ -2379,6 +2390,18 @@
                     
                     console.log('✅ 90°模式切換完成');
                 }
+
+                // 提供給 WebSocket 消息使用的全域切換函式
+                window.toggleSpinModeFromServer = function () {
+                    console.log('🔁 toggleSpinModeFromServer 被呼叫，目前 isIn90Mode =', isIn90Mode);
+                    if (isIn90Mode) {
+                        // 正在 90° 模式 → 切回 120°
+                        switchToDefaultMode();
+                    } else {
+                        // 正在 120° 模式 → 切到 90°
+                        switchTo90Mode();
+                    }
+                };
                 
                 function enforceFullRotationLock() {
                     if (spinLocked) return;
