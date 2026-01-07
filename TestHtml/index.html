@@ -2374,21 +2374,25 @@
                     lastModeAngleForThreshold = null;
                     initialRotationAngle = null;
                     totalAbsoluteRotation = 0;
-                    gsap.set(knobElement, { rotation: 0 });
-                    updateSpinAngleDisplay(true);
                     showSelectButton(false);
                     if (spinDraggable) {
                         spinDraggable.enable();
                     }
+                    // 先立刻把模式資訊送給 Unity（包含 90° 吸附設定）
                     updateSpinModeStatus('selected');
                     
-                    // 立即發送一次 spin 消息（角度為0），確保 Unity 立即收到模式信息
-                    if (gyroWS && typeof gyroWS.sendSpinEvent === 'function') {
-                        console.log('📤 立即發送 spin 消息以同步模式信息到 Unity');
-                        gyroWS.sendSpinEvent(0, Date.now());
-                    }
+                    // 再等待 1 秒後，將轉盤角度「瞬間」歸 0 並同步 0° 給 Unity
+                    setTimeout(() => {
+                        // 如果這 1 秒內已被鎖定或切回 120° 模式，就不再強制歸零
+                        if (!isIn90Mode || spinLocked) {
+                            return;
+                        }
+                        gsap.set(knobElement, { rotation: 0 });
+                        // force = true → 立即同步當前角度（0°）到 Unity
+                        updateSpinAngleDisplay(true);
+                    }, 1000);
                     
-                    console.log('✅ 90°模式切換完成');
+                    console.log('✅ 90°模式切換完成（1 秒後將角度瞬間歸 0）');
                 }
 
                 // 提供給 Unity 端使用的全域函式：當收到 WebSocket 的 spin_mode_toggle 時呼叫
