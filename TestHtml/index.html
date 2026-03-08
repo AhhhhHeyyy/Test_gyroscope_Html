@@ -399,9 +399,6 @@
             <button class="nav-button" data-target="spinnerSection" style="display: none; padding: 10px 20px; border: none; border-radius: 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; cursor: pointer; font-weight: bold; transition: all 0.3s ease;">
                 🎯 旋转控制
             </button>
-            <a href="mindar-position.html" class="nav-button" style="display: none; padding: 10px 20px; border: none; border-radius: 8px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; cursor: pointer; font-weight: bold; transition: all 0.3s ease; text-decoration: none;">
-                📍 AR 位置
-            </a>
         </div>
         
         <h1 style="display: none;">🎯 旋轉控制器</h1>
@@ -766,9 +763,6 @@
                         // 显示旋转控制按钮
                         const spinnerBtn = navBar.querySelector('[data-target="spinnerSection"]');
                         if (spinnerBtn) spinnerBtn.style.display = 'block';
-                        // 显示 AR 位置連結
-                        const arLink = navBar.querySelector('a[href="mindar-position.html"]');
-                        if (arLink) arLink.style.display = 'inline-block';
                     }
                 });
             }
