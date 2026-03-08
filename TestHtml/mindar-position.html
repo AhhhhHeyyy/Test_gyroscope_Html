@@ -189,6 +189,26 @@
         dataPanel.style.display = "none";
       });
 
+      sceneEl.addEventListener("arReady", () => {
+        console.log("MindAR arReady");
+        statusEl.textContent = "MindAR 已啟動，等待掃描...";
+      });
+
+      sceneEl.addEventListener("arError", (e) => {
+        console.error("MindAR arError", e);
+        statusEl.textContent = "MindAR 啟動失敗（通常是相機沒啟動）";
+      });
+
+      targetEl.addEventListener("targetFound", () => {
+        console.log("targetFound");
+        statusEl.textContent = "已找到 marker";
+      });
+
+      targetEl.addEventListener("targetLost", () => {
+        console.log("targetLost");
+        statusEl.textContent = "marker 遺失";
+      });
+
       // A-Frame / MindAR 場景啟動後開始送
       sceneEl.addEventListener("loaded", () => {
         requestAnimationFrame(sendPose);
