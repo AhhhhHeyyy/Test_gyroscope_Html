@@ -93,6 +93,7 @@
 
 		arToolkitSource.init(function onReady() {
 			arToolkitSource.domElement.style.zIndex = '-1'
+			arToolkitSource.domElement.style.visibility = 'hidden'
 			arToolkitSource.domElement.addEventListener('canplay', () => {
 				console.log(
 					'canplay',
