@@ -1,219 +1,30 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>MindAR Position Sender</title>
-
-  <!-- MindAR + A-Frame：官方最小結構。需自備 targets.mind 放在同目錄。 -->
-  <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image.prod.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-
-  <style>
-    html, body {
-      margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #000;
-      font-family: sans-serif;
-    }
-
-    #hud {
-      position: fixed;
-      left: 12px;
-      top: 12px;
-      z-index: 10;
-      color: #fff;
-      background: rgba(0,0,0,0.6);
-      padding: 12px 14px;
-      border-radius: 8px;
-      font-size: 14px;
-      line-height: 1.6;
-      min-width: 200px;
-    }
-    #hud .status { font-weight: bold; margin-bottom: 8px; }
-    #hud .row { margin: 4px 0; }
-    #hud .label { color: #aaa; margin-right: 6px; }
-    #hud .value { font-family: monospace; color: #0af; }
-  </style>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 </head>
 <body>
-  <div id="hud">
-    <div id="status" class="status">初始化中...</div>
-    <div id="dataPanel" style="display: none;">
-      <div class="row"><span class="label">Position</span><span id="posX" class="value">-</span>, <span id="posY" class="value">-</span>, <span id="posZ" class="value">-</span></div>
-      <div class="row"><span class="label">Rotation</span><span id="rotX" class="value">-</span>, <span id="rotY" class="value">-</span>, <span id="rotZ" class="value">-</span>, <span id="rotW" class="value">-</span></div>
-      <div class="row"><span class="label">Delta</span><span id="deltaX" class="value">-</span>, <span id="deltaY" class="value">-</span>, <span id="deltaZ" class="value">-</span></div>
-    </div>
-  </div>
-
   <a-scene
-    mindar-image="imageTargetSrc: ./targets.mind; autoStart: true;"
-    embedded
-    color-space="sRGB"
-    renderer="colorManagement: true, physicallyCorrectLights"
+    mindar-image="imageTargetSrc: https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.2.5/examples/image-tracking/assets/card-example/card.mind;"
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false"
   >
-    <a-camera id="ar-camera" position="0 0 0" look-controls="enabled: false"></a-camera>
-
-    <!-- 這個 entity 會被 MindAR 更新 visibility / position -->
-    <a-entity id="target0" mindar-image-target="targetIndex: 0">
-      <!-- 可有可無，只是方便確認 target 有被抓到 -->
-      <a-plane
-        position="0 0 0"
-        width="1"
-        height="0.6"
-        color="#00AEEF"
-        opacity="0.15"
-      ></a-plane>
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+    <a-entity id="target" mindar-image-target="targetIndex: 0">
+      <a-plane color="blue" opacity="0.5" position="0 0 0" height="0.552" width="1"></a-plane>
     </a-entity>
   </a-scene>
 
   <script>
-    (() => {
-      const statusEl = document.getElementById("status");
-      const dataPanel = document.getElementById("dataPanel");
-      const sceneEl = document.querySelector("a-scene");
-      const cameraEl = document.getElementById("ar-camera");
-      const targetEl = document.getElementById("target0");
+    const sceneEl = document.querySelector('a-scene');
+    const targetEl = document.querySelector('#target');
 
-      // 同源 WebSocket：沿用你現有 server.js
-      const wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
-      const ws = new WebSocket(wsUrl);
-
-      let lastSentAt = 0;
-      let lastPos = { x: 0, y: 0, z: 0 };
-      const sendIntervalMs = 50; // 約 20 FPS，夠穩也不會太吵
-
-      // three.js 物件重複利用，避免每幀 new
-      const invTargetWorld = new THREE.Matrix4();
-      const relativeMatrix = new THREE.Matrix4();
-      const position = new THREE.Vector3();
-      const quaternion = new THREE.Quaternion();
-      const scale = new THREE.Vector3();
-
-      function round6(v) {
-        return Math.round(v * 1000000) / 1000000;
-      }
-
-      function sendPose(now) {
-        requestAnimationFrame(sendPose);
-
-        if (!sceneEl || !cameraEl || !targetEl) return;
-        if (!cameraEl.object3D || !targetEl.object3D) return;
-        if (ws.readyState !== WebSocket.OPEN) return;
-
-        // MindAR 沒追到時就不送有效 pose
-        const tracking = !!targetEl.object3D.visible;
-        if (!tracking) {
-          statusEl.textContent = "未追蹤到 marker";
-          dataPanel.style.display = "none";
-          return;
-        }
-
-        if (now - lastSentAt < sendIntervalMs) return;
-        lastSentAt = now;
-
-        // 更新世界矩陣
-        cameraEl.object3D.updateMatrixWorld(true);
-        targetEl.object3D.updateMatrixWorld(true);
-
-        // 手機(相機)相對 marker 的位姿
-        // relative = inverse(targetWorld) * cameraWorld
-        invTargetWorld.copy(targetEl.object3D.matrixWorld).invert();
-        relativeMatrix.multiplyMatrices(invTargetWorld, cameraEl.object3D.matrixWorld);
-        relativeMatrix.decompose(position, quaternion, scale);
-
-        const currentPos = {
-          x: round6(position.x),
-          y: round6(position.y),
-          z: round6(position.z),
-        };
-
-        const currentRot = {
-          x: round6(quaternion.x),
-          y: round6(quaternion.y),
-          z: round6(quaternion.z),
-          w: round6(quaternion.w),
-        };
-
-        const delta = {
-          x: round6(currentPos.x - lastPos.x),
-          y: round6(currentPos.y - lastPos.y),
-          z: round6(currentPos.z - lastPos.z),
-        };
-
-        lastPos = currentPos;
-
-        const payload = {
-          type: "position",
-          data: {
-            position: currentPos,
-            rotation: currentRot,
-            delta: delta,
-            timestamp: Date.now()
-          }
-        };
-
-        ws.send(JSON.stringify(payload));
-
-        statusEl.textContent = "追蹤中";
-        dataPanel.style.display = "block";
-        document.getElementById("posX").textContent = currentPos.x.toFixed(4);
-        document.getElementById("posY").textContent = currentPos.y.toFixed(4);
-        document.getElementById("posZ").textContent = currentPos.z.toFixed(4);
-        document.getElementById("rotX").textContent = currentRot.x.toFixed(4);
-        document.getElementById("rotY").textContent = currentRot.y.toFixed(4);
-        document.getElementById("rotZ").textContent = currentRot.z.toFixed(4);
-        document.getElementById("rotW").textContent = currentRot.w.toFixed(4);
-        document.getElementById("deltaX").textContent = delta.x.toFixed(4);
-        document.getElementById("deltaY").textContent = delta.y.toFixed(4);
-        document.getElementById("deltaZ").textContent = delta.z.toFixed(4);
-      }
-
-      ws.addEventListener("open", () => {
-        statusEl.textContent = "WebSocket 已連線，等待追蹤...";
-        dataPanel.style.display = "none";
-      });
-
-      ws.addEventListener("close", () => {
-        statusEl.textContent = "WebSocket 已斷線";
-        dataPanel.style.display = "none";
-      });
-
-      ws.addEventListener("error", () => {
-        statusEl.textContent = "WebSocket 錯誤";
-        dataPanel.style.display = "none";
-      });
-
-      sceneEl.addEventListener("arReady", () => {
-        console.log("MindAR arReady");
-        statusEl.textContent = "MindAR 已啟動，等待掃描...";
-      });
-
-      sceneEl.addEventListener("arError", (e) => {
-        console.error("MindAR arError", e);
-        statusEl.textContent = "MindAR 啟動失敗（通常是相機沒啟動）";
-      });
-
-      targetEl.addEventListener("targetFound", () => {
-        console.log("targetFound");
-        statusEl.textContent = "已找到 marker";
-      });
-
-      targetEl.addEventListener("targetLost", () => {
-        console.log("targetLost");
-        statusEl.textContent = "marker 遺失";
-      });
-
-      // A-Frame / MindAR 場景啟動後開始送
-      sceneEl.addEventListener("loaded", () => {
-        requestAnimationFrame(sendPose);
-      });
-    })();
+    sceneEl.addEventListener('arReady', () => console.log('arReady'));
+    sceneEl.addEventListener('arError', (e) => console.error('arError', e));
+    targetEl.addEventListener('targetFound', () => console.log('targetFound'));
+    targetEl.addEventListener('targetLost', () => console.log('targetLost'));
   </script>
 </body>
 </html>
