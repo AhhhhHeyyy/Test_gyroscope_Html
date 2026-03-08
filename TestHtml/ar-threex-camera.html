@@ -4,8 +4,8 @@
 <script type="importmap">
 	{
       "imports": {
-		"threex": "../build/ar-threex.mjs",
-        "three": "./vendor/three.js/build/three.module.min.js"
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.min.js",
+        "threex": "https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js-threejs@0.3.2/dist/ar.mjs"
       }
     }
 </script>
@@ -16,11 +16,26 @@
 		<br />
 		Contact me any time at <a href='https://twitter.com/nicolocarp' target='_blank'>@nicolocarp</a>
 	</div>
+	<!-- 相機相對於 Marker 的位置與旋轉 -->
+	<div id="camera-pose" style='position: absolute; left: 10px; bottom: 10px; z-index: 10; background: rgba(0,0,0,0.7); color: #0f0; padding: 8px 12px; font-size: 12px; line-height: 1.5; border-radius: 6px; min-width: 200px;'>
+		<div><b>相機相對 Marker</b></div>
+		<div>位置 X: <span id="pos-x">--</span></div>
+		<div>位置 Y: <span id="pos-y">--</span></div>
+		<div>位置 Z: <span id="pos-z">--</span></div>
+		<div>旋轉 X: <span id="rot-x">--</span>°</div>
+		<div>旋轉 Y: <span id="rot-y">--</span>°</div>
+		<div>旋轉 Z: <span id="rot-z">--</span>°</div>
+		<div>Marker: <span id="marker-visible">未偵測</span></div>
+	</div>
 	<script type="module">
 		import * as THREE from 'three'
-		import { ArToolkitSource, ArToolkitContext, ArMarkerControls }  from 'threex'
+		import { THREEx } from 'threex'
 
-		ArToolkitContext.baseURL = '../'
+		var ArToolkitSource = THREEx.ArToolkitSource
+		var ArToolkitContext = THREEx.ArToolkitContext
+		var ArMarkerControls = THREEx.ArMarkerControls
+
+		ArToolkitContext.baseURL = './'
 
 		//////////////////////////////////////////////////////////////////////////////////
 		//		Init
@@ -109,7 +124,7 @@
 
 		function initARContext() { // create atToolkitContext
 			arToolkitContext = new ArToolkitContext({
-				cameraParametersUrl: ArToolkitContext.baseURL + '../data/data/camera_para.dat',
+				cameraParametersUrl: ArToolkitContext.baseURL + 'data/data/camera_para.dat',
 				detectionMode: 'mono'
 			})
 			// initialize it
@@ -126,7 +141,7 @@
 			// MARKER
 			arMarkerControls = new ArMarkerControls(arToolkitContext, camera, {
 				type: 'pattern',
-				patternUrl: ArToolkitContext.baseURL + '../data/data/patt.hiro',
+				patternUrl: ArToolkitContext.baseURL + 'data/data/patt.hiro',
 				// patternUrl : THREEx.ArToolkitContext.baseURL + '../data/data/patt.kanji',
 				// as we controls the camera, set changeMatrixMode: 'cameraTransformMatrix'
 				changeMatrixMode: 'cameraTransformMatrix'
@@ -159,6 +174,38 @@
 			}
 		}
 
+		// 更新畫面上「相機相對 Marker」的顯示
+		function updateCameraPoseDisplay() {
+			var posX = document.getElementById('pos-x')
+			var posY = document.getElementById('pos-y')
+			var posZ = document.getElementById('pos-z')
+			var rotX = document.getElementById('rot-x')
+			var rotY = document.getElementById('rot-y')
+			var rotZ = document.getElementById('rot-z')
+			var markerVis = document.getElementById('marker-visible')
+			if (!posX || !markerVis) return
+
+			if (!camera.visible) {
+				posX.textContent = '--'
+				posY.textContent = '--'
+				posZ.textContent = '--'
+				rotX.textContent = '--'
+				rotY.textContent = '--'
+				rotZ.textContent = '--'
+				markerVis.textContent = '未偵測'
+				return
+			}
+
+			markerVis.textContent = '已偵測'
+			posX.textContent = camera.position.x.toFixed(4)
+			posY.textContent = camera.position.y.toFixed(4)
+			posZ.textContent = camera.position.z.toFixed(4)
+			var deg = 180 / Math.PI
+			rotX.textContent = (camera.rotation.x * deg).toFixed(2)
+			rotY.textContent = (camera.rotation.y * deg).toFixed(2)
+			rotZ.textContent = (camera.rotation.z * deg).toFixed(2)
+		}
+
 		// update artoolkit on every frame
 		onRenderFcts.push(function () {
 			if (!arToolkitContext || !arToolkitSource || !arToolkitSource.ready) {
@@ -169,6 +216,9 @@
 
 			// update scene.visible if the marker is seen
 			scene.visible = camera.visible
+
+			// 更新網頁上的相機相對 Marker 數據
+			updateCameraPoseDisplay()
 		})
 
 		//////////////////////////////////////////////////////////////////////////////////
