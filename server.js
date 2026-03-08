@@ -108,6 +108,14 @@ wss.on('connection', (ws, req) => {
                     timestamp: Date.now(),
                     clientId: stats.totalConnections
                 };
+            } else if (msg.type === 'ar_camera_pose') {
+                // 📷 AR 頁面：相機相對 Marker 的位置/旋轉，轉發給 Unity
+                out = {
+                    type: 'ar_camera_pose',
+                    data: msg.data,
+                    timestamp: Date.now(),
+                    clientId: stats.totalConnections
+                };
             } else {
                 // 預設當作陀螺儀角度（向後相容）
                 console.log('📱 收到陀螺儀數據:', {

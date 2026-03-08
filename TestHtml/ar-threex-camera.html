@@ -174,7 +174,23 @@
 			}
 		}
 
-		// 更新畫面上「相機相對 Marker」的顯示
+		// WebSocket：連到同一個 host（本地 ws，Railway 上 wss）
+		var arPoseWs = null
+		var arPoseLastSend = 0
+		var AR_POSE_SEND_INTERVAL_MS = 50  // 約 20 次/秒，避免頻寬過大
+		function connectARPoseWebSocket() {
+			var scheme = (location.protocol === 'https:') ? 'wss:' : 'ws:'
+			var url = scheme + '//' + location.host
+			try {
+				arPoseWs = new WebSocket(url)
+				arPoseWs.onopen = function () { console.log('[AR Pose] WebSocket 已連接:', url) }
+				arPoseWs.onclose = function () { console.log('[AR Pose] WebSocket 已關閉') }
+				arPoseWs.onerror = function (e) { console.warn('[AR Pose] WebSocket 錯誤', e) }
+			} catch (e) { console.warn('[AR Pose] WebSocket 建立失敗', e) }
+		}
+		connectARPoseWebSocket()
+
+		// 更新畫面上「相機相對 Marker」的顯示，並透過 WebSocket 送給 server（再轉 Unity）
 		function updateCameraPoseDisplay() {
 			var posX = document.getElementById('pos-x')
 			var posY = document.getElementById('pos-y')
@@ -193,17 +209,53 @@
 				rotY.textContent = '--'
 				rotZ.textContent = '--'
 				markerVis.textContent = '未偵測'
+				// 仍可送一筆 markerVisible: false 讓 Unity 知道目前沒偵測到
+				if (arPoseWs && arPoseWs.readyState === WebSocket.OPEN) {
+					var now = Date.now()
+					if (now - arPoseLastSend >= AR_POSE_SEND_INTERVAL_MS) {
+						arPoseLastSend = now
+						arPoseWs.send(JSON.stringify({
+							type: 'ar_camera_pose',
+							data: {
+								position: { x: 0, y: 0, z: 0 },
+								rotation: { x: 0, y: 0, z: 0 },
+								markerVisible: false
+							},
+							timestamp: now
+						}))
+					}
+				}
 				return
 			}
 
 			markerVis.textContent = '已偵測'
+			var deg = 180 / Math.PI
+			var rx = (camera.rotation.x * deg)
+			var ry = (camera.rotation.y * deg)
+			var rz = (camera.rotation.z * deg)
 			posX.textContent = camera.position.x.toFixed(4)
 			posY.textContent = camera.position.y.toFixed(4)
 			posZ.textContent = camera.position.z.toFixed(4)
-			var deg = 180 / Math.PI
-			rotX.textContent = (camera.rotation.x * deg).toFixed(2)
-			rotY.textContent = (camera.rotation.y * deg).toFixed(2)
-			rotZ.textContent = (camera.rotation.z * deg).toFixed(2)
+			rotX.textContent = rx.toFixed(2)
+			rotY.textContent = ry.toFixed(2)
+			rotZ.textContent = rz.toFixed(2)
+
+			// 透過 WebSocket 送給 server，再轉發到 Unity（節流）
+			if (arPoseWs && arPoseWs.readyState === WebSocket.OPEN) {
+				var now = Date.now()
+				if (now - arPoseLastSend >= AR_POSE_SEND_INTERVAL_MS) {
+					arPoseLastSend = now
+					arPoseWs.send(JSON.stringify({
+						type: 'ar_camera_pose',
+						data: {
+							position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+							rotation: { x: rx, y: ry, z: rz },
+							markerVisible: true
+						},
+						timestamp: now
+					}))
+				}
+			}
 		}
 
 		// update artoolkit on every frame

@@ -30,6 +30,11 @@ public class GyroscopeReceiver : MonoBehaviour
     [SerializeField] private float currentSpinSnapAngle = 120f;
     [SerializeField] private long lastSpinModeTimestamp = 0;
 
+    [Header("AR 相機相對 Marker 位姿（由 ar-threex-camera 頁面經 WebSocket 傳來）")]
+    [SerializeField] private bool arMarkerVisible = false;
+    [SerializeField] private Vector3 arCameraPosition = Vector3.zero;
+    [SerializeField] private Vector3 arCameraRotationDegrees = Vector3.zero;
+
     // 用於紀錄目前 Web 端模式（false=120°，true=90°），只在 Unity 這邊做切換邏輯用
     private bool webSpinIs90Mode = false;
 
@@ -43,6 +48,11 @@ public class GyroscopeReceiver : MonoBehaviour
     
     // 公共属性：允许外部脚本访问当前旋转角度
     public float LastSpinAngle => lastSpinAngle;
+
+    // AR 相機相對 Marker 位姿（由 ar-threex-camera 頁面經 WebSocket 傳來）
+    public bool ARMarkerVisible => arMarkerVisible;
+    public Vector3 ARCameraPosition => arCameraPosition;
+    public Vector3 ARCameraRotationDegrees => arCameraRotationDegrees;
     
     [Header("連接狀態")]
     [SerializeField] public bool isConnected = false;
@@ -165,6 +175,32 @@ public class GyroscopeReceiver : MonoBehaviour
         public float z;
         public float w;
     }
+
+    /// <summary>AR 頁面傳來的「相機相對 Marker」位姿（位置 + 歐拉角度 + 是否偵測到）</summary>
+    [System.Serializable]
+    public class ARCameraPoseData
+    {
+        public PositionVector position;
+        public ArEulerDegrees rotation;  // 歐拉角，單位：度
+        public bool markerVisible;
+    }
+
+    [System.Serializable]
+    public class ArEulerDegrees
+    {
+        public float x;
+        public float y;
+        public float z;
+    }
+
+    [System.Serializable]
+    public class ARCameraPoseMessage
+    {
+        public string type;
+        public ARCameraPoseData data;
+        public long timestamp;
+        public int clientId;
+    }
     
     
     // 事件 - 新增搖晃事件和螢幕捕獲事件
@@ -176,6 +212,7 @@ public class GyroscopeReceiver : MonoBehaviour
     public static event Action<string> OnRawMessage; // 新增原始訊息事件
     public static event Action<SpinModeStatus> OnSpinModeStatusReceived; // 新增旋钮模式事件
     public static event Action<PositionData> OnPositionDataReceived; // 新增位置數據事件
+    public static event Action<ARCameraPoseData> OnARCameraPoseReceived; // AR 相機相對 Marker 位姿
     public static event Action OnConnected;
     public static event Action OnDisconnected;
     public static event Action<string> OnError;
@@ -505,6 +542,39 @@ public class GyroscopeReceiver : MonoBehaviour
                             }
                             break;
                             
+                        case "ar_camera_pose":
+                            // 處理 AR 頁面：相機相對 Marker 的位置/旋轉（半透明黑底綠字那組數值）
+                            try
+                            {
+                                var arMsg = JsonUtility.FromJson<ARCameraPoseMessage>(message);
+                                if (arMsg?.data != null)
+                                {
+                                    arMarkerVisible = arMsg.data.markerVisible;
+                                    if (arMsg.data.position != null)
+                                    {
+                                        arCameraPosition = new Vector3(
+                                            arMsg.data.position.x,
+                                            arMsg.data.position.y,
+                                            arMsg.data.position.z
+                                        );
+                                    }
+                                    if (arMsg.data.rotation != null)
+                                    {
+                                        arCameraRotationDegrees = new Vector3(
+                                            arMsg.data.rotation.x,
+                                            arMsg.data.rotation.y,
+                                            arMsg.data.rotation.z
+                                        );
+                                    }
+                                    OnARCameraPoseReceived?.Invoke(arMsg.data);
+                                }
+                            }
+                            catch (System.Exception e)
+                            {
+                                Debug.LogError($"❌ 解析 ar_camera_pose 錯誤: {e.Message}");
+                            }
+                            break;
+
                         case "position":
                             // 處理 8th Wall 位置數據
                             Debug.Log($"📍 收到位置數據: {message}");
@@ -797,6 +867,7 @@ public class GyroscopeReceiver : MonoBehaviour
             GUILayout.Label($"最后角度: {lastSpinAngle:F2}°");
             GUILayout.Label($"旋钮模式: {currentSpinMode} ({currentSpinModeKey}, {currentSpinSnapAngle:F0}°)");
             GUILayout.Label($"模式更新時間: {lastSpinModeTimestamp}");
+            GUILayout.Label($"AR Marker: {(arMarkerVisible ? "已偵測" : "未偵測")} | Pos={arCameraPosition.x:F2},{arCameraPosition.y:F2},{arCameraPosition.z:F2} | Rot°={arCameraRotationDegrees.x:F1},{arCameraRotationDegrees.y:F1},{arCameraRotationDegrees.z:F1}");
             
             if (!isConnected && GUILayout.Button("重新連接"))
             {
