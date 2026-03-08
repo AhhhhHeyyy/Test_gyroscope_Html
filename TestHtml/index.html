@@ -659,8 +659,9 @@
             <div class="feature-grid" style="display: none;"></div>
         </div>
 
-        <div id="arCameraSection" class="cube-feature" style="display: none; justify-content: center; align-items: center; flex-direction: column; min-height: 70vh; background: none; box-shadow: none; border-left: none; padding: 0; margin: 0; border: none; border-radius: 0;">
-            <iframe src="ar-threex-camera.html" style="width: 100%; height: 80vh; border: none;"></iframe>
+        <div id="arCameraSection" class="cube-feature" style="display: none; position: relative; justify-content: center; align-items: center; flex-direction: column; min-height: 70vh; background: none; box-shadow: none; border-left: none; padding: 0; margin: 0; border: none; border-radius: 0;">
+            <iframe id="arFrame" src="ar-threex-camera.html" allow="camera" style="width: 100%; height: 80vh; border: none;"></iframe>
+            <div style="position:absolute; inset:0; background:#5078c8; pointer-events:none; z-index:10;"></div>
         </div>
         
         <div class="deploy-info" style="display: none;">
