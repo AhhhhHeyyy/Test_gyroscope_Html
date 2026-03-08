@@ -16,12 +16,6 @@
 		<br />
 		Contact me any time at <a href='https://twitter.com/nicolocarp' target='_blank'>@nicolocarp</a>
 	</div>
-	<!-- 相機相對於 marker 的位置數據顯示 -->
-	<div id="cameraPoseDisplay" style="position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 2; background: rgba(0,0,0,0.7); color: #0f0; padding: 10px; font-size: 12px; border-radius: 8px; font-family: monospace;">
-		<div>Marker: <span id="markerStatus">未偵測</span></div>
-		<div>Position (相機相對 marker): <span id="posText">—</span></div>
-		<div>Rotation (度): <span id="rotText">—</span></div>
-	</div>
 	<script type="module">
 		import * as THREE from 'three'
 		import { ArToolkitSource, ArToolkitContext, ArMarkerControls }  from 'threex'
@@ -104,7 +98,7 @@
 		function onResize() {
 			arToolkitSource.onResizeElement()
 			arToolkitSource.copyElementSizeTo(renderer.domElement)
-			if (window.arToolkitContext && window.arToolkitContext.arController !== null) {
+			if (window.arToolkitContext.arController !== null) {
 				arToolkitSource.copyElementSizeTo(window.arToolkitContext.arController.canvas)
 			}
 		}
@@ -115,7 +109,7 @@
 
 		function initARContext() { // create atToolkitContext
 			arToolkitContext = new ArToolkitContext({
-				cameraParametersUrl: ArToolkitContext.baseURL + 'data/data/camera_para.dat',
+				cameraParametersUrl: ArToolkitContext.baseURL + '../data/data/camera_para.dat',
 				detectionMode: 'mono'
 			})
 			// initialize it
@@ -132,7 +126,7 @@
 			// MARKER
 			arMarkerControls = new ArMarkerControls(arToolkitContext, camera, {
 				type: 'pattern',
-				patternUrl: ArToolkitContext.baseURL + 'data/data/patt.hiro',
+				patternUrl: ArToolkitContext.baseURL + '../data/data/patt.hiro',
 				// patternUrl : THREEx.ArToolkitContext.baseURL + '../data/data/patt.kanji',
 				// as we controls the camera, set changeMatrixMode: 'cameraTransformMatrix'
 				changeMatrixMode: 'cameraTransformMatrix'
@@ -175,29 +169,6 @@
 
 			// update scene.visible if the marker is seen
 			scene.visible = camera.visible
-
-			// 更新相機相對於 marker 的位置數據顯示
-			var markerStatusEl = document.getElementById('markerStatus');
-			var posEl = document.getElementById('posText');
-			var rotEl = document.getElementById('rotText');
-			if (markerStatusEl && posEl && rotEl) {
-				if (camera.visible) {
-					markerStatusEl.textContent = '已偵測';
-					markerStatusEl.style.color = '#0f0';
-					var p = camera.position;
-					posEl.textContent = 'x=' + p.x.toFixed(3) + ', y=' + p.y.toFixed(3) + ', z=' + p.z.toFixed(3);
-					var r = camera.rotation;
-					var degX = THREE.MathUtils.radToDeg(r.x);
-					var degY = THREE.MathUtils.radToDeg(r.y);
-					var degZ = THREE.MathUtils.radToDeg(r.z);
-					rotEl.textContent = 'x=' + degX.toFixed(2) + '°, y=' + degY.toFixed(2) + '°, z=' + degZ.toFixed(2) + '°';
-				} else {
-					markerStatusEl.textContent = '未偵測';
-					markerStatusEl.style.color = '#f80';
-					posEl.textContent = '—';
-					rotEl.textContent = '—';
-				}
-			}
 		})
 
 		//////////////////////////////////////////////////////////////////////////////////
@@ -215,14 +186,14 @@
 		mesh.position.y = geometry.parameters.height / 2
 		scene.add(mesh);
 
-		var geometry2 = new THREE.TorusKnotGeometry(0.3, 0.1, 64, 16);
-		var material2 = new THREE.MeshNormalMaterial();
-		var mesh2 = new THREE.Mesh(geometry2, material2);
-		mesh2.position.y = 0.5
-		scene.add(mesh2);
+		var geometry = new THREE.TorusKnotGeometry(0.3, 0.1, 64, 16);
+		var material = new THREE.MeshNormalMaterial();
+		var mesh = new THREE.Mesh(geometry, material);
+		mesh.position.y = 0.5
+		scene.add(mesh);
 
 		onRenderFcts.push(function (delta) {
-			mesh2.rotation.x += Math.PI * delta
+			mesh.rotation.x += Math.PI * delta
 		})
 
 		//////////////////////////////////////////////////////////////////////////////////
