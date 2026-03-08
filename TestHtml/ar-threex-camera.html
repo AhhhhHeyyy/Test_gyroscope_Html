@@ -53,6 +53,7 @@
 		renderer.domElement.style.position = 'absolute'
 		renderer.domElement.style.top = '0px'
 		renderer.domElement.style.left = '0px'
+		renderer.domElement.style.zIndex = '0'
 		document.body.appendChild(renderer.domElement);
 
 		// array of functions for the rendering loop
@@ -91,6 +92,7 @@
 		})
 
 		arToolkitSource.init(function onReady() {
+			arToolkitSource.domElement.style.zIndex = '0'
 			arToolkitSource.domElement.addEventListener('canplay', () => {
 				console.log(
 					'canplay',
