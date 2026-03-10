@@ -11,15 +11,15 @@
 </script>
 
 <body style='font-family: Monospace;'>
-	<!-- 全不透明顏色遮罩：只遮相機視窗，z-index 低於數值區(10) 所以數值不被遮；pointer-events: none 不影響操作 -->
-	<div id="ar-color-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; pointer-events: none; background: rgb(80, 120, 200);"></div>
+	<!-- 全畫面顏色遮罩（不阻擋互動） -->
+	<div style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 9999; pointer-events: none;"></div>
 	<div style='position: absolute; top: 10px; width:100%; text-align: center; z-index: 1;'>
 		<a href="https://github.com/AR-js-org/AR.js/" target="_blank">AR.js</a> - three.js camera transform
 		<br />
 		Contact me any time at <a href='https://twitter.com/nicolocarp' target='_blank'>@nicolocarp</a>
 	</div>
 	<!-- 相機相對於 Marker 的位置與旋轉 -->
-	<div id="camera-pose" style='position: absolute; left: 10px; bottom: 10px; z-index: 10000; background: rgba(0,0,0,0.7); color: #0f0; padding: 8px 12px; font-size: 12px; line-height: 1.5; border-radius: 6px; min-width: 200px;'>
+	<div id="camera-pose" style='position: absolute; left: 10px; bottom: 10px; z-index: 10; background: rgba(0,0,0,0.7); color: #0f0; padding: 8px 12px; font-size: 12px; line-height: 1.5; border-radius: 6px; min-width: 200px;'>
 		<div><b>相機相對 Marker</b></div>
 		<div>位置 X: <span id="pos-x">--</span></div>
 		<div>位置 Y: <span id="pos-y">--</span></div>
@@ -53,7 +53,6 @@
 		renderer.domElement.style.position = 'absolute'
 		renderer.domElement.style.top = '0px'
 		renderer.domElement.style.left = '0px'
-		renderer.domElement.style.zIndex = '-1'
 		document.body.appendChild(renderer.domElement);
 
 		// array of functions for the rendering loop
@@ -92,8 +91,6 @@
 		})
 
 		arToolkitSource.init(function onReady() {
-			arToolkitSource.domElement.style.zIndex = '-1'
-			arToolkitSource.domElement.style.visibility = 'hidden'
 			arToolkitSource.domElement.addEventListener('canplay', () => {
 				console.log(
 					'canplay',
