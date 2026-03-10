@@ -1,16 +1,22 @@
 <!DOCTYPE html>
-<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-<!-- import three.js and ar-threex library as a module-->
-<script type="importmap">
-	{
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.min.js",
-        "threex": "https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js-threejs@0.3.2/dist/ar.mjs"
-      }
-    }
-</script>
+<html>
+<head>
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<title>Hello, AR Cube!</title>
+	<!-- include three.js library (CDN) -->
+	<script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/examples/vendor/three.js/build/three.min.js"></script>
+	<!-- include jsartoolkit5 (CDN) -->
+	<script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/examples/vendor/jsartoolkit5/artoolkit.min.js"></script>
+	<script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/examples/vendor/jsartoolkit5/artoolkit.api.js"></script>
+	<!-- include threex.artoolkit (CDN) -->
+	<script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/examples/vendor/threex/threex-artoolkitsource.js"></script>
+	<script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/examples/vendor/threex/threex-artoolkitcontext.js"></script>
+	<script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/examples/vendor/threex/threex-arbasecontrols.js"></script>
+	<script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/examples/vendor/threex/threex-armarkercontrols.js"></script>
+	<script src="https://raw.githack.com/AR-js-org/AR.js/master/three.js/examples/vendor/threex/threex-arsmoothedcontrols.js"></script>
+</head>
 
-<body style='font-family: Monospace;'>
+<body style='margin: 0px; overflow: hidden; font-family: Monospace;'>
 	<!-- 全畫面顏色遮罩（不阻擋互動） -->
 	<div style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 9999; pointer-events: none;"></div>
 	<div style='position: absolute; top: 10px; width:100%; text-align: center; z-index: 1;'>
@@ -18,7 +24,7 @@
 		<br />
 		Contact me any time at <a href='https://twitter.com/nicolocarp' target='_blank'>@nicolocarp</a>
 	</div>
-	<!-- 相機相對於 Marker 的位置與旋轉（恢復原本小框大小） -->
+	<!-- 相機相對於 Marker 的位置與旋轉（小框 HUD） -->
 	<div id="camera-pose" style='position: absolute; left: 10px; bottom: 10px; z-index: 10; background: rgba(0,0,0,0.7); color: #0f0; padding: 8px 12px; font-size: 12px; line-height: 1.5; border-radius: 6px; min-width: 200px;'>
 		<div><b>相機相對 Marker</b></div>
 		<div>位置 X: <span id="pos-x">--</span></div>
@@ -29,193 +35,189 @@
 		<div>旋轉 Z: <span id="rot-z">--</span>°</div>
 		<div>Marker: <span id="marker-visible">未偵測</span></div>
 	</div>
-	<script type="module">
-		import * as THREE from 'three'
-		import { THREEx } from 'threex'
 
-		var ArToolkitSource = THREEx.ArToolkitSource
-		var ArToolkitContext = THREEx.ArToolkitContext
-		var ArMarkerControls = THREEx.ArMarkerControls
+	<!-- 
+	  Example created by Lee Stemkoski: https://github.com/stemkoski
+	  Based on the AR.js library and examples created by Jerome Etienne: https://github.com/jeromeetienne/AR.js/
+	-->
 
-		ArToolkitContext.baseURL = './'
+	<script>
 
-		//////////////////////////////////////////////////////////////////////////////////
-		//		Init
-		//////////////////////////////////////////////////////////////////////////////////
+		var scene, camera, renderer, clock, deltaTime, totalTime;
 
-		// init renderer
-		var renderer = new THREE.WebGLRenderer({
-			antialias: true,
-			alpha: true
-		});
-		renderer.setClearColor(new THREE.Color('lightgrey'), 0)
-		renderer.setSize(640, 480);
-		renderer.domElement.style.position = 'absolute'
-		renderer.domElement.style.top = '0px'
-		renderer.domElement.style.left = '0px'
-		document.body.appendChild(renderer.domElement);
+		var arToolkitSource, arToolkitContext, smoothedControls;
 
-		// array of functions for the rendering loop
-		var onRenderFcts = [];
-		var arToolkitContext, arMarkerControls;
+		var markerRoot1;
 
-		// init scene and camera
-		var scene = new THREE.Scene();
+		var mesh1;
 
-		//////////////////////////////////////////////////////////////////////////////////
-		//		Initialize a basic camera
-		//////////////////////////////////////////////////////////////////////////////////
+		// WebSocket 與姿態傳輸相關變數
+		var arPoseWs = null;
+		var arPoseLastSend = 0;
+		var AR_POSE_SEND_INTERVAL_MS = 50; // 約 20 次/秒，避免頻寬過大
 
-		// Create a camera
-		var camera = new THREE.Camera();
-		scene.add(camera);
+		initialize();
+		animate();
 
-		////////////////////////////////////////////////////////////////////////////////
-		//          handle arToolkitSource
-		////////////////////////////////////////////////////////////////////////////////
+		function initialize() {
+			scene = new THREE.Scene();
 
-		var arToolkitSource = new ArToolkitSource({
-			// to read from the webcam
-			sourceType: 'webcam',
+			let ambientLight = new THREE.AmbientLight(0xcccccc, 0.5);
+			scene.add(ambientLight);
 
-			sourceWidth: window.innerWidth > window.innerHeight ? 640 : 480,
-			sourceHeight: window.innerWidth > window.innerHeight ? 480 : 640,
+			camera = new THREE.Camera();
+			scene.add(camera);
 
-			// // to read from an image
-			// sourceType : 'image',
-			// sourceUrl : THREEx.ArToolkitContext.baseURL + '../data/images/img.jpg',
-
-			// to read from a video
-			// sourceType : 'video',
-			// sourceUrl : THREEx.ArToolkitContext.baseURL + '../data/videos/headtracking.mp4',
-		})
-
-		arToolkitSource.init(function onReady() {
-			arToolkitSource.domElement.addEventListener('canplay', () => {
-				console.log(
-					'canplay',
-					'actual source dimensions',
-					arToolkitSource.domElement.videoWidth,
-					arToolkitSource.domElement.videoHeight
-				);
-
-				initARContext();
+			renderer = new THREE.WebGLRenderer({
+				antialias: true,
+				alpha: true
 			});
-			window.arToolkitSource = arToolkitSource;
-			setTimeout(() => {
+			renderer.setClearColor(new THREE.Color('lightgrey'), 0)
+			renderer.setSize(640, 480);
+			renderer.domElement.style.position = 'absolute'
+			renderer.domElement.style.top = '0px'
+			renderer.domElement.style.left = '0px'
+			document.body.appendChild(renderer.domElement);
+
+			clock = new THREE.Clock();
+			deltaTime = 0;
+			totalTime = 0;
+
+			////////////////////////////////////////////////////////////
+			// setup arToolkitSource
+			////////////////////////////////////////////////////////////
+
+			arToolkitSource = new THREEx.ArToolkitSource({
+				sourceType: 'webcam',
+			});
+
+			function onResize() {
+				arToolkitSource.onResize()
+				arToolkitSource.copySizeTo(renderer.domElement)
+				if (arToolkitContext && arToolkitContext.arController !== null) {
+					arToolkitSource.copySizeTo(arToolkitContext.arController.canvas)
+				}
+			}
+
+			arToolkitSource.init(function onReady() {
 				onResize()
-			}, 2000);
-		})
+			});
 
-		// handle resize
-		window.addEventListener('resize', function () {
-			onResize()
-		})
+			// handle resize event
+			window.addEventListener('resize', function () {
+				onResize()
+			});
 
-		function onResize() {
-			arToolkitSource.onResizeElement()
-			arToolkitSource.copyElementSizeTo(renderer.domElement)
-			if (window.arToolkitContext.arController !== null) {
-				arToolkitSource.copyElementSizeTo(window.arToolkitContext.arController.canvas)
-			}
-		}
-		////////////////////////////////////////////////////////////////////////////////
-		//          initialize arToolkitContext
-		////////////////////////////////////////////////////////////////////////////////
+			////////////////////////////////////////////////////////////
+			// setup arToolkitContext
+			////////////////////////////////////////////////////////////
 
-
-		function initARContext() { // create atToolkitContext
-			arToolkitContext = new ArToolkitContext({
-				cameraParametersUrl: ArToolkitContext.baseURL + 'data/data/camera_para.dat',
+			// create atToolkitContext
+			arToolkitContext = new THREEx.ArToolkitContext({
+				cameraParametersUrl: 'data/data/camera_para.dat',
 				detectionMode: 'mono'
-			})
-			// initialize it
-			arToolkitContext.init(() => { // copy projection matrix to camera
+			});
+
+			// copy projection matrix to camera when initialization complete
+			arToolkitContext.init(function onCompleted() {
 				camera.projectionMatrix.copy(arToolkitContext.getProjectionMatrix());
+			});
 
-				arToolkitContext.arController.orientation = getSourceOrientation();
-				arToolkitContext.arController.options.orientation = getSourceOrientation();
+			////////////////////////////////////////////////////////////
+			// setup markerRoots
+			////////////////////////////////////////////////////////////
 
-				console.log('arToolkitContext', arToolkitContext);
-				window.arToolkitContext = arToolkitContext;
-			})
+			// build markerControls
+			markerRoot1 = new THREE.Group();
+			scene.add(markerRoot1);
 
-			// MARKER
-			arMarkerControls = new ArMarkerControls(arToolkitContext, camera, {
+			let markerControls1 = new THREEx.ArMarkerControls(arToolkitContext, markerRoot1, {
 				type: 'pattern',
-				patternUrl: ArToolkitContext.baseURL + 'data/data/patt.hiro',
-				// patternUrl : THREEx.ArToolkitContext.baseURL + '../data/data/patt.kanji',
-				// as we controls the camera, set changeMatrixMode: 'cameraTransformMatrix'
-				changeMatrixMode: 'cameraTransformMatrix'
-			})
+				patternUrl: "data/data/patt.hiro",
+			});
 
-			scene.visible = false
+			// interpolates from last position to create smoother transitions when moving.
+			// parameter lerp values near 0 are slow, near 1 are fast (instantaneous).
+			let smoothedRoot = new THREE.Group();
+			scene.add(smoothedRoot);
+			smoothedControls = new THREEx.ArSmoothedControls(smoothedRoot, {
+				lerpPosition: 0.8,
+				lerpQuaternion: 0.8,
+				lerpScale: 1,
+				// minVisibleDelay: 1,
+				// minUnvisibleDelay: 1,
+			});
 
-			console.log('ArMarkerControls', arMarkerControls);
-			window.arMarkerControls = arMarkerControls;
+			let geometry1 = new THREE.CubeGeometry(1, 1, 1);
+			let material1 = new THREE.MeshNormalMaterial({
+				transparent: true,
+				opacity: 0.5,
+				side: THREE.DoubleSide
+			});
+
+			mesh1 = new THREE.Mesh(geometry1, material1);
+			mesh1.position.y = 0.5;
+
+			// markerRoot1.add( mesh1 );
+			smoothedRoot.add(mesh1);
+
+			// 建立 WebSocket 連線（如果可用）
+			connectARPoseWebSocket();
 		}
 
 
-		function getSourceOrientation() {
-			if (!arToolkitSource) {
-				return null;
-			}
-
-			console.log(
-				'actual source dimensions',
-				arToolkitSource.domElement.videoWidth,
-				arToolkitSource.domElement.videoHeight
-			);
-
-			if (arToolkitSource.domElement.videoWidth > arToolkitSource.domElement.videoHeight) {
-				console.log('source orientation', 'landscape');
-				return 'landscape';
-			} else {
-				console.log('source orientation', 'portrait');
-				return 'portrait';
-			}
-		}
-
-		// WebSocket：連到同一個 host（本地 ws，Railway 上 wss）
-		var arPoseWs = null
-		var arPoseLastSend = 0
-		var AR_POSE_SEND_INTERVAL_MS = 50  // 約 20 次/秒，避免頻寬過大
 		function connectARPoseWebSocket() {
-			var scheme = (location.protocol === 'https:') ? 'wss:' : 'ws:'
-			var url = scheme + '//' + location.host
+			var scheme = (location.protocol === 'https:') ? 'wss:' : 'ws:';
+			var url = scheme + '//' + location.host;
 			try {
-				arPoseWs = new WebSocket(url)
-				arPoseWs.onopen = function () { console.log('[AR Pose] WebSocket 已連接:', url) }
-				arPoseWs.onclose = function () { console.log('[AR Pose] WebSocket 已關閉') }
-				arPoseWs.onerror = function (e) { console.warn('[AR Pose] WebSocket 錯誤', e) }
-			} catch (e) { console.warn('[AR Pose] WebSocket 建立失敗', e) }
+				arPoseWs = new WebSocket(url);
+				arPoseWs.onopen = function () { console.log('[AR Pose] WebSocket 已連接:', url); };
+				arPoseWs.onclose = function () { console.log('[AR Pose] WebSocket 已關閉'); };
+				arPoseWs.onerror = function (e) { console.warn('[AR Pose] WebSocket 錯誤', e); };
+			} catch (e) {
+				console.warn('[AR Pose] WebSocket 建立失敗', e);
+			}
 		}
-		connectARPoseWebSocket()
 
-		// 更新畫面上「相機相對 Marker」的顯示，並透過 WebSocket 送給 server（再轉 Unity）
+
+		// 使用 Marker 的姿態推回「相機相對 Marker」的位姿，更新 HUD 並透過 WebSocket 傳送
 		function updateCameraPoseDisplay() {
-			var posX = document.getElementById('pos-x')
-			var posY = document.getElementById('pos-y')
-			var posZ = document.getElementById('pos-z')
-			var rotX = document.getElementById('rot-x')
-			var rotY = document.getElementById('rot-y')
-			var rotZ = document.getElementById('rot-z')
-			var markerVis = document.getElementById('marker-visible')
-			if (!posX || !markerVis) return
+			var posX = document.getElementById('pos-x');
+			var posY = document.getElementById('pos-y');
+			var posZ = document.getElementById('pos-z');
+			var rotX = document.getElementById('rot-x');
+			var rotY = document.getElementById('rot-y');
+			var rotZ = document.getElementById('rot-z');
+			var markerVis = document.getElementById('marker-visible');
+			if (!posX || !markerVis) return;
 
-			if (!camera.visible) {
-				posX.textContent = '--'
-				posY.textContent = '--'
-				posZ.textContent = '--'
-				rotX.textContent = '--'
-				rotY.textContent = '--'
-				rotZ.textContent = '--'
-				markerVis.textContent = '未偵測'
+			// 尚未初始化或沒有 Marker Root
+			if (!markerRoot1) {
+				posX.textContent = '--';
+				posY.textContent = '--';
+				posZ.textContent = '--';
+				rotX.textContent = '--';
+				rotY.textContent = '--';
+				rotZ.textContent = '--';
+				markerVis.textContent = '未偵測';
+				return;
+			}
+
+			// 根據 markerRoot1 的可見性判斷是否有偵測到 Marker
+			if (!markerRoot1.visible) {
+				posX.textContent = '--';
+				posY.textContent = '--';
+				posZ.textContent = '--';
+				rotX.textContent = '--';
+				rotY.textContent = '--';
+				rotZ.textContent = '--';
+				markerVis.textContent = '未偵測';
+
 				// 仍可送一筆 markerVisible: false 讓 Unity 知道目前沒偵測到
 				if (arPoseWs && arPoseWs.readyState === WebSocket.OPEN) {
-					var now = Date.now()
+					var now = Date.now();
 					if (now - arPoseLastSend >= AR_POSE_SEND_INTERVAL_MS) {
-						arPoseLastSend = now
+						arPoseLastSend = now;
 						arPoseWs.send(JSON.stringify({
 							type: 'ar_camera_pose',
 							data: {
@@ -224,104 +226,85 @@
 								markerVisible: false
 							},
 							timestamp: now
-						}))
+						}));
 					}
 				}
-				return
+				return;
 			}
 
-			markerVis.textContent = '已偵測'
-			var deg = 180 / Math.PI
-			var rx = (camera.rotation.x * deg)
-			var ry = (camera.rotation.y * deg)
-			var rz = (camera.rotation.z * deg)
-			posX.textContent = camera.position.x.toFixed(4)
-			posY.textContent = camera.position.y.toFixed(4)
-			posZ.textContent = camera.position.z.toFixed(4)
-			rotX.textContent = rx.toFixed(2)
-			rotY.textContent = ry.toFixed(2)
-			rotZ.textContent = rz.toFixed(2)
+			// 有偵測到 Marker：從 markerRoot1 的矩陣反推「相機相對 Marker」的位姿
+			markerVis.textContent = '已偵測';
+
+			// 確保矩陣是最新的
+			scene.updateMatrixWorld(true);
+
+			var markerMatrix = markerRoot1.matrixWorld;
+			var cameraMatrixRelMarker = new THREE.Matrix4().copy(markerMatrix).invert();
+
+			var position = new THREE.Vector3();
+			position.setFromMatrixPosition(cameraMatrixRelMarker);
+
+			var euler = new THREE.Euler().setFromRotationMatrix(cameraMatrixRelMarker, 'XYZ');
+			var deg = 180 / Math.PI;
+			var rx = euler.x * deg;
+			var ry = euler.y * deg;
+			var rz = euler.z * deg;
+
+			posX.textContent = position.x.toFixed(4);
+			posY.textContent = position.y.toFixed(4);
+			posZ.textContent = position.z.toFixed(4);
+			rotX.textContent = rx.toFixed(2);
+			rotY.textContent = ry.toFixed(2);
+			rotZ.textContent = rz.toFixed(2);
 
 			// 透過 WebSocket 送給 server，再轉發到 Unity（節流）
 			if (arPoseWs && arPoseWs.readyState === WebSocket.OPEN) {
-				var now = Date.now()
+				var now = Date.now();
 				if (now - arPoseLastSend >= AR_POSE_SEND_INTERVAL_MS) {
-					arPoseLastSend = now
+					arPoseLastSend = now;
 					arPoseWs.send(JSON.stringify({
 						type: 'ar_camera_pose',
 						data: {
-							position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+							position: { x: position.x, y: position.y, z: position.z },
 							rotation: { x: rx, y: ry, z: rz },
 							markerVisible: true
 						},
 						timestamp: now
-					}))
+					}));
 				}
 			}
 		}
 
-		// update artoolkit on every frame
-		onRenderFcts.push(function () {
-			if (!arToolkitContext || !arToolkitSource || !arToolkitSource.ready) {
-				return;
+
+		function update() {
+			// update artoolkit on every frame
+			if (arToolkitSource && arToolkitSource.ready !== false)
+				arToolkitContext.update(arToolkitSource.domElement);
+
+			// additional code for smoothed controls
+			if (smoothedControls && markerRoot1) {
+				smoothedControls.update(markerRoot1);
 			}
 
-			arToolkitContext.update(arToolkitSource.domElement)
+			// 更新 HUD 與 WebSocket
+			updateCameraPoseDisplay();
+		}
 
-			// update scene.visible if the marker is seen
-			scene.visible = camera.visible
 
-			// 更新網頁上的相機相對 Marker 數據
-			updateCameraPoseDisplay()
-		})
-
-		//////////////////////////////////////////////////////////////////////////////////
-		//		add an object in the scene
-		//////////////////////////////////////////////////////////////////////////////////
-
-		// add a torus knot
-		var geometry = new THREE.BoxGeometry(1, 1, 1);
-		var material = new THREE.MeshNormalMaterial({
-			transparent: true,
-			opacity: 0.5,
-			side: THREE.DoubleSide
-		});
-		var mesh = new THREE.Mesh(geometry, material);
-		mesh.position.y = geometry.parameters.height / 2
-		scene.add(mesh);
-
-		var geometry = new THREE.TorusKnotGeometry(0.3, 0.1, 64, 16);
-		var material = new THREE.MeshNormalMaterial();
-		var mesh = new THREE.Mesh(geometry, material);
-		mesh.position.y = 0.5
-		scene.add(mesh);
-
-		onRenderFcts.push(function (delta) {
-			mesh.rotation.x += Math.PI * delta
-		})
-
-		//////////////////////////////////////////////////////////////////////////////////
-		//		render the whole thing on the page
-		//////////////////////////////////////////////////////////////////////////////////
-
-		// render the scene
-		onRenderFcts.push(function () {
+		function render() {
 			renderer.render(scene, camera);
-		})
+		}
 
-		// run the rendering loop
-		var lastTimeMsec = null
-		requestAnimationFrame(function animate(nowMsec) {
-			// keep looping
+
+		function animate() {
 			requestAnimationFrame(animate);
-			// measure time
-			lastTimeMsec = lastTimeMsec || nowMsec - 1000 / 60
-			var deltaMsec = Math.min(200, nowMsec - lastTimeMsec)
-			lastTimeMsec = nowMsec
-			// call each update function
-			onRenderFcts.forEach(function (onRenderFct) {
-				onRenderFct(deltaMsec / 1000, nowMsec / 1000)
-			})
-		})
+			deltaTime = clock.getDelta();
+			totalTime += deltaTime;
+			update();
+			render();
+		}
+
 	</script>
+
 </body>
+</html>
