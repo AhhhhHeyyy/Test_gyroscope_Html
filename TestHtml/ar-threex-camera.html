@@ -27,6 +27,8 @@ var infoElement;
 var TO_DEG = 180 / Math.PI;
 var ws = null;
 var wsConnected = false;
+var lastPoseSentAt = 0;
+var poseSendIntervalMs = 50; // 20Hz，避免每幀狂送
 
 initialize();
 animate();
@@ -162,22 +164,28 @@ function update()
 			'rotY=' + (r.y * TO_DEG).toFixed(1) + ', ' +
 			'rotZ=' + (r.z * TO_DEG).toFixed(1);
 
-		// 將 AR 位置 / 角度透過 WebSocket 傳給 Unity
+		// 將 AR「相機相對 Marker」位姿透過 WebSocket 傳給 Unity
+		// Unity 端對應 GyroscopeReceiver.cs: case "ar_camera_pose"
 		if (wsConnected && ws && ws.readyState === WebSocket.OPEN)
 		{
-			var payload = {
-				type: 'position',
-				data: {
-					position: { x: p.x, y: p.y, z: p.z },
-					rotation: { x: r.x, y: r.y, z: r.z },
-					delta: deltaTime || 0,
-					timestamp: Date.now()
+			var now = Date.now();
+			if (now - lastPoseSentAt >= poseSendIntervalMs)
+			{
+				lastPoseSentAt = now;
+				var payload = {
+					type: 'ar_camera_pose',
+					data: {
+						position: { x: p.x, y: p.y, z: p.z },
+						rotation: { x: r.x * TO_DEG, y: r.y * TO_DEG, z: r.z * TO_DEG }, // deg
+						markerVisible: !!(markerRoot1 && markerRoot1.visible)
+					},
+					timestamp: now
+				};
+				try {
+					ws.send(JSON.stringify(payload));
+				} catch (e) {
+					console.error('❌ 傳送 AR 位姿資料失敗:', e);
 				}
-			};
-			try {
-				ws.send(JSON.stringify(payload));
-			} catch (e) {
-				console.error('❌ 傳送 AR 位置資料失敗:', e);
 			}
 		}
 	}
