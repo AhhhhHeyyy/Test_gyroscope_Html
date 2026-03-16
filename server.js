@@ -116,6 +116,20 @@ wss.on('connection', (ws, req) => {
                     timestamp: Date.now(),
                     clientId: stats.totalConnections
                 };
+            } else if (msg.type === 'acceleration') {
+                // 📳 處理加速度向量數據
+                console.log('📳 收到加速度數據:', {
+                    acceleration: msg.data?.acceleration,
+                    magnitude: msg.data?.magnitude,
+                    clientId: stats.totalConnections
+                });
+                
+                out = {
+                    type: 'acceleration',
+                    data: msg.data,
+                    timestamp: Date.now(),
+                    clientId: stats.totalConnections
+                };
             } else {
                 // 預設當作陀螺儀角度（向後相容）
                 console.log('📱 收到陀螺儀數據:', {
