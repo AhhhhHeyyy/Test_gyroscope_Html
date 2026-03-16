@@ -1130,6 +1130,25 @@
                 }
             }
             
+            sendAccelerationData(acceleration) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        type: 'acceleration',
+                        data: {
+                            acceleration: {
+                                x: acceleration.x,
+                                y: acceleration.y,
+                                z: acceleration.z
+                            },
+                            magnitude: Math.sqrt(acceleration.x * acceleration.x + acceleration.y * acceleration.y + acceleration.z * acceleration.z),
+                            timestamp: Date.now()
+                        }
+                    };
+                    console.log('📤 發送加速度數據:', data);
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
+            
             sendScreenCaptureData(imageData, size) {
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     // 雙包傳輸：先發送header
@@ -1751,6 +1770,9 @@
             });
             
             // 加速度感測器監聽
+            let lastAccelerationSendTime = 0;
+            const ACCELERATION_SEND_INTERVAL = 50; // ~20Hz
+            
             window.addEventListener('devicemotion', function(event) {
                 const acceleration = event.accelerationIncludingGravity;
                 
@@ -1766,6 +1788,13 @@
                     
                     // 執行搖晃偵測
                     detectShake(acceleration);
+                    
+                    // 新增：發送加速度數據（節流）
+                    const now = Date.now();
+                    if (now - lastAccelerationSendTime >= ACCELERATION_SEND_INTERVAL) {
+                        gyroWS.sendAccelerationData(acceleration);
+                        lastAccelerationSendTime = now;
+                    }
                 }
             });
         }
