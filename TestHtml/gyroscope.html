@@ -257,7 +257,8 @@
             
             connect() {
                 // 使用Railway線上URL
-                const wsUrl = 'wss://testgyroscopehtml-production.up.railway.app';
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${wsProtocol}//${window.location.host}`;
                 
                 console.log('嘗試連接WebSocket:', wsUrl);
                 this.ws = new WebSocket(wsUrl);

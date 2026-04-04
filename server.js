@@ -46,129 +46,78 @@ wss.on('connection', (ws, req) => {
         try {
             const msg = JSON.parse(message);
             stats.totalMessages++;
-            
-            let out;
-            if (msg.type === 'shake') {
-                // 處理搖晃數據
-                console.log('📳 收到搖晃數據:', {
-                    count: msg.data?.count,
-                    intensity: msg.data?.intensity,
-                    shakeType: msg.data?.shakeType,
-                    clientId: stats.totalConnections
-                });
-                
-                out = { 
-                    type: 'shake', 
-                    data: msg.data, 
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
-            } else if (msg.type === 'spin') {
-                // 🌀 新增旋轉事件處理
-                console.log('🎯 收到旋轉事件:', {
-                    angle: msg.data?.angle,
-                    triggered: msg.data?.triggered,
-                    clientId: stats.totalConnections
-                });
-                
-                out = {
-                    type: 'spin',
-                    data: msg.data,
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
-            } else if (msg.type === 'spin_mode') {
-                // 🎚️ 處理旋鈕模式（包含 Unity 發出的 toggle_request）
-                console.log('🎚️ 收到旋鈕模式訊息:', {
-                    mode: msg.data?.mode,
-                    snapAngle: msg.data?.snapAngle,
-                    label: msg.data?.label,
-                    timestamp: msg.data?.timestamp,
-                    fromClientId: stats.totalConnections
-                });
 
-                // 原樣轉發給其他 client（Unity / 手機彼此都能收到）
+            // 處理 join 房間請求（Unity 連線後會發送）
+            if (msg.type === 'join') {
+                console.log(`🚪 客戶端加入房間: ${msg.room} as ${msg.role}`);
+                ws.send(JSON.stringify({ type: 'joined', message: `已加入房間 ${msg.room}`, timestamp: Date.now() }));
+                // 如果已有其他客戶端，通知 ready
+                if (clients.size >= 2) {
+                    clients.forEach(client => {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify({ type: 'ready', message: '所有客戶端已就緒', timestamp: Date.now() }));
+                        }
+                    });
+                }
+                return;
+            }
+
+            // 處理手機搶佔控制權宣告（不需廣播）
+            if (msg.type === 'claim') {
+                console.log('📱 手機宣告控制權');
+                ws.send(JSON.stringify({ type: 'ack', message: '控制權已確認', timestamp: Date.now() }));
+                return;
+            }
+
+            let out;
+            const now = Date.now();
+            if (msg.type === 'gyroscope') {
                 out = {
-                    type: 'spin_mode',
-                    data: msg.data,
-                    timestamp: Date.now(),
+                    type: 'gyroscope',
+                    data: {
+                        alpha: msg.alpha,
+                        beta: msg.beta,
+                        gamma: msg.gamma,
+                        unityY: msg.unityY,
+                        qx: msg.qx,
+                        qy: msg.qy,
+                        qz: msg.qz,
+                        qw: msg.qw,
+                        timestamp: msg.timestamp || now,
+                        clientId: stats.totalConnections
+                    },
+                    timestamp: now,
                     clientId: stats.totalConnections
                 };
+            } else if (msg.type === 'shake') {
+                out = { type: 'shake', data: msg.data, timestamp: now, clientId: stats.totalConnections };
+            } else if (msg.type === 'spin') {
+                out = { type: 'spin', data: msg.data, timestamp: now, clientId: stats.totalConnections };
+            } else if (msg.type === 'spin_mode') {
+                out = { type: 'spin_mode', data: msg.data, timestamp: now, clientId: stats.totalConnections };
             } else if (msg.type === 'position') {
-                // 📍 處理 8th Wall 位置數據
-                console.log('📍 收到位置數據:', {
-                    position: msg.data?.position,
-                    delta: msg.data?.delta,
-                    clientId: stats.totalConnections
-                });
-                
-                out = {
-                    type: 'position',
-                    data: msg.data,
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
+                out = { type: 'position', data: msg.data, timestamp: now, clientId: stats.totalConnections };
             } else if (msg.type === 'ar_camera_pose') {
-                // 📷 AR 頁面：相機相對 Marker 的位置/旋轉，轉發給 Unity
-                out = {
-                    type: 'ar_camera_pose',
-                    data: msg.data,
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
+                out = { type: 'ar_camera_pose', data: msg.data, timestamp: now, clientId: stats.totalConnections };
             } else if (msg.type === 'acceleration') {
-                // 📳 處理加速度向量數據
-                console.log('📳 收到加速度數據:', {
-                    acceleration: msg.data?.acceleration,
-                    magnitude: msg.data?.magnitude,
-                    clientId: stats.totalConnections
-                });
-                
-                out = {
-                    type: 'acceleration',
-                    data: msg.data,
-                    timestamp: Date.now(),
-                    clientId: stats.totalConnections
-                };
+                out = { type: 'acceleration', data: msg.data, timestamp: now, clientId: stats.totalConnections };
             } else {
                 // 預設當作陀螺儀角度（向後相容）
-                console.log('📱 收到陀螺儀數據:', {
-                    alpha: msg.alpha,
-                    beta: msg.beta,
-                    gamma: msg.gamma,
-                    clientId: stats.totalConnections
-                });
-                
-                const gyroData = {
-                    alpha: msg.alpha,
-                    beta: msg.beta,
-                    gamma: msg.gamma,
-                    timestamp: msg.timestamp,
-                    clientId: stats.totalConnections
-                };
-                
-                out = { 
-                    type: 'gyroscope', 
-                    data: gyroData, 
-                    timestamp: Date.now(),
+                out = {
+                    type: 'gyroscope',
+                    data: { alpha: msg.alpha, beta: msg.beta, gamma: msg.gamma, timestamp: msg.timestamp, clientId: stats.totalConnections },
+                    timestamp: now,
                     clientId: stats.totalConnections
                 };
             }
-            
-            // 廣播給所有其他客戶端（包括Unity）
+
+            // 廣播給所有其他客戶端（pre-serialize 只算一次）
+            const outStr = JSON.stringify(out);
             clients.forEach(client => {
                 if (client !== ws && client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify(out));
+                    client.send(outStr);
                 }
             });
-            
-            // 回應發送者確認收到
-            ws.send(JSON.stringify({
-                type: 'ack',
-                message: '數據已廣播',
-                timestamp: Date.now(),
-                clientsCount: clients.size
-            }));
             
         } catch (error) {
             console.error('❌ 解析訊息錯誤:', error);

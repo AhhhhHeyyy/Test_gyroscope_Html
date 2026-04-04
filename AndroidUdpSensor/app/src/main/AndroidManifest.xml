@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- UDP 傳送需要網路權限 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 宣告需要陀螺儀（非強制，改為 false 讓沒有此感測器的裝置仍可安裝） -->
+    <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
+
+    <application
+        android:allowBackup="true"
+        android:label="Gyro UDP"
+        android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+</manifest>

@@ -455,8 +455,59 @@
                 <div id="shake-intensity" class="data-value">靜止</div>
                 <div class="unit">狀態</div>
             </div>
+
+            <div class="data-card">
+                <h3>揮動偵測 (Pitch)</h3>
+                <div id="pitch-wave-status" class="data-value">靜止</div>
+                <div class="unit">狀態</div>
+            </div>
+
+            <div class="data-card">
+                <h3>揮動次數</h3>
+                <div id="pitch-wave-count" class="data-value">0</div>
+                <div class="unit">次</div>
+            </div>
+
+            <div class="data-card">
+                <h3>揮動方向</h3>
+                <div id="pitch-wave-direction" class="data-value">-</div>
+                <div class="unit">方向</div>
+            </div>
+
+            <div class="data-card">
+                <h3>上下角度 (Pitch)</h3>
+                <div class="data-value" style="color: #4ECDC4;">0.00</div>
+                <div class="unit">度</div>
+            </div>
         </div>
         
+        <!-- 傾斜儀視覺面板 -->
+        <div style="background: rgba(0,0,0,0.5); border-radius: 15px; padding: 20px; margin-bottom: 20px;">
+            <div style="font-size: 1.8em; font-weight: bold; margin-bottom: 6px; color: #FF6B6B;">
+                Azimuth: <span id="inc-alpha">0.000</span>
+            </div>
+            <div style="font-size: 1.8em; font-weight: bold; margin-bottom: 6px; color: #4ECDC4;">
+                Pitch: <span id="inc-beta">0.000</span>
+            </div>
+            <div style="font-size: 1.8em; font-weight: bold; color: #45B7D1;">
+                Roll: <span id="inc-gamma">0.000</span>
+            </div>
+            <div style="font-size: 2.2em; font-weight: bold; margin-top: 12px; color: #FFD700;">
+                上下移動: <span id="pitch-live">0.00</span> °
+            </div>
+        </div>
+
+        <!-- 傾斜儀球視覺 -->
+        <div style="background: #111; border-radius: 15px; padding: 10px; margin-bottom: 20px; position: relative; height: 300px; overflow: hidden;">
+            <!-- 十字線 -->
+            <div style="position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(255,255,255,0.3);"></div>
+            <div style="position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(255,255,255,0.3);"></div>
+            <!-- 球 -->
+            <div id="inc-ball" style="position: absolute; width: 60px; height: 60px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #5a9e5a, #2d6e2d); border: 2px solid rgba(255,255,255,0.3); transform: translate(-50%, -50%); left: 50%; top: 50%; transition: left 0.1s, top 0.1s; display: flex; align-items: center; justify-content: center;">
+                <div style="color: white; font-size: 18px; font-weight: bold;">+</div>
+            </div>
+        </div>
+
         <div class="chart-container" style="display: none;">
             <h3 style="text-align: center; margin-top: 0; color: #FFD700;">即時數據圖表</h3>
             <div class="chart" id="chart">
@@ -824,7 +875,15 @@
         const SHAKE_COOLDOWN = 1000; // 搖晃冷卻時間 (毫秒)
         const HISTORY_LENGTH = 20; // 加速度歷史記錄長度
         const GRAVITY = 9.8; // 重力加速度
-        
+
+        // Pitch 揮動偵測相關變數
+        let pitchWaveCount = 0;
+        let lastPitchWaveTime = 0;
+        let lastBeta = null;
+        let pitchMoveStart = null;
+        const PITCH_WAVE_THRESHOLD = 25; // 觸發揮動所需的最小角度變化 (度)
+        const PITCH_WAVE_COOLDOWN = 600; // 揮動冷卻時間 (毫秒)
+
         // 檢查感測器支援
         function checkSensorSupport() {
             const statusElement = document.getElementById('status');
@@ -991,7 +1050,8 @@
                     console.log('ℹ️ WebSocket 已在連線或連線中，略過重複連線');
                     return;
                 }
-                const wsUrl = 'wss://testgyroscopehtml-production.up.railway.app';
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${wsProtocol}//${window.location.host}`;
                 console.log('嘗試連接WebSocket:', wsUrl);
                 this.ws = new WebSocket(wsUrl);
                 
@@ -1084,18 +1144,38 @@
             
             sendGyroscopeData(alpha, beta, gamma) {
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const unityY = beta !== null ? Math.max(-3, Math.min(3, beta / 90 * 3)) : 0;
+
+                    // 將 DeviceOrientation Euler 角轉成四元數，避免萬向節死鎖
+                    // 旋轉順序：Rz(alpha) * Rx(beta) * Ry(gamma)
+                    const r = Math.PI / 180;
+                    const a2 = (alpha || 0) * r / 2;
+                    const b2 = (beta  || 0) * r / 2;
+                    const g2 = (gamma || 0) * r / 2;
+                    const ca = Math.cos(a2), sa = Math.sin(a2);
+                    const cb = Math.cos(b2), sb = Math.sin(b2);
+                    const cg = Math.cos(g2), sg = Math.sin(g2);
+                    const qw = ca*cb*cg - sa*sb*sg;
+                    const qx = ca*sb*cg - sa*cb*sg;
+                    const qy = ca*cb*sg + sa*sb*cg;
+                    const qz = ca*sb*sg + sa*cb*cg;
+
                     const data = {
                         type: 'gyroscope',
                         alpha: alpha,
                         beta: beta,
                         gamma: gamma,
+                        unityY: unityY,
+                        qx: qx,
+                        qy: qy,
+                        qz: qz,
+                        qw: qw,
                         timestamp: Date.now()
                     };
-                    console.log('📤 發送陀螺儀數據:', data);
                     this.ws.send(JSON.stringify(data));
                 }
             }
-            
+
             // 發送 8th Wall 位置數據
             sendPositionData(position, rotation, delta) {
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -1108,7 +1188,6 @@
                             timestamp: Date.now()
                         }
                     };
-                    console.log('📍 發送位置數據:', data);
                     this.ws.send(JSON.stringify(data));
                 }
             }
@@ -1129,6 +1208,23 @@
                     this.ws.send(JSON.stringify(data));
                 }
             }
+
+            sendPitchWaveEvent(count, change, beta, direction) {
+                if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    const data = {
+                        type: 'pitch_wave',
+                        data: {
+                            count: count,
+                            change: change,
+                            beta: beta,
+                            direction: direction,
+                            timestamp: Date.now()
+                        }
+                    };
+                    console.log('📤 發送揮動事件:', data);
+                    this.ws.send(JSON.stringify(data));
+                }
+            }
             
             sendAccelerationData(acceleration) {
                 if (this.isConnected && this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -1144,7 +1240,6 @@
                             timestamp: Date.now()
                         }
                     };
-                    console.log('📤 發送加速度數據:', data);
                     this.ws.send(JSON.stringify(data));
                 }
             }
@@ -1242,8 +1337,6 @@
             }
 
             sendSpinEvent(angle, timestamp) {
-                console.log('🎯 sendSpinEvent 被调用:', { angle, timestamp, isConnected: this.isConnected, wsState: this.ws?.readyState });
-
                 // 新增：若已觸發限制則不再發送
                 if (this.spinLimitReached) {
                     console.warn('⚠️ 已達到旋轉限制，停止發送 spin 數據');
@@ -1262,7 +1355,6 @@
                             label: this.spinModeInfo?.label || ''
                         }
                     };
-                    console.log('📤 发送旋转事件:', data);
                     this.ws.send(JSON.stringify(data));
                 } else {
                     console.warn('⚠️ WebSocket未连接，无法发送旋转事件:', {
@@ -1600,9 +1692,6 @@
                 accelerationHistory.shift();
             }
             
-            // 調試輸出
-            console.log(`🔍 搖晃偵測: 合成加速度=${currentMagnitude.toFixed(2)}, 變化量=${deltaMagnitude.toFixed(2)}, 閾值=${SHAKE_THRESHOLD}, 連續=${consecutiveHighAcceleration}`);
-            
             // 4. 設閾值 → Δa 超過 ~10–12 m/s² 才算「劇烈搖晃」
             const isHighAcceleration = deltaMagnitude > SHAKE_THRESHOLD;
             
@@ -1731,7 +1820,66 @@
                 document.body.style.animation = '';
             }, parseFloat(animationDuration) * 1000);
         }
-        
+
+        // Pitch 揮動偵測 - 偵測手機上下揮動
+        function detectPitchWave(beta) {
+            if (beta === null) return;
+            const currentTime = Date.now();
+
+            if (lastBeta === null) {
+                lastBeta = beta;
+                pitchMoveStart = beta;
+                return;
+            }
+
+            lastBeta = beta;
+
+            const totalChange = beta - pitchMoveStart;
+
+            if (Math.abs(totalChange) > PITCH_WAVE_THRESHOLD) {
+                if ((currentTime - lastPitchWaveTime) > PITCH_WAVE_COOLDOWN) {
+                    const direction = totalChange > 0 ? 'down' : 'up';
+                    pitchWaveCount++;
+                    lastPitchWaveTime = currentTime;
+                    pitchMoveStart = beta;
+
+                    const label = direction === 'up' ? '↑ 向上揮動' : '↓ 向下揮動';
+                    updatePitchWaveStatus(label, true, direction);
+                    gyroWS.sendPitchWaveEvent(pitchWaveCount, totalChange, beta, direction);
+
+                    console.log(`🏌️ 揮動偵測 第${pitchWaveCount}次，方向: ${direction}，變化: ${totalChange.toFixed(2)}°`);
+
+                    setTimeout(() => {
+                        updatePitchWaveStatus('靜止', false);
+                    }, 800);
+                } else {
+                    pitchMoveStart = beta;
+                }
+            }
+        }
+
+        // 更新揮動狀態顯示
+        function updatePitchWaveStatus(status, isWaving, direction = null) {
+            const statusElement = document.getElementById('pitch-wave-status');
+            const countElement = document.getElementById('pitch-wave-count');
+            const directionElement = document.getElementById('pitch-wave-direction');
+
+            statusElement.textContent = status;
+            countElement.textContent = pitchWaveCount;
+
+            if (isWaving && direction) {
+                directionElement.textContent = direction === 'up' ? '↑ 上' : '↓ 下';
+                directionElement.style.color = direction === 'up' ? '#4ECDC4' : '#FF6B6B';
+                statusElement.parentElement.classList.add('shake-detected');
+                setTimeout(() => {
+                    statusElement.parentElement.classList.remove('shake-detected');
+                }, 500);
+            } else {
+                directionElement.textContent = '-';
+                directionElement.style.color = '';
+            }
+        }
+
         // 開始感測器監聽
         function startSensors() {
             // 此處不再重複連線，載入時已先嘗試連線
@@ -1754,7 +1902,10 @@
                 
                 // 透過WebSocket發送數據
                 gyroWS.sendGyroscopeData(event.alpha, event.beta, event.gamma);
-                
+
+                // 偵測 Pitch 上下揮動
+                detectPitchWave(event.beta);
+
                 // 儲存歷史數據
                 dataHistory.push({
                     alpha: event.alpha,
@@ -1804,6 +1955,31 @@
             document.getElementById('alpha').textContent = formatValue(alpha);
             document.getElementById('beta').textContent = formatValue(beta);
             document.getElementById('gamma').textContent = formatValue(gamma);
+
+            // 更新傾斜儀面板
+            document.getElementById('inc-alpha').textContent = formatValue(alpha);
+            document.getElementById('inc-beta').textContent = formatValue(beta);
+            document.getElementById('inc-gamma').textContent = formatValue(gamma);
+
+            // 上下角度即時顯示（負號與傾斜儀一致）
+            const pitchLiveEl = document.getElementById('pitch-live');
+            if (pitchLiveEl) pitchLiveEl.textContent = formatValue(beta !== null ? -beta : null);
+
+            // 更新傾斜儀球位置：Roll(gamma) → 左右，Pitch(beta) → 上下
+            const ball = document.getElementById('inc-ball');
+            if (ball) {
+                const container = ball.parentElement;
+                const w = container.offsetWidth;
+                const h = container.offsetHeight;
+                // gamma: -90~90 → 左右
+                const xPct = ((gamma || 0) + 90) / 180;
+                // beta: -90~90 較常用範圍，往上傾斜 beta 為負
+                const yPct = 1 - (((beta || 0) + 90) / 180);
+                const x = Math.max(30, Math.min(w - 30, xPct * w));
+                const y = Math.max(30, Math.min(h - 30, yPct * h));
+                ball.style.left = x + 'px';
+                ball.style.top  = y + 'px';
+            }
         }
         
         // 格式化數值

@@ -62,3 +62,14 @@ yarn-error.log*
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Android
+local.properties
+.gradle/
+AndroidUdpSensor/build/
+
+# Claude Code 內部資料
+.claude/
+
+# VS Code
+.vscode/
