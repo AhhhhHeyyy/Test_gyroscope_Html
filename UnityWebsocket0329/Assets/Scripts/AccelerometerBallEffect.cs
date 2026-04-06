@@ -75,7 +75,7 @@ public class AccelerometerBallEffect : MonoBehaviour
         sensitivity      = 0.08f,
         smoothSpeed      = 10f,
         inputFilterTime  = 0.05f,
-        movementAxesMask = new Vector3(1, 1, 0),
+        movementAxesMask = new Vector3(1, 0, 1),  // 平放：X=左右, Z=前後, Y=關閉
         axisFlip         = new Vector3(1f, 1f, -1f),
         axisDeadzone     = new Vector3(0.2f, 0.2f, 0.2f),
         axisScale        = new Vector3(1f, 1f, 1f),
