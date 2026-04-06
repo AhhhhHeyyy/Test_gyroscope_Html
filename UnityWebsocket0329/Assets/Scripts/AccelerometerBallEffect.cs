@@ -11,34 +11,42 @@ using UnityEngine;
 ///   Unity X = gDevice.x  （左右傾斜）
 ///   Unity Y = gDevice.z  （平放前後傾斜 / 平放時 = -9.81）
 ///   Unity Z = -gDevice.y （直立前後傾斜）
+///
+/// 直立與平放模式參數完全分離，各自獨立微調。
 /// </summary>
 public class AccelerometerBallEffect : MonoBehaviour
 {
+    [System.Serializable]
+    private struct ModeSettings
+    {
+        [Tooltip("加速度 → 位移的縮放倍率，越大越敏感")]
+        public float sensitivity;
+
+        [Tooltip("平滑速度，越大越即時、越小越滑順")]
+        [Range(1f, 30f)] public float smoothSpeed;
+
+        [Tooltip("輸入濾波時間常數（秒），越小越即時、越大越平滑，建議 0.03 ~ 0.1")]
+        [Range(0.01f, 0.5f)] public float inputFilterTime;
+
+        [Tooltip("哪些軸要受加速度影響（1=開，0=關）")]
+        public Vector3 movementAxesMask;
+
+        [Tooltip("各軸方向翻轉（1=正常, -1=反轉）。若某軸方向相反，在 Inspector 改 -1 即可")]
+        public Vector3 axisFlip;
+
+        [Tooltip("各軸死區（m/s²）：低於此值的輸入歸零，消除靜止漂移。超過死區後連續輸出")]
+        public Vector3 axisDeadzone;
+
+        [Tooltip("各軸移動幅度縮放（X=左右, Y=上下, Z=前後），值越大移動範圍越大")]
+        public Vector3 axisScale;
+
+        [Tooltip("各軸允許的最大偏移距離（米），各軸獨立不互相壓縮")]
+        public Vector3 maxOffsetPerAxis;
+    }
+
     [Header("中心點")]
     [Tooltip("移動範圍的錨點，若不指定則以 Start 時的位置為中心")]
     [SerializeField] private Transform centerPoint;
-
-    [Header("移動設定")]
-    [Tooltip("加速度 → 位移的縮放倍率，越大越敏感")]
-    [SerializeField] private float sensitivity = 0.3f;
-
-    [Tooltip("平滑速度，越大越即時、越小越滑順")]
-    [SerializeField] [Range(1f, 30f)] private float smoothSpeed = 10f;
-
-    [Tooltip("輸入濾波時間常數（秒），越小越即時、越大越平滑，建議 0.03 ~ 0.1")]
-    [SerializeField] [Range(0.01f, 0.5f)] private float inputFilterTime = 0.05f;
-
-    [Tooltip("哪些軸要受加速度影響（1=開，0=關）")]
-    [SerializeField] private Vector3 movementAxesMask = new Vector3(1, 1, 0);
-
-    [Tooltip("各軸方向翻轉（1=正常, -1=反轉）。若某軸方向相反，在 Inspector 改 -1 即可")]
-    [SerializeField] private Vector3 axisFlip = new Vector3(1f, 1f, -1f);
-
-    [Tooltip("各軸死區（m/s²）：低於此值的輸入歸零，消除靜止漂移。超過死區後連續輸出")]
-    [SerializeField] private Vector3 axisDeadzone = new Vector3(0.3f, 0.3f, 0.3f);
-
-    [Tooltip("各軸移動幅度縮放（X=左右, Y=上下, Z=前後），值越大移動範圍越大")]
-    [SerializeField] private Vector3 axisScale = Vector3.one;
 
     [Header("平放/直立切換")]
     [Tooltip("flatness 閾值（0~1），超過此值視為平放；建議 0.6~0.8")]
@@ -46,20 +54,38 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Tooltip("（唯讀）目前是否判定為平放模式")]
     [SerializeField] private bool phoneIsFlat = false;
 
-    [Header("平放模式（線性加速度）設定")]
-    [Tooltip("平放時的靈敏度（線性加速度 m/s² → 位移），建議從 0.05 開始調整")]
-    [SerializeField] private float flatSensitivity = 0.08f;
-    [Tooltip("平放時各軸死區（m/s²），消除靜止漂移；線性加速度小，建議 0.1 ~ 0.5")]
-    [SerializeField] private Vector3 flatAxisDeadzone = new Vector3(0.2f, 0.2f, 0.2f);
+    [Header("直立模式設定")]
+    [SerializeField]
+    private ModeSettings uprightSettings = new()
+    {
+        sensitivity      = 0.3f,
+        smoothSpeed      = 10f,
+        inputFilterTime  = 0.05f,
+        movementAxesMask = new Vector3(1, 1, 0),
+        axisFlip         = new Vector3(1f, 1f, -1f),
+        axisDeadzone     = new Vector3(0.3f, 0.3f, 0.3f),
+        axisScale        = new Vector3(1f, 1f, 1f),
+        maxOffsetPerAxis = new Vector3(3f, 3f, 3f)
+    };
 
-    [Header("邊界限制")]
-    [Tooltip("各軸允許的最大偏移距離（米），各軸獨立不互相壓縮")]
-    [SerializeField] private Vector3 maxOffsetPerAxis = new Vector3(3f, 3f, 3f);
+    [Header("平放模式設定")]
+    [SerializeField]
+    private ModeSettings flatSettings = new()
+    {
+        sensitivity      = 0.08f,
+        smoothSpeed      = 10f,
+        inputFilterTime  = 0.05f,
+        movementAxesMask = new Vector3(1, 1, 0),
+        axisFlip         = new Vector3(1f, 1f, -1f),
+        axisDeadzone     = new Vector3(0.2f, 0.2f, 0.2f),
+        axisScale        = new Vector3(1f, 1f, 1f),
+        maxOffsetPerAxis = new Vector3(3f, 3f, 3f)
+    };
 
     [Header("調試")]
     [SerializeField] private Vector3 debugRawAcceleration = Vector3.zero;
-    [SerializeField] private Vector3 debugTargetOffset = Vector3.zero;
-    [SerializeField] private Vector3 debugCurrentOffset = Vector3.zero;
+    [SerializeField] private Vector3 debugTargetOffset    = Vector3.zero;
+    [SerializeField] private Vector3 debugCurrentOffset   = Vector3.zero;
 
     [Header("水平儀數值（濾波後）")]
     [Tooltip("X 軸加速度：左右傾斜（負=左, 正=右）")]
@@ -67,16 +93,18 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Tooltip("Y 軸加速度：前後傾斜（負=前, 正=後）")]
     [SerializeField] private float levelAxisY = 0f;
     [Tooltip("Roll 角（繞 Z 軸，左右傾斜角度）")]
-    [SerializeField] private float rollDeg = 0f;
+    [SerializeField] private float rollDeg  = 0f;
     [Tooltip("Pitch 角（繞 X 軸，前後傾斜角度）")]
     [SerializeField] private float pitchDeg = 0f;
 
-    private Vector3 centerLocalPosition;
-    private Vector3 targetOffset = Vector3.zero;
-    private Vector3 currentOffset = Vector3.zero;
-    private Vector3 currentVelocity = Vector3.zero;
-    private Vector3 filteredAcceleration = Vector3.zero;
-    private Vector3 rawAcceleration = Vector3.zero;
+    private Vector3    centerLocalPosition;
+    private Vector3    targetOffset        = Vector3.zero;
+    private Vector3    currentOffset       = Vector3.zero;
+    private Vector3    currentVelocity     = Vector3.zero;
+    private Vector3    filteredAcceleration = Vector3.zero;
+    private Vector3    rawAcceleration     = Vector3.zero;
+    private bool       hasOrientationData  = false;
+    private Quaternion currentOrientation  = Quaternion.identity;
 
     private void Start()
     {
@@ -85,17 +113,14 @@ public class AccelerometerBallEffect : MonoBehaviour
             : transform.localPosition;
 
         GyroscopeReceiver.OnGyroscopeDataReceived += HandleGyroscopeData;
-        GyroscopeReceiver.OnAccelerationReceived += HandleAcceleration;
+        GyroscopeReceiver.OnAccelerationReceived  += HandleAcceleration;
     }
 
     private void OnDestroy()
     {
         GyroscopeReceiver.OnGyroscopeDataReceived -= HandleGyroscopeData;
-        GyroscopeReceiver.OnAccelerationReceived -= HandleAcceleration;
+        GyroscopeReceiver.OnAccelerationReceived  -= HandleAcceleration;
     }
-
-    private bool hasOrientationData = false;
-    private Quaternion currentOrientation = Quaternion.identity;
 
     /// <summary>
     /// [UDP 模式] 四元數（qw != 0）：
@@ -163,55 +188,56 @@ public class AccelerometerBallEffect : MonoBehaviour
 
     private void Update()
     {
-        float alpha = 1f - Mathf.Exp(-Time.deltaTime / inputFilterTime);
+        // 取得當前模式的參數（struct 複製到區域變數，避免每行存取都觸發 value type copy）
+        ModeSettings s = phoneIsFlat ? flatSettings : uprightSettings;
+
+        float alpha = 1f - Mathf.Exp(-Time.deltaTime / s.inputFilterTime);
         filteredAcceleration = Vector3.Lerp(filteredAcceleration, rawAcceleration, alpha);
 
         // 套用方向翻轉
         Vector3 flipped = new Vector3(
-            filteredAcceleration.x * axisFlip.x,
-            filteredAcceleration.y * axisFlip.y,
-            filteredAcceleration.z * axisFlip.z
+            filteredAcceleration.x * s.axisFlip.x,
+            filteredAcceleration.y * s.axisFlip.y,
+            filteredAcceleration.z * s.axisFlip.z
         );
 
-        // 逐軸死區：平放/直立使用不同參數
-        Vector3 activeDead = phoneIsFlat ? flatAxisDeadzone : axisDeadzone;
-        Vector3 deadzoned = ApplyDeadzone(flipped, activeDead);
+        // 逐軸死區
+        Vector3 deadzoned = ApplyDeadzone(flipped, s.axisDeadzone);
 
-        // 套用遮罩與靈敏度：平放/直立使用不同靈敏度
-        float activeSensitivity = phoneIsFlat ? flatSensitivity : sensitivity;
+        // 套用遮罩與靈敏度
         targetOffset = new Vector3(
-            deadzoned.x * movementAxesMask.x,
-            deadzoned.y * movementAxesMask.y,
-            deadzoned.z * movementAxesMask.z
-        ) * activeSensitivity;
+            deadzoned.x * s.movementAxesMask.x,
+            deadzoned.y * s.movementAxesMask.y,
+            deadzoned.z * s.movementAxesMask.z
+        ) * s.sensitivity;
 
         // 逐軸獨立 Clamp（不互相壓縮）
         targetOffset = new Vector3(
-            Mathf.Clamp(targetOffset.x, -maxOffsetPerAxis.x, maxOffsetPerAxis.x),
-            Mathf.Clamp(targetOffset.y, -maxOffsetPerAxis.y, maxOffsetPerAxis.y),
-            Mathf.Clamp(targetOffset.z, -maxOffsetPerAxis.z, maxOffsetPerAxis.z)
+            Mathf.Clamp(targetOffset.x, -s.maxOffsetPerAxis.x, s.maxOffsetPerAxis.x),
+            Mathf.Clamp(targetOffset.y, -s.maxOffsetPerAxis.y, s.maxOffsetPerAxis.y),
+            Mathf.Clamp(targetOffset.z, -s.maxOffsetPerAxis.z, s.maxOffsetPerAxis.z)
         );
 
-        float smoothTime = 1f / smoothSpeed;
+        float smoothTime = 1f / s.smoothSpeed;
         currentOffset = Vector3.SmoothDamp(currentOffset, targetOffset, ref currentVelocity, smoothTime);
 
         transform.localPosition = centerLocalPosition + new Vector3(
-            currentOffset.x * axisScale.x,
-            currentOffset.y * axisScale.y,
-            currentOffset.z * axisScale.z
+            currentOffset.x * s.axisScale.x,
+            currentOffset.y * s.axisScale.y,
+            currentOffset.z * s.axisScale.z
         );
 
         if (Input.GetKeyDown(KeyCode.Space))
             Recalibrate();
 
         debugRawAcceleration = rawAcceleration;
-        debugTargetOffset = targetOffset;
-        debugCurrentOffset = currentOffset;
+        debugTargetOffset    = targetOffset;
+        debugCurrentOffset   = currentOffset;
 
         levelAxisX = filteredAcceleration.x;
         levelAxisY = filteredAcceleration.y;
-        rollDeg  = Mathf.Atan2(filteredAcceleration.x, filteredAcceleration.z) * Mathf.Rad2Deg;
-        pitchDeg = Mathf.Atan2(filteredAcceleration.y, filteredAcceleration.z) * Mathf.Rad2Deg;
+        rollDeg    = Mathf.Atan2(filteredAcceleration.x, filteredAcceleration.z) * Mathf.Rad2Deg;
+        pitchDeg   = Mathf.Atan2(filteredAcceleration.y, filteredAcceleration.z) * Mathf.Rad2Deg;
     }
 
     private static Vector3 ApplyDeadzone(Vector3 v, Vector3 dz)
@@ -229,9 +255,9 @@ public class AccelerometerBallEffect : MonoBehaviour
             ? centerPoint.localPosition
             : transform.localPosition - currentOffset;
 
-        currentOffset = Vector3.zero;
-        currentVelocity = Vector3.zero;
-        targetOffset = Vector3.zero;
+        currentOffset        = Vector3.zero;
+        currentVelocity      = Vector3.zero;
+        targetOffset         = Vector3.zero;
         filteredAcceleration = Vector3.zero;
         Debug.Log($"[AccelerometerBallEffect] 已重新校準，中心點: {centerLocalPosition}");
     }
