@@ -5,9 +5,12 @@ using UnityEngine;
 /// 手機往哪個方向推，物件就往那個方向移動；
 /// 停止施力時會自動彈回；靜止時停在重力傾斜角所對應的位置。
 ///
-/// 原理：直接把原始加速度值對應到位置偏移。
-///   acc = 重力分量（傾斜）+ 線性加速度（手動施力）
-/// 完全不需要另外模擬彈力，物理行為是加速度儀本身的特性。
+/// 座標系映射（Android GAME_ROTATION_VECTOR → Unity）：
+///   Android 世界系 Z 朝上；重力 = (0,0,-g)
+///   gDevice = Inverse(q) * (0,0,-g) → 本體座標系重力
+///   Unity X = gDevice.x  （左右傾斜）
+///   Unity Y = gDevice.z  （平放前後傾斜 / 平放時 = -9.81）
+///   Unity Z = -gDevice.y （直立前後傾斜）
 /// </summary>
 public class AccelerometerBallEffect : MonoBehaviour
 {
@@ -26,98 +29,163 @@ public class AccelerometerBallEffect : MonoBehaviour
     [SerializeField] [Range(0.01f, 0.5f)] private float inputFilterTime = 0.05f;
 
     [Tooltip("哪些軸要受加速度影響（1=開，0=關）")]
-    [SerializeField] private Vector3 movementAxesMask = new Vector3(1, 1, 0); // 預設 XY 平面
+    [SerializeField] private Vector3 movementAxesMask = new Vector3(1, 1, 0);
+
+    [Tooltip("各軸方向翻轉（1=正常, -1=反轉）。若某軸方向相反，在 Inspector 改 -1 即可")]
+    [SerializeField] private Vector3 axisFlip = new Vector3(1f, 1f, -1f);
+
+    [Tooltip("各軸死區（m/s²）：低於此值的輸入歸零，消除靜止漂移。超過死區後連續輸出")]
+    [SerializeField] private Vector3 axisDeadzone = new Vector3(0.3f, 0.3f, 0.3f);
 
     [Tooltip("各軸移動幅度縮放（X=左右, Y=上下, Z=前後），值越大移動範圍越大")]
     [SerializeField] private Vector3 axisScale = Vector3.one;
 
     [Header("邊界限制")]
-    [Tooltip("允許的最大偏移距離（米），始終從中心點起算")]
-    [SerializeField] private float maxOffset = 3f;
+    [Tooltip("各軸允許的最大偏移距離（米），各軸獨立不互相壓縮")]
+    [SerializeField] private Vector3 maxOffsetPerAxis = new Vector3(3f, 3f, 3f);
 
     [Header("調試")]
     [SerializeField] private Vector3 debugRawAcceleration = Vector3.zero;
     [SerializeField] private Vector3 debugTargetOffset = Vector3.zero;
     [SerializeField] private Vector3 debugCurrentOffset = Vector3.zero;
 
-    // 固定中心點的 local 座標（不會漂移）
+    [Header("水平儀數值（濾波後）")]
+    [Tooltip("X 軸加速度：左右傾斜（負=左, 正=右）")]
+    [SerializeField] private float levelAxisX = 0f;
+    [Tooltip("Y 軸加速度：前後傾斜（負=前, 正=後）")]
+    [SerializeField] private float levelAxisY = 0f;
+    [Tooltip("Roll 角（繞 Z 軸，左右傾斜角度）")]
+    [SerializeField] private float rollDeg = 0f;
+    [Tooltip("Pitch 角（繞 X 軸，前後傾斜角度）")]
+    [SerializeField] private float pitchDeg = 0f;
+
     private Vector3 centerLocalPosition;
-
-    // 當前目標偏移（由加速度決定）
     private Vector3 targetOffset = Vector3.zero;
-
-    // 目前實際的平滑偏移（SmoothDamp 使用）
     private Vector3 currentOffset = Vector3.zero;
     private Vector3 currentVelocity = Vector3.zero;
-
-    // 低通濾波後的加速度
     private Vector3 filteredAcceleration = Vector3.zero;
-
-    // 最新的加速度（由 GyroscopeReceiver 事件更新）
     private Vector3 rawAcceleration = Vector3.zero;
 
     private void Start()
     {
-        // 以 centerPoint 的位置為中心；若未指定則以自身初始位置
         centerLocalPosition = centerPoint != null
             ? centerPoint.localPosition
             : transform.localPosition;
 
+        GyroscopeReceiver.OnGyroscopeDataReceived += HandleGyroscopeData;
         GyroscopeReceiver.OnAccelerationReceived += HandleAcceleration;
     }
 
     private void OnDestroy()
     {
+        GyroscopeReceiver.OnGyroscopeDataReceived -= HandleGyroscopeData;
         GyroscopeReceiver.OnAccelerationReceived -= HandleAcceleration;
     }
 
+    private bool hasOrientationData = false;
+
     /// <summary>
-    /// 收到加速度事件（已由 GyroscopeReceiver 轉換為 Unity 座標系：X=左右, Y=上下, Z=前後）
+    /// 從方向角資料重建重力向量，並統一映射到 Unity 座標系。
+    ///
+    /// [UDP 模式] data 含四元數（qw != 0）→ 用四元數旋轉重力向量
+    ///   gravity_world = (0, 0, -g)（世界 Z 朝上，重力朝 -Z）
+    ///   gDevice = Inverse(q) * (0, 0, -g)
+    ///   Unity(x, y, z) = (gDevice.x, gDevice.z, -gDevice.y)
+    ///
+    /// [WebSocket 模式] data 含 beta/gamma Euler 角 → 直接以角度公式輸出 Unity 座標系
+    ///   Unity X =  sin(gamma) * g
+    ///   Unity Y = -cos(beta) * cos(gamma) * g  （平放 = -9.81）
+    ///   Unity Z =  sin(beta)  * cos(gamma) * g
     /// </summary>
+    private void HandleGyroscopeData(GyroscopeReceiver.GyroscopeData data)
+    {
+        const float g = 9.81f;
+
+        if (data.qw != 0f)
+        {
+            var q = new Quaternion(data.qx, data.qy, data.qz, data.qw);
+            Vector3 gDevice = Quaternion.Inverse(q) * new Vector3(0f, 0f, -g);
+            rawAcceleration = new Vector3(gDevice.x, gDevice.z, -gDevice.y);
+        }
+        else
+        {
+            float betaRad  = data.beta  * Mathf.Deg2Rad;
+            float gammaRad = data.gamma * Mathf.Deg2Rad;
+            rawAcceleration = new Vector3(
+                 Mathf.Sin(gammaRad) * g,
+                -Mathf.Cos(betaRad) * Mathf.Cos(gammaRad) * g,
+                 Mathf.Sin(betaRad) * Mathf.Cos(gammaRad) * g
+            );
+        }
+        hasOrientationData = true;
+    }
+
     private void HandleAcceleration(Vector3 acc)
     {
-        rawAcceleration = acc;
+        if (!hasOrientationData)
+            rawAcceleration = acc;
     }
 
     private void Update()
     {
-        // 幀率無關的低通濾波：消除感測器高頻雜訊，不受幀率影響
         float alpha = 1f - Mathf.Exp(-Time.deltaTime / inputFilterTime);
         filteredAcceleration = Vector3.Lerp(filteredAcceleration, rawAcceleration, alpha);
 
-        // 把濾波後的加速度對應到目標偏移，並限制在 maxOffset 半徑內
+        // 套用方向翻轉
+        Vector3 flipped = new Vector3(
+            filteredAcceleration.x * axisFlip.x,
+            filteredAcceleration.y * axisFlip.y,
+            filteredAcceleration.z * axisFlip.z
+        );
+
+        // 逐軸死區：低於死區歸零，超過死區連續輸出（不跳躍）
+        Vector3 deadzoned = ApplyDeadzone(flipped, axisDeadzone);
+
+        // 套用遮罩與靈敏度
         targetOffset = new Vector3(
-            filteredAcceleration.x * movementAxesMask.x,
-            filteredAcceleration.y * movementAxesMask.y,
-            filteredAcceleration.z * movementAxesMask.z
+            deadzoned.x * movementAxesMask.x,
+            deadzoned.y * movementAxesMask.y,
+            deadzoned.z * movementAxesMask.z
         ) * sensitivity;
 
-        targetOffset = Vector3.ClampMagnitude(targetOffset, maxOffset);
+        // 逐軸獨立 Clamp（不互相壓縮）
+        targetOffset = new Vector3(
+            Mathf.Clamp(targetOffset.x, -maxOffsetPerAxis.x, maxOffsetPerAxis.x),
+            Mathf.Clamp(targetOffset.y, -maxOffsetPerAxis.y, maxOffsetPerAxis.y),
+            Mathf.Clamp(targetOffset.z, -maxOffsetPerAxis.z, maxOffsetPerAxis.z)
+        );
 
-        // SmoothDamp：速度追蹤，移動曲線比 Lerp 更自然
         float smoothTime = 1f / smoothSpeed;
         currentOffset = Vector3.SmoothDamp(currentOffset, targetOffset, ref currentVelocity, smoothTime);
 
-        // 最終位置 = 固定中心點 + 偏移（永遠不會超出 maxOffset），各軸乘上縮放
         transform.localPosition = centerLocalPosition + new Vector3(
             currentOffset.x * axisScale.x,
             currentOffset.y * axisScale.y,
             currentOffset.z * axisScale.z
         );
 
-        // 按空白鍵重新以 centerPoint 校準（或更新 centerPoint 後手動刷新）
         if (Input.GetKeyDown(KeyCode.Space))
             Recalibrate();
 
-        // 調試顯示
         debugRawAcceleration = rawAcceleration;
         debugTargetOffset = targetOffset;
         debugCurrentOffset = currentOffset;
+
+        levelAxisX = filteredAcceleration.x;
+        levelAxisY = filteredAcceleration.y;
+        rollDeg  = Mathf.Atan2(filteredAcceleration.x, filteredAcceleration.z) * Mathf.Rad2Deg;
+        pitchDeg = Mathf.Atan2(filteredAcceleration.y, filteredAcceleration.z) * Mathf.Rad2Deg;
     }
 
-    /// <summary>
-    /// 重新校準：以 centerPoint（或自身當前位置）作為新的中心點
-    /// </summary>
+    private static Vector3 ApplyDeadzone(Vector3 v, Vector3 dz)
+    {
+        return new Vector3(
+            Mathf.Abs(v.x) < dz.x ? 0f : Mathf.Sign(v.x) * (Mathf.Abs(v.x) - dz.x),
+            Mathf.Abs(v.y) < dz.y ? 0f : Mathf.Sign(v.y) * (Mathf.Abs(v.y) - dz.y),
+            Mathf.Abs(v.z) < dz.z ? 0f : Mathf.Sign(v.z) * (Mathf.Abs(v.z) - dz.z)
+        );
+    }
+
     public void Recalibrate()
     {
         centerLocalPosition = centerPoint != null
