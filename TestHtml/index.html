@@ -1925,7 +1925,7 @@
             const ACCELERATION_SEND_INTERVAL = 50; // ~20Hz
             
             window.addEventListener('devicemotion', function(event) {
-                const acceleration = event.accelerationIncludingGravity;
+                const acceleration = event.acceleration || event.accelerationIncludingGravity;
                 
                 if (acceleration) {
                     // 更新加速度強度顯示

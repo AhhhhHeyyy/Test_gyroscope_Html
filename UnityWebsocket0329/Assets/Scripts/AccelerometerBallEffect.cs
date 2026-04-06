@@ -40,6 +40,18 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Tooltip("各軸移動幅度縮放（X=左右, Y=上下, Z=前後），值越大移動範圍越大")]
     [SerializeField] private Vector3 axisScale = Vector3.one;
 
+    [Header("平放/直立切換")]
+    [Tooltip("flatness 閾值（0~1），超過此值視為平放；建議 0.6~0.8")]
+    [SerializeField] [Range(0f, 1f)] private float flatnessThreshold = 0.7f;
+    [Tooltip("（唯讀）目前是否判定為平放模式")]
+    [SerializeField] private bool phoneIsFlat = false;
+
+    [Header("平放模式（線性加速度）設定")]
+    [Tooltip("平放時的靈敏度（線性加速度 m/s² → 位移），建議從 0.05 開始調整")]
+    [SerializeField] private float flatSensitivity = 0.08f;
+    [Tooltip("平放時各軸死區（m/s²），消除靜止漂移；線性加速度小，建議 0.1 ~ 0.5")]
+    [SerializeField] private Vector3 flatAxisDeadzone = new Vector3(0.2f, 0.2f, 0.2f);
+
     [Header("邊界限制")]
     [Tooltip("各軸允許的最大偏移距離（米），各軸獨立不互相壓縮")]
     [SerializeField] private Vector3 maxOffsetPerAxis = new Vector3(3f, 3f, 3f);
@@ -83,19 +95,15 @@ public class AccelerometerBallEffect : MonoBehaviour
     }
 
     private bool hasOrientationData = false;
+    private Quaternion currentOrientation = Quaternion.identity;
 
     /// <summary>
-    /// 從方向角資料重建重力向量，並統一映射到 Unity 座標系。
+    /// [UDP 模式] 四元數（qw != 0）：
+    ///   計算裝置座標系重力向量，判斷手機是否平放。
+    ///   直立模式：用重力方向映射到 Unity 座標系（原算法）。
+    ///   平放模式：僅儲存四元數，等 HandleAcceleration 用線性加速度驅動。
     ///
-    /// [UDP 模式] data 含四元數（qw != 0）→ 用四元數旋轉重力向量
-    ///   gravity_world = (0, 0, -g)（世界 Z 朝上，重力朝 -Z）
-    ///   gDevice = Inverse(q) * (0, 0, -g)
-    ///   Unity(x, y, z) = (gDevice.x, gDevice.z, -gDevice.y)
-    ///
-    /// [WebSocket 模式] data 含 beta/gamma Euler 角 → 直接以角度公式輸出 Unity 座標系
-    ///   Unity X =  sin(gamma) * g
-    ///   Unity Y = -cos(beta) * cos(gamma) * g  （平放 = -9.81）
-    ///   Unity Z =  sin(beta)  * cos(gamma) * g
+    /// [WebSocket 模式] beta/gamma Euler 角：直接以角度公式輸出（傾斜備用）。
     /// </summary>
     private void HandleGyroscopeData(GyroscopeReceiver.GyroscopeData data)
     {
@@ -104,11 +112,23 @@ public class AccelerometerBallEffect : MonoBehaviour
         if (data.qw != 0f)
         {
             var q = new Quaternion(data.qx, data.qy, data.qz, data.qw);
+            currentOrientation = q;
+            hasOrientationData = true;
+
+            // gDevice.z ≈ ±9.81 → 平放（螢幕朝上或朝下均可）
             Vector3 gDevice = Quaternion.Inverse(q) * new Vector3(0f, 0f, -g);
-            rawAcceleration = new Vector3(gDevice.x, gDevice.z, -gDevice.y);
+            phoneIsFlat = Mathf.Abs(gDevice.z) / g >= flatnessThreshold;
+
+            if (!phoneIsFlat)
+            {
+                // 直立模式：用重力方向作為位移輸入（原算法）
+                rawAcceleration = new Vector3(gDevice.x, gDevice.z, -gDevice.y);
+            }
+            // 平放模式：rawAcceleration 由 HandleAcceleration 設定
         }
         else
         {
+            // WebSocket / 無四元數備用：用傾斜角估算
             float betaRad  = data.beta  * Mathf.Deg2Rad;
             float gammaRad = data.gamma * Mathf.Deg2Rad;
             rawAcceleration = new Vector3(
@@ -117,13 +137,28 @@ public class AccelerometerBallEffect : MonoBehaviour
                  Mathf.Sin(betaRad) * Mathf.Cos(gammaRad) * g
             );
         }
-        hasOrientationData = true;
     }
 
+    /// <summary>
+    /// 接收 Android TYPE_LINEAR_ACCELERATION（已去重力）。
+    /// 平放模式：以四元數將裝置系加速度旋轉到 Android 世界系，再映射至 Unity。
+    ///   Android 世界系 → Unity：X→X, Y→Z, Z→Y
+    /// 直立模式：rawAcceleration 已由 HandleGyroscopeData 設定，忽略此事件。
+    /// </summary>
     private void HandleAcceleration(Vector3 acc)
     {
-        if (!hasOrientationData)
+        if (hasOrientationData && phoneIsFlat)
+        {
+            // q 為裝置系→世界系，直接旋轉即可
+            Vector3 worldAcc = currentOrientation * acc;
+            // Android 世界系(Z朝上) → Unity(Y朝上)
+            rawAcceleration = new Vector3(worldAcc.x, worldAcc.z, worldAcc.y);
+        }
+        else if (!hasOrientationData)
+        {
             rawAcceleration = acc;
+        }
+        // 直立模式：不覆蓋 HandleGyroscopeData 設定的 rawAcceleration
     }
 
     private void Update()
@@ -138,15 +173,17 @@ public class AccelerometerBallEffect : MonoBehaviour
             filteredAcceleration.z * axisFlip.z
         );
 
-        // 逐軸死區：低於死區歸零，超過死區連續輸出（不跳躍）
-        Vector3 deadzoned = ApplyDeadzone(flipped, axisDeadzone);
+        // 逐軸死區：平放/直立使用不同參數
+        Vector3 activeDead = phoneIsFlat ? flatAxisDeadzone : axisDeadzone;
+        Vector3 deadzoned = ApplyDeadzone(flipped, activeDead);
 
-        // 套用遮罩與靈敏度
+        // 套用遮罩與靈敏度：平放/直立使用不同靈敏度
+        float activeSensitivity = phoneIsFlat ? flatSensitivity : sensitivity;
         targetOffset = new Vector3(
             deadzoned.x * movementAxesMask.x,
             deadzoned.y * movementAxesMask.y,
             deadzoned.z * movementAxesMask.z
-        ) * sensitivity;
+        ) * activeSensitivity;
 
         // 逐軸獨立 Clamp（不互相壓縮）
         targetOffset = new Vector3(
