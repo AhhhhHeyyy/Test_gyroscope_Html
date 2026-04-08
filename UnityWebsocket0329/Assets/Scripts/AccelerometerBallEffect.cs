@@ -105,6 +105,7 @@ public class AccelerometerBallEffect : MonoBehaviour
     private Vector3    rawAcceleration     = Vector3.zero;
     private bool       hasOrientationData  = false;
     private Quaternion currentOrientation  = Quaternion.identity;
+    private bool       prevPhoneIsFlat     = false;
 
     private void Start()
     {
@@ -190,6 +191,14 @@ public class AccelerometerBallEffect : MonoBehaviour
     {
         // 取得當前模式的參數（struct 複製到區域變數，避免每行存取都觸發 value type copy）
         ModeSettings s = phoneIsFlat ? flatSettings : uprightSettings;
+
+        // 模式切換時：把濾波器狀態貼齊新的 rawAcceleration，避免舊數值污染新模式
+        if (phoneIsFlat != prevPhoneIsFlat)
+        {
+            prevPhoneIsFlat      = phoneIsFlat;
+            filteredAcceleration = rawAcceleration;
+            currentVelocity      = Vector3.zero;
+        }
 
         float alpha = 1f - Mathf.Exp(-Time.deltaTime / s.inputFilterTime);
         filteredAcceleration = Vector3.Lerp(filteredAcceleration, rawAcceleration, alpha);
