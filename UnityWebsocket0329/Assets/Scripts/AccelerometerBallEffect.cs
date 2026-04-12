@@ -53,6 +53,8 @@ public class AccelerometerBallEffect : MonoBehaviour
     [SerializeField] [Range(0f, 1f)] private float flatnessThreshold = 0.7f;
     [Tooltip("（唯讀）目前是否判定為平放模式")]
     [SerializeField] private bool phoneIsFlat = false;
+    [Tooltip("模式切換時位置校正的淡出速度（越大越快，建議 2~5）")]
+    [SerializeField] [Range(0.5f, 10f)] private float modeSwitchFadeSpeed = 3f;
 
     [Header("直立模式設定")]
     [SerializeField]
@@ -82,10 +84,39 @@ public class AccelerometerBallEffect : MonoBehaviour
         maxOffsetPerAxis = new Vector3(3f, 3f, 3f)
     };
 
+    [Header("陀螺儀原始輸入（Debug）")]
+    [Tooltip("裝置座標系重力向量 gDevice = Inverse(q)*(0,0,-g)；直立時 z≈0，平放時 z≈±9.81")]
+    [SerializeField] private Vector3 debugGDevice         = Vector3.zero;
+    [Tooltip("|gDevice.z|/g；超過 Flatness Threshold 判定為平放")]
+    [SerializeField] private float   debugFlatnessRatio   = 0f;
+    [Tooltip("四元數（Android GAME_ROTATION_VECTOR）")]
+    [SerializeField] private float   debugQx = 0f;
+    [SerializeField] private float   debugQy = 0f;
+    [SerializeField] private float   debugQz = 0f;
+    [SerializeField] private float   debugQw = 1f;
+    [Tooltip("HandleAcceleration 收到的線性加速度（已去重力）；平放模式的位移來源")]
+    [SerializeField] private Vector3 debugLinearAccInput  = Vector3.zero;
+    [Tooltip("WebSocket 備用模式的 Euler 角（alpha/beta/gamma）；四元數模式下無效")]
+    [SerializeField] private Vector3 debugEulerAngles     = Vector3.zero;
+
     [Header("調試")]
-    [SerializeField] private Vector3 debugRawAcceleration = Vector3.zero;
-    [SerializeField] private Vector3 debugTargetOffset    = Vector3.zero;
-    [SerializeField] private Vector3 debugCurrentOffset   = Vector3.zero;
+    [SerializeField] private Vector3 debugRawAcceleration      = Vector3.zero;
+    [SerializeField] private Vector3 debugTargetOffset         = Vector3.zero;
+    [SerializeField] private Vector3 debugCurrentOffset        = Vector3.zero;
+    [SerializeField] private Vector3 debugModeSwitchCorrection = Vector3.zero;
+    [SerializeField] private Vector3 debugActualPosition       = Vector3.zero;
+
+    [Header("切換事件記錄")]
+    [Tooltip("最後一次切換方向")]
+    [SerializeField] private string debugLastSwitchDir       = "—";
+    [Tooltip("距上次切換經過秒數（-1 = 尚未切換）")]
+    [SerializeField] private float  debugTimeSinceLastSwitch = -1f;
+    [Tooltip("切換瞬間注入的校正量大小（m）")]
+    [SerializeField] private float  debugSwitchCorrectionMag = 0f;
+    [Tooltip("淡出期間最大單幀位置跳動（m）；越小越平滑")]
+    [SerializeField] private float  debugMaxFrameJump        = 0f;
+    [Tooltip("剩餘校正量大小（趨近 0 代表淡出完成）")]
+    [SerializeField] private float  debugFadeRemaining       = 0f;
 
     [Header("水平儀數值（濾波後）")]
     [Tooltip("X 軸加速度：左右傾斜（負=左, 正=右）")]
@@ -105,6 +136,11 @@ public class AccelerometerBallEffect : MonoBehaviour
     private Vector3    rawAcceleration     = Vector3.zero;
     private bool       hasOrientationData  = false;
     private Quaternion currentOrientation  = Quaternion.identity;
+    private bool       prevPhoneIsFlat          = false;
+    private Vector3    modeSwitchCorrection      = Vector3.zero;
+    private Vector3    prevFramePosition         = Vector3.zero;
+    private float      switchTimer               = -1f;
+    private bool       switchLoggedComplete      = false;
 
     private void Start()
     {
@@ -150,6 +186,15 @@ public class AccelerometerBallEffect : MonoBehaviour
                 rawAcceleration = new Vector3(gDevice.x, gDevice.z, -gDevice.y);
             }
             // 平放模式：rawAcceleration 由 HandleAcceleration 設定
+
+            // --- 陀螺儀 Debug ---
+            debugQx           = data.qx;
+            debugQy           = data.qy;
+            debugQz           = data.qz;
+            debugQw           = data.qw;
+            debugGDevice      = gDevice;
+            debugFlatnessRatio = Mathf.Abs(gDevice.z) / g;
+            debugEulerAngles  = Vector3.zero; // 四元數模式下 Euler 備用無效
         }
         else
         {
@@ -161,6 +206,12 @@ public class AccelerometerBallEffect : MonoBehaviour
                 -Mathf.Cos(betaRad) * Mathf.Cos(gammaRad) * g,
                  Mathf.Sin(betaRad) * Mathf.Cos(gammaRad) * g
             );
+
+            // --- 陀螺儀 Debug（Euler 備用模式）---
+            debugQx          = 0f; debugQy = 0f; debugQz = 0f; debugQw = 0f;
+            debugGDevice     = Vector3.zero;
+            debugFlatnessRatio = 0f;
+            debugEulerAngles = new Vector3(data.alpha, data.beta, data.gamma);
         }
     }
 
@@ -172,6 +223,8 @@ public class AccelerometerBallEffect : MonoBehaviour
     /// </summary>
     private void HandleAcceleration(Vector3 acc)
     {
+        debugLinearAccInput = acc; // 始終記錄原始線性加速度，方便對照兩種模式
+
         if (hasOrientationData && phoneIsFlat)
         {
             // q 為裝置系→世界系，直接旋轉即可
@@ -188,8 +241,23 @@ public class AccelerometerBallEffect : MonoBehaviour
 
     private void Update()
     {
-        // 取得當前模式的參數（struct 複製到區域變數，避免每行存取都觸發 value type copy）
         ModeSettings s = phoneIsFlat ? flatSettings : uprightSettings;
+
+        // ── 切換偵測（必須在濾波更新前執行）──
+        // 問題根源：切換時 filteredAcceleration 仍殘留舊模式值，
+        //           被新模式的 axisScale/flip 放大後 proposedPosition 暴衝。
+        // 對策：立即重設濾波值到新模式的合理起點，並跳到新穩態 currentOffset，
+        //       讓 proposedPosition 瞬間穩定；視覺連續性由 modeSwitchCorrection 補償。
+        bool modeJustSwitched = phoneIsFlat != prevPhoneIsFlat;
+        if (modeJustSwitched)
+        {
+            // 平放靜止時線性加速度≈0；切回直立則用當前重力向量
+            filteredAcceleration = phoneIsFlat ? Vector3.zero : rawAcceleration;
+            // 立即跳到新模式穩態，消除 axisScale 差異造成的 proposedPosition 跳變
+            currentOffset        = ComputeTargetOffset(filteredAcceleration, s);
+            currentVelocity      = Vector3.zero;
+            prevPhoneIsFlat      = phoneIsFlat;
+        }
 
         float alpha = 1f - Mathf.Exp(-Time.deltaTime / s.inputFilterTime);
         filteredAcceleration = Vector3.Lerp(filteredAcceleration, rawAcceleration, alpha);
@@ -221,23 +289,87 @@ public class AccelerometerBallEffect : MonoBehaviour
         float smoothTime = 1f / s.smoothSpeed;
         currentOffset = Vector3.SmoothDamp(currentOffset, targetOffset, ref currentVelocity, smoothTime);
 
-        transform.localPosition = centerLocalPosition + new Vector3(
+        Vector3 proposedPosition = centerLocalPosition + new Vector3(
             currentOffset.x * s.axisScale.x,
             currentOffset.y * s.axisScale.y,
             currentOffset.z * s.axisScale.z
         );
 
+        // ── 切換瞬間注入視覺校正（proposedPosition 已穩定後才算）──
+        if (modeJustSwitched)
+        {
+            modeSwitchCorrection = transform.localPosition - proposedPosition;
+
+            string dir = phoneIsFlat ? "直立 → 平放" : "平放 → 直立";
+            debugLastSwitchDir       = dir;
+            debugSwitchCorrectionMag = modeSwitchCorrection.magnitude;
+            debugMaxFrameJump        = 0f;
+            switchTimer              = 0f;
+            switchLoggedComplete     = false;
+            Debug.Log($"[模式切換] {dir}\n" +
+                      $"  切換前位置 : {transform.localPosition:F3}\n" +
+                      $"  新模式預測 : {proposedPosition:F3}\n" +
+                      $"  注入校正量 : {modeSwitchCorrection:F3}  大小={modeSwitchCorrection.magnitude:F2}m");
+        }
+
+        modeSwitchCorrection    = Vector3.Lerp(modeSwitchCorrection, Vector3.zero, Time.deltaTime * modeSwitchFadeSpeed);
+        transform.localPosition = proposedPosition + modeSwitchCorrection;
+
+        // --- 淡出期間追蹤 ---
+        if (switchTimer >= 0f)
+        {
+            switchTimer              += Time.deltaTime;
+            float frameDelta          = Vector3.Distance(transform.localPosition, prevFramePosition);
+            debugMaxFrameJump         = Mathf.Max(debugMaxFrameJump, frameDelta);
+            debugTimeSinceLastSwitch  = switchTimer;
+            debugFadeRemaining        = modeSwitchCorrection.magnitude;
+
+            if (!switchLoggedComplete && modeSwitchCorrection.magnitude < 0.01f)
+            {
+                switchLoggedComplete = true;
+                Debug.Log($"[切換淡出完成] {debugLastSwitchDir} | " +
+                          $"耗時={switchTimer:F2}s | 最大單幀跳動={debugMaxFrameJump:F3}m");
+            }
+        }
+        prevFramePosition = transform.localPosition;
+
         if (Input.GetKeyDown(KeyCode.Space))
             Recalibrate();
 
-        debugRawAcceleration = rawAcceleration;
-        debugTargetOffset    = targetOffset;
-        debugCurrentOffset   = currentOffset;
+        debugRawAcceleration      = rawAcceleration;
+        debugTargetOffset         = targetOffset;
+        debugCurrentOffset        = currentOffset;
+        debugModeSwitchCorrection = modeSwitchCorrection;
+        debugActualPosition       = transform.localPosition;
 
         levelAxisX = filteredAcceleration.x;
         levelAxisY = filteredAcceleration.y;
         rollDeg    = Mathf.Atan2(filteredAcceleration.x, filteredAcceleration.z) * Mathf.Rad2Deg;
         pitchDeg   = Mathf.Atan2(filteredAcceleration.y, filteredAcceleration.z) * Mathf.Rad2Deg;
+    }
+
+    /// <summary>
+    /// 將加速度向量經過 flip → deadzone → mask → sensitivity → clamp 完整管線，
+    /// 回傳對應的 targetOffset。用於切換時立即算出新模式穩態。
+    /// </summary>
+    private static Vector3 ComputeTargetOffset(Vector3 acc, ModeSettings s)
+    {
+        Vector3 flipped = new Vector3(
+            acc.x * s.axisFlip.x,
+            acc.y * s.axisFlip.y,
+            acc.z * s.axisFlip.z
+        );
+        Vector3 deadzoned = ApplyDeadzone(flipped, s.axisDeadzone);
+        Vector3 masked = new Vector3(
+            deadzoned.x * s.movementAxesMask.x,
+            deadzoned.y * s.movementAxesMask.y,
+            deadzoned.z * s.movementAxesMask.z
+        ) * s.sensitivity;
+        return new Vector3(
+            Mathf.Clamp(masked.x, -s.maxOffsetPerAxis.x, s.maxOffsetPerAxis.x),
+            Mathf.Clamp(masked.y, -s.maxOffsetPerAxis.y, s.maxOffsetPerAxis.y),
+            Mathf.Clamp(masked.z, -s.maxOffsetPerAxis.z, s.maxOffsetPerAxis.z)
+        );
     }
 
     private static Vector3 ApplyDeadzone(Vector3 v, Vector3 dz)
@@ -259,6 +391,12 @@ public class AccelerometerBallEffect : MonoBehaviour
         currentVelocity      = Vector3.zero;
         targetOffset         = Vector3.zero;
         filteredAcceleration = Vector3.zero;
+        modeSwitchCorrection     = Vector3.zero;
+        switchTimer              = -1f;
+        switchLoggedComplete     = false;
+        debugMaxFrameJump        = 0f;
+        debugFadeRemaining       = 0f;
+        debugTimeSinceLastSwitch = -1f;
         Debug.Log($"[AccelerometerBallEffect] 已重新校準，中心點: {centerLocalPosition}");
     }
 }
