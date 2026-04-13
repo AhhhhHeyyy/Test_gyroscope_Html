@@ -48,13 +48,21 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Tooltip("移動範圍的錨點，若不指定則以 Start 時的位置為中心")]
     [SerializeField] private Transform centerPoint;
 
+    [Header("自動校正")]
+    [Tooltip("收到第一筆感測器資料後，等待幾秒再自動校正（讓濾波先穩定）；0 = 立即校正")]
+    [SerializeField] [Range(0f, 5f)] private float autoCalibrationDelay = 1.5f;
+    [Tooltip("（唯讀）是否已完成初始校正；未完成前物件鎖在原點")]
+    [SerializeField] private bool hasCalibrated = false;
+
     [Header("平放/直立切換")]
     [Tooltip("flatness 閾值（0~1），超過此值視為平放；建議 0.6~0.8")]
     [SerializeField] [Range(0f, 1f)] private float flatnessThreshold = 0.7f;
     [Tooltip("（唯讀）目前是否判定為平放模式")]
     [SerializeField] private bool phoneIsFlat = false;
-    [Tooltip("模式切換時位置校正的淡出速度（越大越快，建議 2~5）")]
-    [SerializeField] [Range(0.5f, 10f)] private float modeSwitchFadeSpeed = 3f;
+    [Tooltip("模式防抖時間（秒）：新狀態需穩定超過此值才真正切換，防止快速揮動造成頻繁切換；建議 0.2~0.4")]
+    [SerializeField] [Range(0f, 1f)] private float modeSwitchDebounceTime = 0.3f;
+    [Tooltip("模式切換時位置跳動補償的淡出時間（秒），預設 0.5 秒")]
+    [SerializeField] [Range(0.1f, 2f)] private float modeSwitchTransitionDuration = 0.5f;
 
     [Header("直立模式設定")]
     [SerializeField]
@@ -100,23 +108,30 @@ public class AccelerometerBallEffect : MonoBehaviour
     [SerializeField] private Vector3 debugEulerAngles     = Vector3.zero;
 
     [Header("調試")]
-    [SerializeField] private Vector3 debugRawAcceleration      = Vector3.zero;
-    [SerializeField] private Vector3 debugTargetOffset         = Vector3.zero;
-    [SerializeField] private Vector3 debugCurrentOffset        = Vector3.zero;
-    [SerializeField] private Vector3 debugModeSwitchCorrection = Vector3.zero;
-    [SerializeField] private Vector3 debugActualPosition       = Vector3.zero;
+    [SerializeField] private Vector3 debugRawAcceleration        = Vector3.zero;
+    [SerializeField] private Vector3 debugFilteredAcceleration   = Vector3.zero;
+    [SerializeField] private Vector3 debugCalibratedAcceleration = Vector3.zero;
+    [SerializeField] private Vector3 debugDebiasedAcceleration   = Vector3.zero;
+    [SerializeField] private Vector3 debugTargetOffset           = Vector3.zero;
+    [SerializeField] private Vector3 debugCurrentOffset          = Vector3.zero;
+    [SerializeField] private float   debugTransitionProgress     = 1f;
+    [SerializeField] private Vector3 debugActualPosition         = Vector3.zero;
 
     [Header("切換事件記錄")]
     [Tooltip("最後一次切換方向")]
     [SerializeField] private string debugLastSwitchDir       = "—";
     [Tooltip("距上次切換經過秒數（-1 = 尚未切換）")]
     [SerializeField] private float  debugTimeSinceLastSwitch = -1f;
-    [Tooltip("切換瞬間注入的校正量大小（m）")]
-    [SerializeField] private float  debugSwitchCorrectionMag = 0f;
-    [Tooltip("淡出期間最大單幀位置跳動（m）；越小越平滑")]
+    [Tooltip("切換瞬間起點與終點的距離（m）")]
+    [SerializeField] private float  debugSwitchStartDist     = 0f;
+    [Tooltip("過渡期間最大單幀位置跳動（m）；越小越平滑")]
     [SerializeField] private float  debugMaxFrameJump        = 0f;
-    [Tooltip("剩餘校正量大小（趨近 0 代表淡出完成）")]
-    [SerializeField] private float  debugFadeRemaining       = 0f;
+    [Tooltip("過渡剩餘比例（1=剛切換，0=完成）")]
+    [SerializeField] private float  debugTransitionRemaining = 0f;
+
+    [Header("輸出平滑（抗抖動）")]
+    [Tooltip("位置輸出的低通濾波時間常數（秒）。越大越平滑但反應越慢；0 = 關閉。建議 0.03 ~ 0.08")]
+    [SerializeField] [Range(0f, 0.3f)] private float positionFilterTime = 0.05f;
 
     [Header("水平儀數值（濾波後）")]
     [Tooltip("X 軸加速度：左右傾斜（負=左, 正=右）")]
@@ -133,14 +148,20 @@ public class AccelerometerBallEffect : MonoBehaviour
     private Vector3    currentOffset       = Vector3.zero;
     private Vector3    currentVelocity     = Vector3.zero;
     private Vector3    filteredAcceleration = Vector3.zero;
+    private Vector3    calibratedAcceleration = Vector3.zero; // Tare 基準：校正時記錄，下幀 debiased = filtered - calibrated ≈ 0
     private Vector3    rawAcceleration     = Vector3.zero;
     private bool       hasOrientationData  = false;
     private Quaternion currentOrientation  = Quaternion.identity;
-    private bool       prevPhoneIsFlat          = false;
-    private Vector3    modeSwitchCorrection      = Vector3.zero;
-    private Vector3    prevFramePosition         = Vector3.zero;
+    private bool       rawPhoneIsFlat               = false; // 感測器即時值，未經防抖
+    private float      flatnessHoldTimer            = 0f;   // 新狀態持續計時
+    private bool       prevPhoneIsFlat              = false;
+    private float      modeSwitchTransitionProgress = 1f;
+    private Vector3    modeSwitchTransitionOffset   = Vector3.zero; // 切換瞬間跳動量，淡出至 0
+    private Vector3    prevFramePosition            = Vector3.zero;
     private float      switchTimer               = -1f;
     private bool       switchLoggedComplete      = false;
+    private float      firstDataTime             = -1f; // 第一筆感測器資料到達的時間戳
+    private Vector3    smoothedPosition          = Vector3.zero; // 輸出位置 EMA（抗抖動）
 
     private void Start()
     {
@@ -178,7 +199,8 @@ public class AccelerometerBallEffect : MonoBehaviour
 
             // gDevice.z ≈ ±9.81 → 平放（螢幕朝上或朝下均可）
             Vector3 gDevice = Quaternion.Inverse(q) * new Vector3(0f, 0f, -g);
-            phoneIsFlat = Mathf.Abs(gDevice.z) / g >= flatnessThreshold;
+            rawPhoneIsFlat = Mathf.Abs(gDevice.z) / g >= flatnessThreshold;
+            // phoneIsFlat 由 Update() 防抖後才更新，此處只記錄即時感測值
 
             if (!phoneIsFlat)
             {
@@ -243,18 +265,50 @@ public class AccelerometerBallEffect : MonoBehaviour
     {
         ModeSettings s = phoneIsFlat ? flatSettings : uprightSettings;
 
+        // ── 自動初始校正：第一筆資料到位 + 等待濾波穩定後執行一次 ──
+        if (!hasCalibrated)
+        {
+            if (hasOrientationData)
+            {
+                if (firstDataTime < 0f)
+                    firstDataTime = Time.time;
+                else if (Time.time - firstDataTime >= autoCalibrationDelay)
+                    Recalibrate(); // 內部會設 hasCalibrated = true
+            }
+            // 校正完成前，物件鎖在原點不動
+            transform.localPosition = centerLocalPosition;
+            return;
+        }
+
+        // ── 模式防抖：rawPhoneIsFlat 穩定超過 modeSwitchDebounceTime 才更新 phoneIsFlat ──
+        // 快速揮動時 rawPhoneIsFlat 頻繁翻轉，計時器被不斷重置，phoneIsFlat 不會切換
+        if (rawPhoneIsFlat != phoneIsFlat)
+        {
+            flatnessHoldTimer += Time.deltaTime;
+            if (flatnessHoldTimer >= modeSwitchDebounceTime)
+            {
+                phoneIsFlat       = rawPhoneIsFlat;
+                flatnessHoldTimer = 0f;
+            }
+        }
+        else
+        {
+            flatnessHoldTimer = 0f;
+        }
+
         // ── 切換偵測（必須在濾波更新前執行）──
         // 問題根源：切換時 filteredAcceleration 仍殘留舊模式值，
         //           被新模式的 axisScale/flip 放大後 proposedPosition 暴衝。
         // 對策：立即重設濾波值到新模式的合理起點，並跳到新穩態 currentOffset，
-        //       讓 proposedPosition 瞬間穩定；視覺連續性由 modeSwitchCorrection 補償。
+        //       讓 proposedPosition 瞬間穩定；視覺連續性由跳動補償淡出處理。
         bool modeJustSwitched = phoneIsFlat != prevPhoneIsFlat;
         if (modeJustSwitched)
         {
             // 平放靜止時線性加速度≈0；切回直立則用當前重力向量
-            filteredAcceleration = phoneIsFlat ? Vector3.zero : rawAcceleration;
+            filteredAcceleration   = phoneIsFlat ? Vector3.zero : rawAcceleration;
+            calibratedAcceleration = filteredAcceleration; // 模式切換時清除舊校正，新模式重新歸零
             // 立即跳到新模式穩態，消除 axisScale 差異造成的 proposedPosition 跳變
-            currentOffset        = ComputeTargetOffset(filteredAcceleration, s);
+            currentOffset        = Vector3.zero; // debiased = filtered - calibrated = 0
             currentVelocity      = Vector3.zero;
             prevPhoneIsFlat      = phoneIsFlat;
         }
@@ -262,11 +316,14 @@ public class AccelerometerBallEffect : MonoBehaviour
         float alpha = 1f - Mathf.Exp(-Time.deltaTime / s.inputFilterTime);
         filteredAcceleration = Vector3.Lerp(filteredAcceleration, rawAcceleration, alpha);
 
+        // Tare 去偏：以校正瞬間的 filteredAcceleration 為基準，使當前姿勢 = (0,0,0)
+        Vector3 debiased = filteredAcceleration - calibratedAcceleration;
+
         // 套用方向翻轉
         Vector3 flipped = new Vector3(
-            filteredAcceleration.x * s.axisFlip.x,
-            filteredAcceleration.y * s.axisFlip.y,
-            filteredAcceleration.z * s.axisFlip.z
+            debiased.x * s.axisFlip.x,
+            debiased.y * s.axisFlip.y,
+            debiased.z * s.axisFlip.z
         );
 
         // 逐軸死區
@@ -295,25 +352,52 @@ public class AccelerometerBallEffect : MonoBehaviour
             currentOffset.z * s.axisScale.z
         );
 
-        // ── 切換瞬間注入視覺校正（proposedPosition 已穩定後才算）──
+        // ── 切換瞬間：記錄跳動補償量，讓 proposedPosition 仍即時反應傾斜 ──
+        // 只補償切換造成的位移跳動，不拖慢正常傾斜的反應速度
         if (modeJustSwitched)
         {
-            modeSwitchCorrection = transform.localPosition - proposedPosition;
+            // offset = 舊位置 - 新模式預測位置；之後隨時間淡出至 0
+            modeSwitchTransitionOffset   = smoothedPosition - proposedPosition;
+            modeSwitchTransitionProgress = 0f;
 
             string dir = phoneIsFlat ? "直立 → 平放" : "平放 → 直立";
-            debugLastSwitchDir       = dir;
-            debugSwitchCorrectionMag = modeSwitchCorrection.magnitude;
-            debugMaxFrameJump        = 0f;
-            switchTimer              = 0f;
-            switchLoggedComplete     = false;
+            debugLastSwitchDir   = dir;
+            debugSwitchStartDist = modeSwitchTransitionOffset.magnitude;
+            debugMaxFrameJump    = 0f;
+            switchTimer          = 0f;
+            switchLoggedComplete = false;
             Debug.Log($"[模式切換] {dir}\n" +
-                      $"  切換前位置 : {transform.localPosition:F3}\n" +
+                      $"  切換前位置 : {smoothedPosition:F3}\n" +
                       $"  新模式預測 : {proposedPosition:F3}\n" +
-                      $"  注入校正量 : {modeSwitchCorrection:F3}  大小={modeSwitchCorrection.magnitude:F2}m");
+                      $"  補償跳動量 : {debugSwitchStartDist:F2}m  時長={modeSwitchTransitionDuration:F2}s");
         }
 
-        modeSwitchCorrection    = Vector3.Lerp(modeSwitchCorrection, Vector3.zero, Time.deltaTime * modeSwitchFadeSpeed);
-        transform.localPosition = proposedPosition + modeSwitchCorrection;
+        // 補償淡出：SmoothStep 在 transitionDuration 秒內把跳動 offset 降到 0
+        // proposedPosition 本身完全不受影響，傾斜反應依然即時
+        Vector3 basePosition;
+        if (modeSwitchTransitionProgress < 1f)
+        {
+            modeSwitchTransitionProgress = Mathf.Clamp01(
+                modeSwitchTransitionProgress + Time.deltaTime / modeSwitchTransitionDuration);
+            float fade   = 1f - Mathf.SmoothStep(0f, 1f, modeSwitchTransitionProgress);
+            basePosition = proposedPosition + modeSwitchTransitionOffset * fade;
+        }
+        else
+        {
+            basePosition = proposedPosition;
+        }
+
+        // 輸出位置 EMA：在 basePosition 之後再做一次低通濾波，消除高頻抖動
+        if (positionFilterTime > 0f)
+        {
+            float posAlpha   = 1f - Mathf.Exp(-Time.deltaTime / positionFilterTime);
+            smoothedPosition = Vector3.Lerp(smoothedPosition, basePosition, posAlpha);
+        }
+        else
+        {
+            smoothedPosition = basePosition;
+        }
+        transform.localPosition = smoothedPosition;
 
         // --- 淡出期間追蹤 ---
         if (switchTimer >= 0f)
@@ -322,30 +406,41 @@ public class AccelerometerBallEffect : MonoBehaviour
             float frameDelta          = Vector3.Distance(transform.localPosition, prevFramePosition);
             debugMaxFrameJump         = Mathf.Max(debugMaxFrameJump, frameDelta);
             debugTimeSinceLastSwitch  = switchTimer;
-            debugFadeRemaining        = modeSwitchCorrection.magnitude;
+            debugTransitionRemaining  = 1f - modeSwitchTransitionProgress;
 
-            if (!switchLoggedComplete && modeSwitchCorrection.magnitude < 0.01f)
+            if (!switchLoggedComplete && modeSwitchTransitionProgress >= 1f)
             {
                 switchLoggedComplete = true;
-                Debug.Log($"[切換淡出完成] {debugLastSwitchDir} | " +
+                Debug.Log($"[切換過渡完成] {debugLastSwitchDir} | " +
                           $"耗時={switchTimer:F2}s | 最大單幀跳動={debugMaxFrameJump:F3}m");
             }
         }
         prevFramePosition = transform.localPosition;
 
+        // Editor：Space 鍵校正
         if (Input.GetKeyDown(KeyCode.Space))
             Recalibrate();
 
-        debugRawAcceleration      = rawAcceleration;
-        debugTargetOffset         = targetOffset;
-        debugCurrentOffset        = currentOffset;
-        debugModeSwitchCorrection = modeSwitchCorrection;
-        debugActualPosition       = transform.localPosition;
+        // 實機：同時觸碰兩指（雙指點擊）校正
+        if (Input.touchCount == 2 &&
+            Input.GetTouch(0).phase == TouchPhase.Began &&
+            Input.GetTouch(1).phase == TouchPhase.Began)
+            Recalibrate();
 
-        levelAxisX = filteredAcceleration.x;
-        levelAxisY = filteredAcceleration.y;
-        rollDeg    = Mathf.Atan2(filteredAcceleration.x, filteredAcceleration.z) * Mathf.Rad2Deg;
-        pitchDeg   = Mathf.Atan2(filteredAcceleration.y, filteredAcceleration.z) * Mathf.Rad2Deg;
+        debugRawAcceleration        = rawAcceleration;
+        debugFilteredAcceleration   = filteredAcceleration;
+        debugCalibratedAcceleration = calibratedAcceleration;
+        debugDebiasedAcceleration   = filteredAcceleration - calibratedAcceleration;
+        debugTargetOffset           = targetOffset;
+        debugCurrentOffset          = currentOffset;
+        debugTransitionProgress     = modeSwitchTransitionProgress;
+        debugActualPosition         = transform.localPosition;
+
+        Vector3 db = filteredAcceleration - calibratedAcceleration;
+        levelAxisX = db.x;
+        levelAxisY = db.y;
+        rollDeg    = Mathf.Atan2(db.x, db.z) * Mathf.Rad2Deg;
+        pitchDeg   = Mathf.Atan2(db.y, db.z) * Mathf.Rad2Deg;
     }
 
     /// <summary>
@@ -383,20 +478,28 @@ public class AccelerometerBallEffect : MonoBehaviour
 
     public void Recalibrate()
     {
+        // Tare：以當前 filteredAcceleration 為新的「靜止基準」
+        // 下一幀 debiased = filteredAcceleration - calibratedAcceleration ≈ 0
+        calibratedAcceleration = filteredAcceleration;
+
+        // 原點鎖定：以「校正當下的實際位置」為新中心
+        // 之後物件只在 maxOffsetPerAxis 範圍內移動，不會再累加漂移
         centerLocalPosition = centerPoint != null
             ? centerPoint.localPosition
-            : transform.localPosition - currentOffset;
+            : transform.localPosition;
 
-        currentOffset        = Vector3.zero;
-        currentVelocity      = Vector3.zero;
-        targetOffset         = Vector3.zero;
-        filteredAcceleration = Vector3.zero;
-        modeSwitchCorrection     = Vector3.zero;
-        switchTimer              = -1f;
-        switchLoggedComplete     = false;
-        debugMaxFrameJump        = 0f;
-        debugFadeRemaining       = 0f;
-        debugTimeSinceLastSwitch = -1f;
-        Debug.Log($"[AccelerometerBallEffect] 已重新校準，中心點: {centerLocalPosition}");
+        hasCalibrated            = true;
+        currentOffset            = Vector3.zero;
+        currentVelocity          = Vector3.zero;
+        targetOffset             = Vector3.zero;
+        modeSwitchTransitionProgress = 1f;
+        modeSwitchTransitionOffset   = Vector3.zero;
+        smoothedPosition             = centerLocalPosition;
+        switchTimer                  = -1f;
+        switchLoggedComplete         = false;
+        debugMaxFrameJump            = 0f;
+        debugTransitionRemaining     = 0f;
+        debugTimeSinceLastSwitch     = -1f;
+        Debug.Log($"[AccelerometerBallEffect] 已校正 | Tare 基準: {calibratedAcceleration:F3} | 原點鎖定: {centerLocalPosition}");
     }
 }
