@@ -204,10 +204,12 @@ public class AccelerometerBallEffect : MonoBehaviour
 
             if (!phoneIsFlat)
             {
-                // 直立模式：用重力方向作為位移輸入（原算法）
-                rawAcceleration = new Vector3(gDevice.x, gDevice.z, -gDevice.y);
+                // 直立模式：X/Y 用重力傾斜；Z 由 HandleAcceleration 填入線性加速度
+                rawAcceleration.x = gDevice.x;
+                rawAcceleration.y = gDevice.z;
+                // rawAcceleration.z 由 HandleAcceleration 設定（前後位移）
             }
-            // 平放模式：rawAcceleration 由 HandleAcceleration 設定
+            // 平放模式：rawAcceleration 全部由 HandleAcceleration 設定
 
             // --- 陀螺儀 Debug ---
             debugQx           = data.qx;
@@ -241,7 +243,8 @@ public class AccelerometerBallEffect : MonoBehaviour
     /// 接收 Android TYPE_LINEAR_ACCELERATION（已去重力）。
     /// 平放模式：以四元數將裝置系加速度旋轉到 Android 世界系，再映射至 Unity。
     ///   Android 世界系 → Unity：X→X, Y→Z, Z→Y
-    /// 直立模式：rawAcceleration 已由 HandleGyroscopeData 設定，忽略此事件。
+    /// 直立模式：僅更新 Z 軸（前後位移），X/Y 仍由 HandleGyroscopeData 的重力傾斜負責。
+    ///   worldAcc.y（Android 水平前後）→ rawAcceleration.z（Unity Z）
     /// </summary>
     private void HandleAcceleration(Vector3 acc)
     {
@@ -254,17 +257,20 @@ public class AccelerometerBallEffect : MonoBehaviour
             // Android 世界系(Z朝上) → Unity(Y朝上)
             rawAcceleration = new Vector3(worldAcc.x, worldAcc.z, worldAcc.y);
         }
+        else if (hasOrientationData && !phoneIsFlat)
+        {
+            // 直立模式：Z 軸用線性加速度的水平前後分量
+            Vector3 worldAcc = currentOrientation * acc;
+            rawAcceleration.z = worldAcc.y; // Android 世界 Y（水平前後）→ Unity Z
+        }
         else if (!hasOrientationData)
         {
             rawAcceleration = acc;
         }
-        // 直立模式：不覆蓋 HandleGyroscopeData 設定的 rawAcceleration
     }
 
     private void Update()
     {
-        ModeSettings s = phoneIsFlat ? flatSettings : uprightSettings;
-
         // ── 自動初始校正：第一筆資料到位 + 等待濾波穩定後執行一次 ──
         if (!hasCalibrated)
         {
@@ -295,6 +301,9 @@ public class AccelerometerBallEffect : MonoBehaviour
         {
             flatnessHoldTimer = 0f;
         }
+
+        // phoneIsFlat 防抖更新完畢後才取 settings，確保本幀套用正確的模式參數
+        ModeSettings s = phoneIsFlat ? flatSettings : uprightSettings;
 
         // ── 切換偵測（必須在濾波更新前執行）──
         // 問題根源：切換時 filteredAcceleration 仍殘留舊模式值，
