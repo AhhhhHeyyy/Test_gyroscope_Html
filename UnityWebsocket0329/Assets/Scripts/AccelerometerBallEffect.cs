@@ -1,16 +1,17 @@
 using UnityEngine;
 // update: 2024-04-08 09:43
 /// <summary>
-/// 重現「加速度儀校準 App」紅球效果：
+/// 重現「加速度儀校準 App」紅球效果（UDP 四元數模式）：
 /// 手機往哪個方向推，物件就往那個方向移動；
 /// 停止施力時會自動彈回；靜止時停在重力傾斜角所對應的位置。
 ///
 /// 座標系映射（Android GAME_ROTATION_VECTOR → Unity）：
 ///   Android 世界系 Z 朝上；重力 = (0,0,-g)
 ///   gDevice = Inverse(q) * (0,0,-g) → 本體座標系重力
-///   Unity X = gDevice.x  （左右傾斜）
-///   Unity Y = gDevice.z  （平放前後傾斜 / 平放時 = -9.81）
-///   Unity Z = -gDevice.y （直立前後傾斜）
+///   Unity X（直立） = worldAcc.x     （左右位移，線性加速度）
+///   Unity Z（直立） = worldAcc.y     （前後位移，線性加速度）
+///   Unity Z（平放） = worldAcc.y     （前後位移）
+///   Unity X（平放） = worldAcc.x     （左右位移）
 ///
 /// 直立與平放模式參數完全分離，各自獨立微調。
 /// </summary>
@@ -54,6 +55,10 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Tooltip("（唯讀）是否已完成初始校正；未完成前物件鎖在原點")]
     [SerializeField] private bool hasCalibrated = false;
 
+    [Header("平放模式重力")]
+    [Tooltip("平放模式左右軸的重力傾斜貢獻倍率（0=純推力，值越大傾斜感越重）；方向反了請把 flatSettings.axisFlip.x 改 -1")]
+    [SerializeField] [Range(0f, 3f)] private float flatGravityWeight = 0.5f;
+
     [Header("平放/直立切換")]
     [Tooltip("flatness 閾值（0~1），超過此值視為平放；建議 0.6~0.8")]
     [SerializeField] [Range(0f, 1f)] private float flatnessThreshold = 0.7f;
@@ -71,7 +76,7 @@ public class AccelerometerBallEffect : MonoBehaviour
         sensitivity      = 0.3f,
         smoothSpeed      = 10f,
         inputFilterTime  = 0.05f,
-        movementAxesMask = new Vector3(1, 1, 0),
+        movementAxesMask = new Vector3(1, 1, 1),  // 直立：X=左右, Y=前後傾斜, Z=前後位移
         axisFlip         = new Vector3(1f, 1f, -1f),
         axisDeadzone     = new Vector3(0.3f, 0.3f, 0.3f),
         axisScale        = new Vector3(1f, 1f, 1f),
@@ -104,9 +109,6 @@ public class AccelerometerBallEffect : MonoBehaviour
     [SerializeField] private float   debugQw = 1f;
     [Tooltip("HandleAcceleration 收到的線性加速度（已去重力）；平放模式的位移來源")]
     [SerializeField] private Vector3 debugLinearAccInput  = Vector3.zero;
-    [Tooltip("WebSocket 備用模式的 Euler 角（alpha/beta/gamma）；四元數模式下無效")]
-    [SerializeField] private Vector3 debugEulerAngles     = Vector3.zero;
-
     [Header("調試")]
     [SerializeField] private Vector3 debugRawAcceleration        = Vector3.zero;
     [SerializeField] private Vector3 debugFilteredAcceleration   = Vector3.zero;
@@ -132,6 +134,14 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Header("輸出平滑（抗抖動）")]
     [Tooltip("位置輸出的低通濾波時間常數（秒）。越大越平滑但反應越慢；0 = 關閉。建議 0.03 ~ 0.08")]
     [SerializeField] [Range(0f, 0.3f)] private float positionFilterTime = 0.05f;
+
+    [Header("校正按鈕（Game 視窗）")]
+    [Tooltip("是否在 Game 視窗顯示校正按鈕")]
+    [SerializeField] private bool showCalibrationButton = true;
+    [Tooltip("按鈕左上角位置（像素，左上角為原點）")]
+    [SerializeField] private Vector2 calibrationButtonPosition = new Vector2(10f, 200f);
+    [Tooltip("按鈕尺寸（像素）")]
+    [SerializeField] private Vector2 calibrationButtonSize = new Vector2(120f, 50f);
 
     [Header("水平儀數值（濾波後）")]
     [Tooltip("X 軸加速度：左右傾斜（負=左, 正=右）")]
@@ -162,37 +172,63 @@ public class AccelerometerBallEffect : MonoBehaviour
     private bool       switchLoggedComplete      = false;
     private float      firstDataTime             = -1f; // 第一筆感測器資料到達的時間戳
     private Vector3    smoothedPosition          = Vector3.zero; // 輸出位置 EMA（抗抖動）
+    private float      calibrationMsgTimer       = 0f;
+    private Vector3    calibrationMsgPosition    = Vector3.zero;
 
     private void Start()
     {
         centerLocalPosition = centerPoint != null
-            ? centerPoint.localPosition
+            ? (transform.parent != null
+                ? transform.parent.InverseTransformPoint(centerPoint.position)
+                : centerPoint.position)
             : transform.localPosition;
 
-        GyroscopeReceiver.OnGyroscopeDataReceived += HandleGyroscopeData;
-        GyroscopeReceiver.OnAccelerationReceived  += HandleAcceleration;
+        SensorEvents.OnGyroscopeDataReceived += HandleGyroscopeData;
+        SensorEvents.OnAccelerationReceived  += HandleAcceleration;
     }
 
     private void OnDestroy()
     {
-        GyroscopeReceiver.OnGyroscopeDataReceived -= HandleGyroscopeData;
-        GyroscopeReceiver.OnAccelerationReceived  -= HandleAcceleration;
+        SensorEvents.OnGyroscopeDataReceived -= HandleGyroscopeData;
+        SensorEvents.OnAccelerationReceived  -= HandleAcceleration;
+    }
+
+    private void OnGUI()
+    {
+        if (!showCalibrationButton) return;
+
+        if (GUI.Button(new Rect(calibrationButtonPosition.x, calibrationButtonPosition.y,
+                                calibrationButtonSize.x,   calibrationButtonSize.y), "校正"))
+            Recalibrate();
+
+        if (calibrationMsgTimer > 0f)
+        {
+            calibrationMsgTimer -= Time.deltaTime;
+            var style = new GUIStyle(GUI.skin.label)
+            {
+                fontSize  = 16,
+                fontStyle = FontStyle.Bold,
+                normal    = { textColor = Color.green }
+            };
+            string msg = $"校正成功\n位置: ({calibrationMsgPosition.x:F2}, {calibrationMsgPosition.y:F2}, {calibrationMsgPosition.z:F2})";
+            GUI.Label(new Rect(calibrationButtonPosition.x,
+                               calibrationButtonPosition.y + calibrationButtonSize.y + 6f,
+                               260f, 50f), msg, style);
+        }
     }
 
     /// <summary>
-    /// [UDP 模式] 四元數（qw != 0）：
-    ///   計算裝置座標系重力向量，判斷手機是否平放。
-    ///   直立模式：用重力方向映射到 Unity 座標系（原算法）。
+    /// [UDP 模式] 以四元數計算裝置座標系重力向量，判斷手機是否平放。
+    ///   直立模式：用重力方向映射到 Unity 座標系。
     ///   平放模式：僅儲存四元數，等 HandleAcceleration 用線性加速度驅動。
-    ///
-    /// [WebSocket 模式] beta/gamma Euler 角：直接以角度公式輸出（傾斜備用）。
     /// </summary>
-    private void HandleGyroscopeData(GyroscopeReceiver.GyroscopeData data)
+    private void HandleGyroscopeData(SensorEvents.GyroscopeData data)
     {
         const float g = 9.81f;
 
         if (data.qw != 0f)
         {
+            // UDP 四元數模式
             var q = new Quaternion(data.qx, data.qy, data.qz, data.qw);
             currentOrientation = q;
             hasOrientationData = true;
@@ -200,25 +236,20 @@ public class AccelerometerBallEffect : MonoBehaviour
             // gDevice.z ≈ ±9.81 → 平放（螢幕朝上或朝下均可）
             Vector3 gDevice = Quaternion.Inverse(q) * new Vector3(0f, 0f, -g);
             rawPhoneIsFlat = Mathf.Abs(gDevice.z) / g >= flatnessThreshold;
-            // phoneIsFlat 由 Update() 防抖後才更新，此處只記錄即時感測值
 
             if (!phoneIsFlat)
             {
-                // 直立模式：X/Y 用重力傾斜；Z 由 HandleAcceleration 填入線性加速度
-                rawAcceleration.x = gDevice.x;
+                // 直立模式：Y=前後傾斜（重力）; X/Z 由 HandleAcceleration 填入線性加速度
                 rawAcceleration.y = gDevice.z;
-                // rawAcceleration.z 由 HandleAcceleration 設定（前後位移）
             }
             // 平放模式：rawAcceleration 全部由 HandleAcceleration 設定
 
-            // --- 陀螺儀 Debug ---
-            debugQx           = data.qx;
-            debugQy           = data.qy;
-            debugQz           = data.qz;
-            debugQw           = data.qw;
-            debugGDevice      = gDevice;
+            debugQx            = data.qx;
+            debugQy            = data.qy;
+            debugQz            = data.qz;
+            debugQw            = data.qw;
+            debugGDevice       = gDevice;
             debugFlatnessRatio = Mathf.Abs(gDevice.z) / g;
-            debugEulerAngles  = Vector3.zero; // 四元數模式下 Euler 備用無效
         }
         else
         {
@@ -230,12 +261,9 @@ public class AccelerometerBallEffect : MonoBehaviour
                 -Mathf.Cos(betaRad) * Mathf.Cos(gammaRad) * g,
                  Mathf.Sin(betaRad) * Mathf.Cos(gammaRad) * g
             );
-
-            // --- 陀螺儀 Debug（Euler 備用模式）---
-            debugQx          = 0f; debugQy = 0f; debugQz = 0f; debugQw = 0f;
-            debugGDevice     = Vector3.zero;
+            debugQx = 0f; debugQy = 0f; debugQz = 0f; debugQw = 0f;
+            debugGDevice = Vector3.zero;
             debugFlatnessRatio = 0f;
-            debugEulerAngles = new Vector3(data.alpha, data.beta, data.gamma);
         }
     }
 
@@ -252,16 +280,19 @@ public class AccelerometerBallEffect : MonoBehaviour
 
         if (hasOrientationData && phoneIsFlat)
         {
-            // q 為裝置系→世界系，直接旋轉即可
             Vector3 worldAcc = currentOrientation * acc;
-            // Android 世界系(Z朝上) → Unity(Y朝上)
-            rawAcceleration = new Vector3(worldAcc.x, worldAcc.z, worldAcc.y);
+            // Android 世界系(Z朝上) → Unity(Y朝上)；X 軸疊加重力傾斜分量
+            rawAcceleration = new Vector3(
+                worldAcc.x + debugGDevice.x * flatGravityWeight,
+                worldAcc.z,
+                worldAcc.y);
         }
         else if (hasOrientationData && !phoneIsFlat)
         {
-            // 直立模式：Z 軸用線性加速度的水平前後分量
+            // 直立模式：X/Z 均用線性加速度，worldAcc.x 與 worldAcc.y 在水平面正交，無干擾
             Vector3 worldAcc = currentOrientation * acc;
-            rawAcceleration.z = worldAcc.y; // Android 世界 Y（水平前後）→ Unity Z
+            rawAcceleration.x = worldAcc.x; // Android 世界 X → Unity X
+            rawAcceleration.z = worldAcc.y; // Android 世界 Y → Unity Z
         }
         else if (!hasOrientationData)
         {
@@ -355,11 +386,15 @@ public class AccelerometerBallEffect : MonoBehaviour
         float smoothTime = 1f / s.smoothSpeed;
         currentOffset = Vector3.SmoothDamp(currentOffset, targetOffset, ref currentVelocity, smoothTime);
 
-        Vector3 proposedPosition = centerLocalPosition + new Vector3(
+        Vector3 scaledOffset = new Vector3(
             currentOffset.x * s.axisScale.x,
             currentOffset.y * s.axisScale.y,
             currentOffset.z * s.axisScale.z
         );
+        Vector3 localScaledOffset = transform.parent != null
+            ? transform.parent.InverseTransformDirection(scaledOffset)
+            : scaledOffset;
+        Vector3 proposedPosition = centerLocalPosition + localScaledOffset;
 
         // ── 切換瞬間：記錄跳動補償量，讓 proposedPosition 仍即時反應傾斜 ──
         // 只補償切換造成的位移跳動，不拖慢正常傾斜的反應速度
@@ -494,7 +529,9 @@ public class AccelerometerBallEffect : MonoBehaviour
         // 原點鎖定：以「校正當下的實際位置」為新中心
         // 之後物件只在 maxOffsetPerAxis 範圍內移動，不會再累加漂移
         centerLocalPosition = centerPoint != null
-            ? centerPoint.localPosition
+            ? (transform.parent != null
+                ? transform.parent.InverseTransformPoint(centerPoint.position)
+                : centerPoint.position)
             : transform.localPosition;
 
         hasCalibrated            = true;
@@ -509,6 +546,8 @@ public class AccelerometerBallEffect : MonoBehaviour
         debugMaxFrameJump            = 0f;
         debugTransitionRemaining     = 0f;
         debugTimeSinceLastSwitch     = -1f;
+        calibrationMsgPosition = centerLocalPosition;
+        calibrationMsgTimer    = 3f;
         Debug.Log($"[AccelerometerBallEffect] 已校正 | Tare 基準: {calibratedAcceleration:F3} | 原點鎖定: {centerLocalPosition}");
     }
 }
