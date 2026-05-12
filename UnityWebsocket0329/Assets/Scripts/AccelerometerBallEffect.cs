@@ -1,5 +1,6 @@
 using UnityEngine;
-// update: 2024-04-08 09:43
+using System.Collections.Generic;
+// update: 2026-05-12
 /// <summary>
 /// 重現「加速度儀校準 App」紅球效果（UDP 四元數模式）：
 /// 手機往哪個方向推，物件就往那個方向移動；
@@ -8,15 +9,29 @@ using UnityEngine;
 /// 座標系映射（Android GAME_ROTATION_VECTOR → Unity）：
 ///   Android 世界系 Z 朝上；重力 = (0,0,-g)
 ///   gDevice = Inverse(q) * (0,0,-g) → 本體座標系重力
-///   Unity X（直立） = worldAcc.x     （左右位移，線性加速度）
-///   Unity Z（直立） = worldAcc.y     （前後位移，線性加速度）
-///   Unity Z（平放） = worldAcc.y     （前後位移）
-///   Unity X（平放） = worldAcc.x     （左右位移）
+///   Unity X（直立） = gDevice.x     （左右傾斜，重力投影；持續量）
+///   Unity Z（直立） = worldAcc.y    （前後位移，線性加速度；瞬時量）
+///   Unity Z（平放） = worldAcc.y    （前後位移）
+///   Unity X（平放） = worldAcc.x    （左右位移）
 ///
 /// 直立與平放模式參數完全分離，各自獨立微調。
+/// 自動校正嚮導可一鍵偵測 axisFlip、axisDeadzone、sensitivity 與軸交換（swapXZ）。
 /// </summary>
 public class AccelerometerBallEffect : MonoBehaviour
 {
+    private enum WizardPhase
+    {
+        Idle,
+        UprightBaseline,     // 直立靜止 → tare + deadzone
+        UprightTiltRight,    // 直立向右傾 → axisFlip.x + swapXZ
+        UprightPushForward,  // 直立向前推 → axisFlip.z
+        FlatTransition,      // 等待 phoneIsFlat = true
+        FlatBaseline,        // 平放靜止 → tare + deadzone
+        FlatPushRight,       // 平放向右推 → axisFlip.x + swapXZ
+        FlatPushForward,     // 平放向前推 → axisFlip.z
+        Done
+    }
+
     [System.Serializable]
     private struct ModeSettings
     {
@@ -43,6 +58,9 @@ public class AccelerometerBallEffect : MonoBehaviour
 
         [Tooltip("各軸允許的最大偏移距離（米），各軸獨立不互相壓縮")]
         public Vector3 maxOffsetPerAxis;
+
+        [Tooltip("交換 X 與 Z 軸的輸入來源（嚮導偵測到手機旋轉 90° 時自動設定）")]
+        public bool swapXZ;
     }
 
     [Header("中心點")]
@@ -135,6 +153,20 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Tooltip("位置輸出的低通濾波時間常數（秒）。越大越平滑但反應越慢；0 = 關閉。建議 0.03 ~ 0.08")]
     [SerializeField] [Range(0f, 0.3f)] private float positionFilterTime = 0.05f;
 
+    [Header("自動校正嚮導")]
+    [Tooltip("每個收集階段的持續時間（秒）")]
+    [SerializeField] [Range(1f, 3f)] private float wizardCollectDuration = 1.5f;
+    [Tooltip("嚮導靈敏度目標：在指定動作幅度下希望球偏移的距離（米）")]
+    [SerializeField] [Range(0.5f, 3f)] private float wizardTargetOffset = 1.5f;
+    [Tooltip("是否在 Game 視窗顯示嚮導按鈕")]
+    [SerializeField] private bool showWizardButton = true;
+    [Tooltip("（唯讀）目前嚮導狀態文字")]
+    [SerializeField] private string wizardStatusText = "等待啟動";
+    [Tooltip("（唯讀）嚮導偵測到的直立模式 axisFlip 結果")]
+    [SerializeField] private Vector3 wizardUprightFlip = Vector3.one;
+    [Tooltip("（唯讀）嚮導偵測到的平放模式 axisFlip 結果")]
+    [SerializeField] private Vector3 wizardFlatFlip = Vector3.one;
+
     [Header("校正按鈕（Game 視窗）")]
     [Tooltip("是否在 Game 視窗顯示校正按鈕")]
     [SerializeField] private bool showCalibrationButton = true;
@@ -175,6 +207,28 @@ public class AccelerometerBallEffect : MonoBehaviour
     private float      calibrationMsgTimer       = 0f;
     private Vector3    calibrationMsgPosition    = Vector3.zero;
 
+    // ── 嚮導私有狀態 ────────────────────────────────────────────
+    private WizardPhase wizardPhase      = WizardPhase.Idle;
+    private float       wizardTimer      = 0f;
+    private int         wizardRetryCount = 0;
+    private readonly List<Vector3> wizardSamples = new List<Vector3>();
+    private Vector3 wizardUprightBaseline;
+    private Vector3 wizardFlatBaseline;
+    private bool    wizardPendingConfirm   = false;
+    private bool    wizardReadyToCollect   = false; // 每個 phase 等使用者按「準備好了」才開始
+    private float   wizardPeakZ            = 0f;   // PushForward phase：追蹤 Z 峰值方向
+    private string  wizardLastStepResult   = "";
+    // 暫存結果，確認後才寫入 settings
+    private Vector3 pendingUprightFlip       = Vector3.one;
+    private Vector3 pendingUprightDeadzone   = new Vector3(0.3f, 0.3f, 0.3f);
+    private float   pendingUprightSensitivity = 0.3f;
+    private bool    pendingUprightSwapXZ     = false;
+    private Vector3 pendingFlatFlip           = Vector3.one;
+    private Vector3 pendingFlatDeadzone       = new Vector3(0.2f, 0.2f, 0.2f);
+    private float   pendingFlatSensitivity    = 0.08f;
+    private bool    pendingFlatSwapXZ         = false;
+    private bool    pendingHasFlatResults     = false;
+
     private void Start()
     {
         centerLocalPosition = centerPoint != null
@@ -195,26 +249,159 @@ public class AccelerometerBallEffect : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!showCalibrationButton) return;
-
-        if (GUI.Button(new Rect(calibrationButtonPosition.x, calibrationButtonPosition.y,
-                                calibrationButtonSize.x,   calibrationButtonSize.y), "校正"))
-            Recalibrate();
-
-        if (calibrationMsgTimer > 0f)
+        // ── 校正按鈕 ──
+        if (showCalibrationButton)
         {
-            calibrationMsgTimer -= Time.deltaTime;
-            var style = new GUIStyle(GUI.skin.label)
+            if (GUI.Button(new Rect(calibrationButtonPosition.x, calibrationButtonPosition.y,
+                                    calibrationButtonSize.x,   calibrationButtonSize.y), "校正"))
+                Recalibrate();
+
+            if (calibrationMsgTimer > 0f)
             {
-                fontSize  = 16,
-                fontStyle = FontStyle.Bold,
-                normal    = { textColor = Color.green }
-            };
-            string msg = $"校正成功\n位置: ({calibrationMsgPosition.x:F2}, {calibrationMsgPosition.y:F2}, {calibrationMsgPosition.z:F2})";
-            GUI.Label(new Rect(calibrationButtonPosition.x,
-                               calibrationButtonPosition.y + calibrationButtonSize.y + 6f,
-                               260f, 50f), msg, style);
+                calibrationMsgTimer -= Time.deltaTime;
+                var msgStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize  = 16,
+                    fontStyle = FontStyle.Bold,
+                    normal    = { textColor = Color.green }
+                };
+                string msg = $"校正成功\n位置: ({calibrationMsgPosition.x:F2}, {calibrationMsgPosition.y:F2}, {calibrationMsgPosition.z:F2})";
+                GUI.Label(new Rect(calibrationButtonPosition.x,
+                                   calibrationButtonPosition.y + calibrationButtonSize.y + 6f,
+                                   260f, 50f), msg, msgStyle);
+            }
         }
+
+        // ── 嚮導按鈕 ──
+        if (showWizardButton && wizardPhase == WizardPhase.Idle)
+        {
+            if (GUI.Button(new Rect(calibrationButtonPosition.x,
+                                    calibrationButtonPosition.y + calibrationButtonSize.y + 64f,
+                                    calibrationButtonSize.x, calibrationButtonSize.y), "嚮導校正"))
+                StartWizard();
+        }
+
+        // ── 嚮導 Overlay ──
+        if (wizardPhase == WizardPhase.Idle) return;
+
+        float ox = Screen.width - 340f;
+        float oy = 10f;
+        float ow = 328f;
+        // 高度依狀態動態計算
+        float oh = wizardPendingConfirm ? 230f
+                 : !wizardReadyToCollect ? 240f
+                 : wizardPhase == WizardPhase.FlatTransition ? 120f
+                 : 190f;
+        GUI.Box(new Rect(ox, oy, ow, oh), "");
+
+        var baseStyle  = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true, normal  = { textColor = Color.white } };
+        var boldStyle  = new GUIStyle(baseStyle)      { fontStyle = FontStyle.Bold, fontSize = 14 };
+        var arrowStyle = new GUIStyle(baseStyle)      { fontStyle = FontStyle.Bold, fontSize = 36,
+                                                        alignment = TextAnchor.MiddleCenter,
+                                                        normal    = { textColor = Color.yellow } };
+        var hintStyle  = new GUIStyle(baseStyle)      { fontSize = 12, normal = { textColor = new Color(0.7f, 1f, 0.7f) } };
+        var retryStyle = new GUIStyle(baseStyle)      { fontSize = 12, normal = { textColor = new Color(1f, 0.8f, 0.3f) } };
+
+        float ix = ox + 8f, iy = oy + 6f, iw = ow - 16f;
+
+        // ── 標題列 ──
+        int phaseNum = wizardPhase == WizardPhase.FlatTransition ? 4 : (int)wizardPhase;
+        GUI.Label(new Rect(ix, iy, iw, 20f), $"自動校正嚮導  ({phaseNum} / 7)", boldStyle); iy += 24f;
+
+        // ── 確認摘要畫面 ──
+        if (wizardPendingConfirm)
+        {
+            GUI.Label(new Rect(ix, iy, iw, 70f), wizardStatusText, baseStyle); iy += 74f;
+            if (wizardLastStepResult.Length > 0)
+            { GUI.Label(new Rect(ix, iy, iw, 18f), "最後偵測：" + wizardLastStepResult, hintStyle); iy += 22f; }
+            if (GUI.Button(new Rect(ix, iy, iw, 38f), "確認套用")) ApplyWizardResults();
+            iy += 42f;
+            if (GUI.Button(new Rect(ix, iy, iw, 30f), "取消"))
+            { wizardPhase = WizardPhase.Idle; wizardPendingConfirm = false; wizardStatusText = "等待啟動"; }
+            return;
+        }
+
+        // ── 等待平放 ──
+        if (wizardPhase == WizardPhase.FlatTransition)
+        {
+            GUI.Label(new Rect(ix, iy, iw, 28f), "↓  手機平放（螢幕朝上）", arrowStyle); iy += 32f;
+            GUI.Label(new Rect(ix, iy, iw, 34f),
+                $"偵測中... {Mathf.Max(0f, 10f - wizardTimer):F0}s\n目前：{(phoneIsFlat ? "已平放 ✓" : "尚未平放")}", baseStyle);
+            iy += 38f;
+            if (GUI.Button(new Rect(ix, iy, iw, 28f), "跳過平放校正"))
+            { pendingHasFlatResults = false; wizardPendingConfirm = true; wizardStatusText = "已跳過平放，請按「確認套用」"; }
+            return;
+        }
+
+        // ── 說明畫面（等待使用者按「準備好了」）──
+        if (!wizardReadyToCollect)
+        {
+            GUI.Label(new Rect(ix, iy, iw, 44f), GetPhaseArrow(), arrowStyle); iy += 48f;
+            GUI.Label(new Rect(ix, iy, iw, 48f), GetPhaseDetail(), baseStyle); iy += 52f;
+            if (wizardRetryCount > 0)
+            { GUI.Label(new Rect(ix, iy, iw, 18f), wizardStatusText, retryStyle); iy += 22f; }
+            else if (wizardLastStepResult.Length > 0)
+            { GUI.Label(new Rect(ix, iy, iw, 18f), "✓ " + wizardLastStepResult, hintStyle); iy += 22f; }
+            if (GUI.Button(new Rect(ix, iy, iw, 38f), "我準備好了，開始收集"))
+            { wizardReadyToCollect = true; wizardTimer = 0f; wizardSamples.Clear(); }
+            return;
+        }
+
+        // ── 收集中 ──
+        float pct  = Mathf.Clamp01(wizardTimer / wizardCollectDuration);
+        int   bars = Mathf.RoundToInt(pct * 10);
+        GUI.Label(new Rect(ix, iy, iw, 20f),
+            "收集中  [" + new string('█', bars) + new string('░', 10 - bars) + $"]  {wizardTimer:F1}s",
+            boldStyle); iy += 24f;
+
+        // 即時訊號條（Baseline 時顯示絕對值；方向 phase 顯示相對基準的差值）
+        bool isBaseline = wizardPhase == WizardPhase.UprightBaseline || wizardPhase == WizardPhase.FlatBaseline;
+        Vector3 liveRaw = isBaseline ? filteredAcceleration
+            : filteredAcceleration - (wizardPhase == WizardPhase.FlatPushRight || wizardPhase == WizardPhase.FlatPushForward
+                                       ? wizardFlatBaseline : wizardUprightBaseline);
+        DrawSignalBar(ix, ref iy, iw, "X 軸", liveRaw.x, baseStyle);
+        DrawSignalBar(ix, ref iy, iw, "Z 軸", liveRaw.z, baseStyle);
+        // PushForward phase 額外顯示目前偵測到的 Z 峰值
+        bool showPeak = wizardPhase == WizardPhase.UprightPushForward || wizardPhase == WizardPhase.FlatPushForward;
+        if (showPeak && Mathf.Abs(wizardPeakZ) > 0.05f)
+            GUI.Label(new Rect(ix, iy, iw, 18f), $"偵測到峰值：{wizardPeakZ:+0.0;-0.0} m/s²  {(Mathf.Abs(wizardPeakZ) >= 0.3f ? "✓" : "（再大一點）")}", hintStyle);
+        else if (!showPeak && wizardLastStepResult.Length > 0)
+            GUI.Label(new Rect(ix, iy, iw, 18f), "✓ " + wizardLastStepResult, hintStyle);
+    }
+
+    private string GetPhaseArrow() => wizardPhase switch
+    {
+        WizardPhase.UprightBaseline    => "[ 靜止不動 ]",
+        WizardPhase.UprightTiltRight   => "→  向右傾斜",
+        WizardPhase.UprightPushForward => "↑↓  前後移動",
+        WizardPhase.FlatBaseline       => "[ 靜止不動 ]",
+        WizardPhase.FlatPushRight      => "→←  左右移動",
+        WizardPhase.FlatPushForward    => "↑↓  前後移動",
+        _                              => ""
+    };
+
+    private string GetPhaseDetail() => wizardPhase switch
+    {
+        WizardPhase.UprightBaseline    => "手機豎直拿好\n保持靜止，不要動",
+        WizardPhase.UprightTiltRight   => "手機螢幕朝向你\n往右邊傾斜並保持不動",
+        WizardPhase.UprightPushForward => "握著手機，往前後來回移動幾次\n（不用放手，就像在搖）",
+        WizardPhase.FlatBaseline       => "手機平放（螢幕朝上）\n保持靜止，不要動",
+        WizardPhase.FlatPushRight      => "手機平放\n往左右來回推動幾次",
+        WizardPhase.FlatPushForward    => "手機平放\n往前後來回推動幾次",
+        _                              => ""
+    };
+
+    private void DrawSignalBar(float x, ref float y, float w, string label, float value, GUIStyle style)
+    {
+        const float maxVal = 8f;
+        const int   barLen = 14;
+        float norm   = Mathf.Clamp01(Mathf.Abs(value) / maxVal);
+        int   filled = Mathf.RoundToInt(norm * barLen);
+        string bar   = value >= 0
+            ? "[" + new string('░', barLen - filled) + new string('█', filled) + "]"
+            : "[" + new string('█', filled) + new string('░', barLen - filled) + "]";
+        GUI.Label(new Rect(x, y, w, 18f), $"{label}: {bar}  {value:+0.0;-0.0} m/s²", style);
+        y += 20f;
     }
 
     /// <summary>
@@ -239,7 +426,9 @@ public class AccelerometerBallEffect : MonoBehaviour
 
             if (!phoneIsFlat)
             {
-                // 直立模式：Y=前後傾斜（重力）; X/Z 由 HandleAcceleration 填入線性加速度
+                // 直立模式：X=左右傾斜（gDevice.x，持續量）; Y=前後傾斜（gDevice.z）
+                // Z 由 HandleAcceleration 的線性加速度負責（推力感）
+                rawAcceleration.x = gDevice.x;
                 rawAcceleration.y = gDevice.z;
             }
             // 平放模式：rawAcceleration 全部由 HandleAcceleration 設定
@@ -289,9 +478,9 @@ public class AccelerometerBallEffect : MonoBehaviour
         }
         else if (hasOrientationData && !phoneIsFlat)
         {
-            // 直立模式：X/Z 均用線性加速度，worldAcc.x 與 worldAcc.y 在水平面正交，無干擾
+            // 直立模式：X 軸已由 HandleGyroscopeData 的 gDevice.x 負責（傾斜角）
+            // 此處只更新 Z 軸（前後推力，線性加速度）
             Vector3 worldAcc = currentOrientation * acc;
-            rawAcceleration.x = worldAcc.x; // Android 世界 X → Unity X
             rawAcceleration.z = worldAcc.y; // Android 世界 Y → Unity Z
         }
         else if (!hasOrientationData)
@@ -310,9 +499,16 @@ public class AccelerometerBallEffect : MonoBehaviour
                 if (firstDataTime < 0f)
                     firstDataTime = Time.time;
                 else if (Time.time - firstDataTime >= autoCalibrationDelay)
-                    Recalibrate(); // 內部會設 hasCalibrated = true
+                    Recalibrate();
             }
-            // 校正完成前，物件鎖在原點不動
+            // 嚮導在初始校正完成前也可運行，補跑濾波讓樣本有效
+            if (wizardPhase != WizardPhase.Idle && wizardPhase != WizardPhase.Done)
+            {
+                ModeSettings ws = phoneIsFlat ? flatSettings : uprightSettings;
+                float wa = 1f - Mathf.Exp(-Time.deltaTime / ws.inputFilterTime);
+                filteredAcceleration = Vector3.Lerp(filteredAcceleration, rawAcceleration, wa);
+                UpdateWizard();
+            }
             transform.localPosition = centerLocalPosition;
             return;
         }
@@ -356,8 +552,29 @@ public class AccelerometerBallEffect : MonoBehaviour
         float alpha = 1f - Mathf.Exp(-Time.deltaTime / s.inputFilterTime);
         filteredAcceleration = Vector3.Lerp(filteredAcceleration, rawAcceleration, alpha);
 
+        // ── 嚮導校正進行中：凍結小球 ──
+        if (wizardPhase != WizardPhase.Idle && wizardPhase != WizardPhase.Done)
+        {
+            UpdateWizard();
+            debugRawAcceleration      = rawAcceleration;
+            debugFilteredAcceleration = filteredAcceleration;
+            debugActualPosition       = transform.localPosition;
+            transform.localPosition   = centerLocalPosition;
+            return;
+        }
+        // 嚮導完成後顯示 overlay 3 秒，倒計時結束自動隱藏
+        if (wizardPhase == WizardPhase.Done)
+        {
+            wizardTimer += Time.deltaTime;
+            if (wizardTimer >= 3f) { wizardTimer = 0f; wizardPhase = WizardPhase.Idle; }
+        }
+
         // Tare 去偏：以校正瞬間的 filteredAcceleration 為基準，使當前姿勢 = (0,0,0)
         Vector3 debiased = filteredAcceleration - calibratedAcceleration;
+
+        // ── 軸交換（嚮導偵測到手機旋轉 90° 時啟用）──
+        if (s.swapXZ)
+            debiased = new Vector3(debiased.z, debiased.y, debiased.x);
 
         // 套用方向翻轉
         Vector3 flipped = new Vector3(
@@ -549,5 +766,245 @@ public class AccelerometerBallEffect : MonoBehaviour
         calibrationMsgPosition = centerLocalPosition;
         calibrationMsgTimer    = 3f;
         Debug.Log($"[AccelerometerBallEffect] 已校正 | Tare 基準: {calibratedAcceleration:F3} | 原點鎖定: {centerLocalPosition}");
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  自動校正嚮導
+    // ══════════════════════════════════════════════════════════════
+
+    public void StartWizard()
+    {
+        wizardPhase          = WizardPhase.UprightBaseline;
+        wizardTimer          = 0f;
+        wizardRetryCount     = 0;
+        wizardPendingConfirm = false;
+        wizardLastStepResult = "";
+        wizardSamples.Clear();
+        pendingHasFlatResults = false;
+        // 以現有 settings 初始化暫存值（部分 phase 跳過時保留原值）
+        pendingUprightFlip        = uprightSettings.axisFlip;
+        pendingUprightDeadzone    = uprightSettings.axisDeadzone;
+        pendingUprightSensitivity = uprightSettings.sensitivity;
+        pendingUprightSwapXZ      = false;
+        pendingFlatFlip           = flatSettings.axisFlip;
+        pendingFlatDeadzone       = flatSettings.axisDeadzone;
+        pendingFlatSensitivity    = flatSettings.sensitivity;
+        pendingFlatSwapXZ         = false;
+        wizardUprightFlip         = Vector3.one;
+        wizardFlatFlip            = Vector3.one;
+        wizardReadyToCollect      = false; // 第一步先看說明
+        wizardPeakZ               = 0f;
+        wizardStatusText          = GetPhaseDetail();
+    }
+
+    private void UpdateWizard()
+    {
+        if (wizardPendingConfirm) return;
+        if (wizardPhase == WizardPhase.Idle || wizardPhase == WizardPhase.Done) return;
+
+        // FlatTransition：自動等待平放偵測，不需要使用者按鍵
+        if (wizardPhase == WizardPhase.FlatTransition)
+        {
+            wizardTimer += Time.deltaTime;
+            if (phoneIsFlat)
+            {
+                AdvanceWizardPhase();
+            }
+            else if (wizardTimer >= 10f)
+            {
+                pendingHasFlatResults = false;
+                wizardPendingConfirm  = true;
+                wizardStatusText      = "平放逾時，僅套用直立模式校正\n請按「確認套用」";
+            }
+            return;
+        }
+
+        // 等待使用者按「準備好了」
+        if (!wizardReadyToCollect) return;
+
+        // 採樣
+        wizardSamples.Add(filteredAcceleration);
+        wizardTimer += Time.deltaTime;
+        // PushForward phase：記錄 Z 軸峰值（符號 = 方向）
+        bool isPushFwd = wizardPhase == WizardPhase.UprightPushForward || wizardPhase == WizardPhase.FlatPushForward;
+        if (isPushFwd && Mathf.Abs(filteredAcceleration.z) > Mathf.Abs(wizardPeakZ))
+            wizardPeakZ = filteredAcceleration.z;
+
+        if (wizardTimer >= wizardCollectDuration)
+            ProcessPhaseComplete();
+    }
+
+    private void AdvanceWizardPhase()
+    {
+        wizardSamples.Clear();
+        wizardTimer      = 0f;
+        wizardRetryCount = 0;
+        wizardPhase      = (WizardPhase)((int)wizardPhase + 1);
+        // FlatTransition 與 Done 不需要使用者按鍵；其餘 phase 顯示說明等待確認
+        wizardReadyToCollect = (wizardPhase == WizardPhase.FlatTransition || wizardPhase == WizardPhase.Done);
+        wizardPeakZ      = 0f;
+        wizardStatusText = GetPhaseDetail();
+    }
+
+    private void ProcessPhaseComplete()
+    {
+        ComputeMeanAndStd(wizardSamples, out Vector3 mean, out Vector3 std);
+        wizardSamples.Clear();
+        wizardTimer = 0f;
+
+        switch (wizardPhase)
+        {
+            // ── Baseline：tare + deadzone ──────────────────────────
+            case WizardPhase.UprightBaseline:
+            case WizardPhase.FlatBaseline:
+            {
+                bool isUpright = (wizardPhase == WizardPhase.UprightBaseline);
+                if ((std.x > 1f || std.z > 1f) && wizardRetryCount < 3)
+                {
+                    wizardRetryCount++;
+                    wizardReadyToCollect = false;
+                    wizardStatusText = $"手機未靜止，請重試 ({wizardRetryCount}/3)";
+                    return;
+                }
+                Vector3 dz = new Vector3(
+                    Mathf.Clamp(3f * std.x, 0.1f, 1f),
+                    Mathf.Clamp(3f * std.y, 0.1f, 1f),
+                    Mathf.Clamp(3f * std.z, 0.1f, 1f));
+                if (isUpright) { wizardUprightBaseline  = mean; pendingUprightDeadzone = dz; }
+                else           { wizardFlatBaseline     = mean; pendingFlatDeadzone    = dz; }
+                wizardLastStepResult = $"死區偵測完成 ({dz.x:F2}, {dz.y:F2}, {dz.z:F2})";
+                wizardRetryCount = 0;
+                AdvanceWizardPhase();
+                break;
+            }
+
+            // ── TiltRight / PushRight：axisFlip.x + swapXZ + sensitivity ──
+            case WizardPhase.UprightTiltRight:
+            case WizardPhase.FlatPushRight:
+            {
+                bool isUpright = (wizardPhase == WizardPhase.UprightTiltRight);
+                Vector3 baseline = isUpright ? wizardUprightBaseline : wizardFlatBaseline;
+                Vector3 dz       = isUpright ? pendingUprightDeadzone : pendingFlatDeadzone;
+                Vector3 debiased = mean - baseline;
+                float mx = Mathf.Abs(debiased.x), mz = Mathf.Abs(debiased.z);
+
+                if (Mathf.Abs(mx - mz) < 0.3f && wizardRetryCount < 3)
+                {
+                    wizardRetryCount++;
+                    wizardReadyToCollect = false;
+                    wizardStatusText = $"動作不夠明顯，請加大幅度後重試 ({wizardRetryCount}/3)";
+                    return;
+                }
+                bool swapXZ      = mz > mx;
+                float domMean    = swapXZ ? debiased.z : debiased.x;
+                float domDz      = swapXZ ? dz.z : dz.x;
+                float flipX      = Mathf.Sign(domMean);
+                float effMag     = Mathf.Max(Mathf.Abs(domMean) - domDz, 0.05f);
+                float sensitivity = wizardTargetOffset / effMag;
+
+                if (isUpright)
+                {
+                    pendingUprightSwapXZ      = swapXZ;
+                    pendingUprightFlip.x      = flipX;
+                    pendingUprightSensitivity = sensitivity;
+                    wizardUprightFlip         = new Vector3(flipX, pendingUprightFlip.y, pendingUprightFlip.z);
+                }
+                else
+                {
+                    pendingFlatSwapXZ      = swapXZ;
+                    pendingFlatFlip.x      = flipX;
+                    pendingFlatSensitivity = sensitivity;
+                    wizardFlatFlip         = new Vector3(flipX, pendingFlatFlip.y, pendingFlatFlip.z);
+                }
+                wizardRetryCount     = 0;
+                wizardLastStepResult = $"X{(flipX > 0 ? "正向" : "翻轉")}{(swapXZ ? " | 交換XZ" : "")} 靈敏度={sensitivity:F3}";
+                AdvanceWizardPhase();
+                break;
+            }
+
+            // ── PushForward：axisFlip.z ────────────────────────────
+            case WizardPhase.UprightPushForward:
+            case WizardPhase.FlatPushForward:
+            {
+                bool isUpright   = (wizardPhase == WizardPhase.UprightPushForward);
+                Vector3 baseline = isUpright ? wizardUprightBaseline : wizardFlatBaseline;
+                bool swapXZ      = isUpright ? pendingUprightSwapXZ  : pendingFlatSwapXZ;
+                // Z 軸用線性加速度（瞬時量），以峰值符號判斷方向，不用平均值
+                // swapXZ 時 output_z = pre_x，所以 peak 應從 pre_x 讀
+                float peakSignal = swapXZ ? (mean - baseline).x : wizardPeakZ;
+
+                if (Mathf.Abs(peakSignal) < 0.3f && wizardRetryCount < 3)
+                {
+                    wizardRetryCount++;
+                    wizardReadyToCollect = false;
+                    wizardPeakZ      = 0f;
+                    wizardStatusText = $"訊號太弱，請移動幅度大一點後重試 ({wizardRetryCount}/3)";
+                    return;
+                }
+                float flipZ = (Mathf.Abs(peakSignal) < 0.05f) ? 1f : Mathf.Sign(peakSignal);
+
+                if (isUpright)
+                {
+                    pendingUprightFlip.z = flipZ;
+                    wizardUprightFlip    = pendingUprightFlip;
+                    wizardRetryCount     = 0;
+                    wizardLastStepResult = $"Z{(flipZ > 0 ? "正向" : "翻轉")}";
+                    AdvanceWizardPhase(); // → FlatTransition
+                }
+                else
+                {
+                    pendingFlatFlip.z     = flipZ;
+                    wizardFlatFlip        = pendingFlatFlip;
+                    pendingHasFlatResults = true;
+                    wizardRetryCount      = 0;
+                    wizardLastStepResult  = $"Z{(flipZ > 0 ? "正向" : "翻轉")}";
+                    // 全部完成，等待確認
+                    wizardStatusText     = "嚮導完成！\n請確認後按「確認套用」";
+                    wizardPendingConfirm  = true;
+                }
+                break;
+            }
+        }
+    }
+
+    private void ApplyWizardResults()
+    {
+        uprightSettings.axisFlip     = pendingUprightFlip;
+        uprightSettings.axisDeadzone = pendingUprightDeadzone;
+        uprightSettings.sensitivity  = pendingUprightSensitivity;
+        uprightSettings.swapXZ       = pendingUprightSwapXZ;
+
+        if (pendingHasFlatResults)
+        {
+            flatSettings.axisFlip     = pendingFlatFlip;
+            flatSettings.axisDeadzone = pendingFlatDeadzone;
+            flatSettings.sensitivity  = pendingFlatSensitivity;
+            flatSettings.swapXZ       = pendingFlatSwapXZ;
+        }
+
+        Recalibrate(); // 以當前姿勢鎖定原點（使用者已靜止）
+        wizardPendingConfirm = false;
+        wizardPhase          = WizardPhase.Done;
+        wizardTimer          = 0f;
+        wizardStatusText     = "校正已套用！";
+        Debug.Log($"[嚮導校正] 完成\n" +
+                  $"  直立 flip={pendingUprightFlip} dz={pendingUprightDeadzone} sens={pendingUprightSensitivity:F3} swapXZ={pendingUprightSwapXZ}\n" +
+                  $"  平放 flip={pendingFlatFlip} dz={pendingFlatDeadzone} sens={pendingFlatSensitivity:F3} swapXZ={pendingFlatSwapXZ} (有結果={pendingHasFlatResults})");
+    }
+
+    private static void ComputeMeanAndStd(List<Vector3> samples, out Vector3 mean, out Vector3 std)
+    {
+        if (samples.Count == 0) { mean = std = Vector3.zero; return; }
+        mean = Vector3.zero;
+        foreach (var v in samples) mean += v;
+        mean /= samples.Count;
+        Vector3 variance = Vector3.zero;
+        foreach (var v in samples)
+        {
+            Vector3 d = v - mean;
+            variance += new Vector3(d.x * d.x, d.y * d.y, d.z * d.z);
+        }
+        variance /= samples.Count;
+        std = new Vector3(Mathf.Sqrt(variance.x), Mathf.Sqrt(variance.y), Mathf.Sqrt(variance.z));
     }
 }
