@@ -252,7 +252,15 @@ railway logs
 
 ## 🔄 版本歷史
 
-### v2.2.0 (最新)
+### v3.0.0 (2026-05-12 最新)
+- 🎯 **新增 AccelerometerBallEffectUI**：IMGUI 即時參數面板，支援三軸鎖定同步調整
+- 🔄 **新增 GyroToRotation**：透過 SensorEvents 事件系統將陀螺儀四元數映射到 Unity 旋轉
+- 🌐 **新增 TcpGyroscopeReceiver**：TCP 版接收器，解決 Windows 防火牆 UDP 封鎖問題
+- 🖥️ **新增 web-demo/**：`gyro-demo.html` + `gyro-relay.js`，本地 UDP→WebSocket 陀螺儀展示系統
+- 📝 **新增 records/**：模式切換修正、平放模式分析、陀螺儀 Demo 彈回修正等開發紀錄
+- 🗑️ **移除** `test.cs`（舊測試腳本）
+
+### v2.2.0
 - ✨ **新增搖晃偵測功能**：基於加速度感測器的智能搖晃偵測
 - 🔄 **即時數據傳輸**：搖晃數據透過WebSocket即時傳輸到Unity
 - 🎮 **Unity整合**：搖晃狀態顯示整合到GyroscopeController調試界面

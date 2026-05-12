@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<!-- gyro-demo.html  2026-05-08 -->
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>陀螺儀 3D Demo</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#000; overflow:hidden; font-family:'Segoe UI',sans-serif; color:#fff; }
+
+    #panel {
+      position:fixed; top:16px; right:16px; width:284px;
+      background:rgba(8,12,24,0.88); border:1px solid rgba(255,255,255,0.12);
+      border-radius:14px; padding:16px 18px;
+      backdrop-filter:blur(10px); font-size:13px; z-index:10;
+      max-height:calc(100vh - 32px); overflow-y:auto;
+    }
+    #panel h2 { font-size:14px; color:#7bcfff; letter-spacing:1.5px; margin-bottom:12px; }
+
+    .status-row {
+      display:flex; align-items:center; gap:8px;
+      border-bottom:1px solid rgba(255,255,255,0.08);
+    }
+    .tag { padding:2px 9px; border-radius:10px; font-size:11px; font-weight:700; }
+    .tag.ok   { background:#1a5c2a; color:#6dffaa; }
+    .tag.no   { background:#5c1a1a; color:#ff8080; }
+    .tag.flat { background:#1a2e5c; color:#80aaff; }
+    .tag.up   { background:#1a4a2a; color:#80ffaa; }
+    #hz { margin-left:auto; font-size:12px; color:#aaa; }
+
+    .sec {
+      font-size:11px; color:#7bcfff; letter-spacing:1px;
+      margin:10px 0 6px; border-bottom:1px solid rgba(123,207,255,0.2); padding-bottom:3px;
+    }
+
+    .row { margin-bottom:8px; }
+    .row label { display:flex; justify-content:space-between; margin-bottom:2px; color:#999; font-size:12px; }
+    .row label span { color:#eee; }
+    input[type=range] { width:100%; accent-color:#7bcfff; cursor:pointer; }
+
+    .axrow { margin-bottom:8px; }
+    .axrow .axlbl { color:#999; font-size:11px; margin-bottom:3px; }
+    .axrow .axgrid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; }
+    .axcol label { display:flex; justify-content:space-between; color:#888; font-size:11px; margin-bottom:1px; }
+    .axcol label span { color:#ddd; }
+
+    .tgrow { margin-bottom:8px; }
+    .tgrow .tglbl { color:#999; font-size:11px; margin-bottom:3px; }
+    .tgrow .tggrid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; }
+    .tgcol { display:flex; align-items:center; justify-content:space-between; gap:3px; }
+    .tgcol .tgax { color:#888; font-size:11px; }
+    .tgcol .tgbtns { display:flex; gap:2px; }
+    .tgcol .tgbtns button {
+      font-size:10px; padding:2px 5px; cursor:pointer;
+      border-radius:4px; border:1px solid rgba(255,255,255,0.2);
+      background:rgba(255,255,255,0.05); color:#aaa; transition:background .15s;
+    }
+    .tgcol .tgbtns button.active {
+      background:rgba(80,160,255,0.25); border-color:rgba(80,160,255,0.6); color:#7bcfff;
+    }
+
+    .tabrow { display:flex; gap:6px; margin-bottom:8px; }
+    .tabrow button {
+      flex:1; padding:5px; cursor:pointer;
+      background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15);
+      color:#aaa; border-radius:6px; font-size:12px; transition:background .15s;
+    }
+    .tabrow button.active {
+      background:rgba(80,160,255,0.2); border-color:rgba(80,160,255,0.5); color:#7bcfff;
+    }
+
+    #calibBtn {
+      width:100%; margin-top:10px; padding:9px;
+      background:rgba(80,160,255,0.15); border:1px solid rgba(80,160,255,0.4);
+      color:#7bcfff; border-radius:8px; cursor:pointer; font-size:13px; letter-spacing:1px;
+      transition:background .2s;
+    }
+    #calibBtn:hover { background:rgba(80,160,255,0.3); }
+    #calibMsg { text-align:center; margin-top:8px; font-size:12px; color:#6dffaa; height:16px; transition:opacity .5s; }
+
+    #calibStatus {
+      font-size:11px; margin:6px 0 2px; line-height:1.9; color:#888;
+      border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;
+    }
+
+    #axisCalibBtn {
+      width:100%; margin-top:6px; padding:8px;
+      background:rgba(50,200,140,0.12); border:1px solid rgba(50,200,140,0.35);
+      color:#4ddba8; border-radius:8px; cursor:pointer; font-size:12px; letter-spacing:1px;
+      transition:background .2s;
+    }
+    #axisCalibBtn:hover { background:rgba(50,200,140,0.25); }
+
+    #axisCalibWizard {
+      margin-top:8px; padding:8px 10px;
+      background:rgba(255,255,255,0.04); border-radius:7px;
+    }
+    #axisCalibStep { font-size:12px; color:#ccc; margin-bottom:6px; }
+    .calib-progress {
+      width:100%; height:5px; background:rgba(255,255,255,0.1);
+      border-radius:3px; overflow:hidden;
+    }
+    #axisCalibBar {
+      height:100%; width:0%; background:#4ddba8; border-radius:3px;
+      transition:width 0.08s linear;
+    }
+
+    #resetBtn {
+      width:100%; margin-top:8px; padding:7px;
+      background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.10);
+      color:#555; border-radius:8px; cursor:pointer; font-size:11px; letter-spacing:0.5px;
+      transition:all .2s;
+    }
+    #resetBtn:hover { background:rgba(255,60,60,0.1); border-color:rgba(255,60,60,0.3); color:#ff7070; }
+
+    #dateLabel { text-align:right; margin-top:10px; font-size:10px; color:#444; }
+
+    /* ── 軸向校正引導覆蓋層 ── */
+    #calibOverlay {
+      display:none; position:fixed; inset:0; z-index:100;
+      background:rgba(2,5,15,0.9); backdrop-filter:blur(12px);
+      align-items:center; justify-content:center;
+    }
+    #calibOverlay.active { display:flex; }
+    #calibOBox {
+      background:rgba(8,14,32,0.97);
+      border:1px solid rgba(100,160,255,0.2);
+      border-radius:20px; padding:28px 32px;
+      text-align:center; width:300px;
+      box-shadow:0 0 80px rgba(30,70,180,0.2);
+    }
+    #calibOTitle { font-size:13px; color:#7bcfff; letter-spacing:2px; margin-bottom:3px; }
+    #calibOModeLabel { font-size:11px; color:#445566; margin-bottom:20px; }
+    #calibOVizWrap {
+      width:200px; height:200px;
+      position:relative; margin:0 auto 18px;
+    }
+    #calibPhone {
+      position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%);
+      width:72px; height:130px;
+      background:#1a2a44; border:2.5px solid #5588cc; border-radius:14px;
+      box-shadow:7px 5px 0 #080f20, 0 0 0 0 rgba(77,219,168,0);
+      transition:transform .5s cubic-bezier(.4,0,.2,1), box-shadow .3s, border-color .3s;
+    }
+    #calibPhone::before {
+      content:''; position:absolute; top:9px; left:50%; transform:translateX(-50%);
+      width:8px; height:8px;
+      background:#0d1f38; border:1.5px solid #334466; border-radius:50%;
+    }
+    #calibPhone .phone-screen {
+      position:absolute; top:24px; left:7px; right:7px; bottom:16px;
+      background:#0a1525; border-radius:5px;
+    }
+    #calibPhone .phone-home {
+      position:absolute; bottom:6px; left:50%; transform:translateX(-50%);
+      width:30px; height:4px; background:#2a3f66; border-radius:2px;
+    }
+    #calibPhone.step0 { animation:pulsePhone 2s ease-in-out infinite; }
+    @keyframes pulsePhone {
+      0%,100% { box-shadow:7px 5px 0 #080f20, 0 0 0 0 rgba(77,219,168,0.8); border-color:#5588cc; }
+      50%      { box-shadow:7px 5px 0 #080f20, 0 0 0 16px rgba(77,219,168,0); border-color:#4ddba8; }
+    }
+    /* 步驟動畫：在中間位置和目標角度之間振盪，讓使用者看到動作方向 */
+    #calibPhone.step1anim { animation:tiltRight 2.2s ease-in-out infinite; }
+    #calibPhone.step2anim { animation:tiltFwd   2.2s ease-in-out infinite; }
+    @keyframes tiltRight {
+      0%,100% { transform:translate(-50%,-50%) rotate(0deg); }
+      38%,62% { transform:translate(-50%,-50%) rotate(30deg); }
+    }
+    @keyframes tiltFwd {
+      0%,100% { transform:translate(-50%,-50%) rotateX(0deg); }
+      38%,62% { transform:translate(-50%,-50%) rotateX(-44deg); }
+    }
+    #calibArrowSVG {
+      position:absolute; top:0; left:0; width:200px; height:200px;
+      pointer-events:none; overflow:visible;
+    }
+    #arrowRight { animation:pulseRight .85s ease-in-out infinite; transform-box:fill-box; transform-origin:left center; }
+    #arrowFwd   { animation:pulseUp   .85s ease-in-out infinite; transform-box:fill-box; transform-origin:center bottom; }
+    @keyframes pulseRight {
+      0%,100% { transform:translateX(0);    opacity:.45; }
+      50%      { transform:translateX(8px);  opacity:1;   }
+    }
+    @keyframes pulseUp {
+      0%,100% { transform:translateY(0);    opacity:.45; }
+      50%      { transform:translateY(-8px); opacity:1;   }
+    }
+    #calibOStep { font-size:11px; color:#445566; letter-spacing:.5px; margin-bottom:5px; }
+    #calibODesc { font-size:18px; color:#eee; font-weight:600; margin-bottom:5px; }
+    #calibOHint { font-size:12px; color:#556677; margin-bottom:14px; line-height:1.6; min-height:36px; }
+    #calibOProgressWrap {
+      width:100%; height:6px; background:rgba(255,255,255,0.08);
+      border-radius:3px; overflow:hidden; margin-bottom:18px;
+    }
+    #calibOBar { height:100%; width:0%; border-radius:3px; transition:width .08s linear, background .4s; }
+    #calibOCancel {
+      padding:8px 24px; border-radius:9px;
+      background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12);
+      color:#667; font-size:12px; cursor:pointer; transition:all .2s;
+    }
+    #calibOCancel:hover { background:rgba(255,50,50,0.12); border-color:rgba(255,80,80,0.35); color:#ff7070; }
+
+    #hint {
+      position:fixed; bottom:14px; left:50%; transform:translateX(-50%);
+      background:rgba(0,0,0,0.5); color:#666; font-size:11px;
+      padding:5px 14px; border-radius:20px; z-index:10; pointer-events:none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="panel">
+  <h2>陀螺儀 3D DEMO</h2>
+
+  <div class="status-row">
+    <span id="wsTag" class="tag no">未連線</span>
+    <span id="modeTag" class="tag up">直立</span>
+    <span id="hz">0 Hz</span>
+  </div>
+
+  <!-- ── 全域設定 ── -->
+  <div class="sec">全域設定</div>
+  <div class="row">
+    <label>平放閾值 <span id="vFlat">0.70</span></label>
+    <input type="range" id="sFlat" min="0.3" max="0.95" step="0.05" value="0.70">
+  </div>
+  <div class="row">
+    <label>平放重力 <span id="vGrav">0.50</span></label>
+    <input type="range" id="sGrav" min="0" max="3" step="0.05" value="0.5">
+  </div>
+  <div class="row">
+    <label>防抖時間 (s) <span id="vDebounce">0.30</span></label>
+    <input type="range" id="sDebounce" min="0" max="1" step="0.05" value="0.3">
+  </div>
+  <div class="row">
+    <label>過渡時長 (s) <span id="vTransition">0.50</span></label>
+    <input type="range" id="sTransition" min="0.1" max="2" step="0.05" value="0.5">
+  </div>
+  <div class="row">
+    <label>輸出濾波 (s) <span id="vPosFilter">0.05</span></label>
+    <input type="range" id="sPosFilter" min="0" max="0.3" step="0.01" value="0.05">
+  </div>
+
+  <!-- ── 模式設定 ── -->
+  <div class="sec">模式設定</div>
+  <div class="tabrow">
+    <button id="tabUpright" class="active" onclick="window._setTab('upright')">直立</button>
+    <button id="tabFlat"                   onclick="window._setTab('flat')">平放</button>
+  </div>
+
+  <div class="row">
+    <label>靈敏度 <span id="vSens">0.30</span></label>
+    <input type="range" id="sSens" min="0.01" max="1.5" step="0.01" value="0.30">
+  </div>
+  <div class="row">
+    <label>平滑速度 <span id="vSmooth">10</span></label>
+    <input type="range" id="sSmooth" min="1" max="30" step="1" value="10">
+  </div>
+  <div class="row">
+    <label>輸入濾波 (s) <span id="vInputFilter">0.05</span></label>
+    <input type="range" id="sInputFilter" min="0.01" max="0.5" step="0.01" value="0.05">
+  </div>
+
+  <div class="axrow">
+    <div class="axlbl">死區 (m/s²)</div>
+    <div class="axgrid">
+      <div class="axcol"><label>X <span id="vDeadX">0.30</span></label><input type="range" id="sDeadX" min="0" max="2" step="0.05" value="0.30"></div>
+      <div class="axcol"><label>Y <span id="vDeadY">0.30</span></label><input type="range" id="sDeadY" min="0" max="2" step="0.05" value="0.30"></div>
+      <div class="axcol"><label>Z <span id="vDeadZ">0.30</span></label><input type="range" id="sDeadZ" min="0" max="2" step="0.05" value="0.30"></div>
+    </div>
+  </div>
+
+  <div class="tgrow">
+    <div class="tglbl">翻轉方向</div>
+    <div class="tggrid">
+      <div class="tgcol">
+        <span class="tgax">X</span>
+        <div class="tgbtns">
+          <button id="tFlipXn">-1</button>
+          <button id="tFlipXp" class="active">+1</button>
+        </div>
+      </div>
+      <div class="tgcol">
+        <span class="tgax">Y</span>
+        <div class="tgbtns">
+          <button id="tFlipYn">-1</button>
+          <button id="tFlipYp" class="active">+1</button>
+        </div>
+      </div>
+      <div class="tgcol">
+        <span class="tgax">Z</span>
+        <div class="tgbtns">
+          <button id="tFlipZp">+1</button>
+          <button id="tFlipZn" class="active">-1</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tgrow">
+    <div class="tglbl">遮罩 (軸開關)</div>
+    <div class="tggrid">
+      <div class="tgcol">
+        <span class="tgax">X</span>
+        <div class="tgbtns">
+          <button id="tMaskX1" class="active">開</button>
+          <button id="tMaskX0">關</button>
+        </div>
+      </div>
+      <div class="tgcol">
+        <span class="tgax">Y</span>
+        <div class="tgbtns">
+          <button id="tMaskY1" class="active">開</button>
+          <button id="tMaskY0">關</button>
+        </div>
+      </div>
+      <div class="tgcol">
+        <span class="tgax">Z</span>
+        <div class="tgbtns">
+          <button id="tMaskZ1" class="active">開</button>
+          <button id="tMaskZ0">關</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="axrow">
+    <div class="axlbl">縮放</div>
+    <div class="axgrid">
+      <div class="axcol"><label>X <span id="vScaleX">1.00</span></label><input type="range" id="sScaleX" min="0.1" max="5" step="0.1" value="1.0"></div>
+      <div class="axcol"><label>Y <span id="vScaleY">1.00</span></label><input type="range" id="sScaleY" min="0.1" max="5" step="0.1" value="1.0"></div>
+      <div class="axcol"><label>Z <span id="vScaleZ">1.00</span></label><input type="range" id="sScaleZ" min="0.1" max="5" step="0.1" value="1.0"></div>
+    </div>
+  </div>
+
+  <div class="axrow">
+    <div class="axlbl">最大位移</div>
+    <div class="axgrid">
+      <div class="axcol"><label>X <span id="vMaxX">3.0</span></label><input type="range" id="sMaxX" min="0.5" max="8" step="0.5" value="3.0"></div>
+      <div class="axcol"><label>Y <span id="vMaxY">3.0</span></label><input type="range" id="sMaxY" min="0.5" max="8" step="0.5" value="3.0"></div>
+      <div class="axcol"><label>Z <span id="vMaxZ">3.0</span></label><input type="range" id="sMaxZ" min="0.5" max="8" step="0.5" value="3.0"></div>
+    </div>
+  </div>
+
+  <!-- ── 校正區 ── -->
+  <button id="calibBtn">校正直立 ▸ Tare</button>
+  <div id="calibMsg"></div>
+  <div id="calibStatus"></div>
+
+  <button id="axisCalibBtn">開始軸向校正</button>
+  <div id="axisCalibWizard" style="display:none">
+    <div id="axisCalibStep">步驟 1/3：靜止保持當前姿勢</div>
+    <div class="calib-progress"><div id="axisCalibBar"></div></div>
+  </div>
+
+  <button id="resetBtn">重置為預設值</button>
+  <div id="dateLabel">2026-05-08</div>
+</div>
+
+<!-- ── 軸向校正引導覆蓋層 ── -->
+<div id="calibOverlay">
+  <div id="calibOBox">
+    <div id="calibOTitle">軸向校正</div>
+    <div id="calibOModeLabel">直立模式</div>
+
+    <div id="calibOVizWrap">
+      <!-- 3D 手機模型 -->
+      <div id="calibPhone" class="step0">
+        <div class="phone-screen"></div>
+        <div class="phone-home"></div>
+      </div>
+      <!-- 方向箭頭（SVG 疊加，不受手機 3D transform 影響）-->
+      <svg id="calibArrowSVG" viewBox="0 0 200 200">
+        <!-- 固定視角提示：底部小字 -->
+        <text x="100" y="196" text-anchor="middle"
+              fill="#334455" font-size="9.5">螢幕正面朝向你</text>
+
+        <!-- 步驟 1：右側箭頭 + 文字 -->
+        <g id="arrowRight" display="none">
+          <line x1="148" y1="100" x2="182" y2="100"
+                stroke="#7bcfff" stroke-width="3.5" stroke-linecap="round"/>
+          <polygon points="179,92 193,100 179,108" fill="#7bcfff"/>
+          <text x="164" y="88" text-anchor="middle"
+                fill="#7bcfff" font-size="12" font-weight="bold">右側</text>
+        </g>
+
+        <!-- 步驟 2：頂端箭頭 + 文字（頂端往前 = 從你的視角往螢幕外方向退遠）-->
+        <g id="arrowFwd" display="none">
+          <line x1="100" y1="46" x2="100" y2="13"
+                stroke="#ffaa44" stroke-width="3.5" stroke-linecap="round"/>
+          <polygon points="93,17 100,4 107,17" fill="#ffaa44"/>
+          <text x="100" y="170" text-anchor="middle"
+                fill="#ffaa44" font-size="11">頂端往前推</text>
+        </g>
+      </svg>
+    </div>
+
+    <div id="calibOStep">步驟 1 / 3</div>
+    <div id="calibODesc">靜止保持當前姿勢</div>
+    <div id="calibOHint">保持不動，讓感測器穩定 2 秒</div>
+
+    <div id="calibOProgressWrap"><div id="calibOBar"></div></div>
+    <button id="calibOCancel">取消校正</button>
+  </div>
+</div>
+
+<div id="hint">滑鼠拖曳旋轉視角 ｜ 滾輪縮放</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three":          "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+    "three/addons/":  "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ═══════════════════════════════════════════════════════
+//  Three.js 場景
+// ═══════════════════════════════════════════════════════
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x060b14);
+scene.fog        = new THREE.FogExp2(0x060b14, 0.045);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 4, 10);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.enableDamping = true;
+
+scene.add(new THREE.AmbientLight(0x223355, 2));
+const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+sun.position.set(6, 12, 6);
+sun.castShadow = true;
+scene.add(sun);
+const glow = new THREE.PointLight(0x4499ff, 5, 12);
+scene.add(glow);
+
+const grid = new THREE.GridHelper(24, 24, 0x1a2a44, 0x111c33);
+grid.position.y = -3.5;
+scene.add(grid);
+
+let boundBox;
+function makeBoundBox(mx, my, mz) {
+  if (boundBox) scene.remove(boundBox);
+  const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(mx*2, my*2, mz*2));
+  boundBox = new THREE.LineSegments(edges,
+    new THREE.LineBasicMaterial({ color:0x1e3a5a, transparent:true, opacity:0.35 }));
+  scene.add(boundBox);
+}
+makeBoundBox(3, 3, 3);
+
+const AXIS_LEN = 4.5;
+const _AH = 0.35, _AW = 0.18;
+scene.add(new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), AXIS_LEN, 0xff3333, _AH, _AW));
+scene.add(new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), AXIS_LEN, 0x33cc33, _AH, _AW));
+scene.add(new THREE.ArrowHelper(new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,0), AXIS_LEN, 0x4488ff, _AH, _AW));
+
+function makeAxisLabel(text, color) {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.font = 'bold 52px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 32, 32);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true }));
+  sp.scale.set(0.6, 0.6, 0.6);
+  return sp;
+}
+const lX = makeAxisLabel('X', '#ff4444'); lX.position.set(AXIS_LEN + 0.3, 0, 0); scene.add(lX);
+const lY = makeAxisLabel('Y', '#33cc33'); lY.position.set(0, AXIS_LEN + 0.3, 0); scene.add(lY);
+const lZ = makeAxisLabel('Z', '#4488ff'); lZ.position.set(0, 0, AXIS_LEN + 0.3); scene.add(lZ);
+
+const ball = new THREE.Mesh(
+  new THREE.SphereGeometry(0.55, 40, 40),
+  new THREE.MeshStandardMaterial({ color:0x3399ff, metalness:0.4, roughness:0.15, emissive:0x0a1a33 })
+);
+ball.castShadow = true;
+scene.add(ball);
+
+const ring = new THREE.Mesh(
+  new THREE.TorusGeometry(0.78, 0.035, 8, 60),
+  new THREE.MeshBasicMaterial({ color:0x2277dd, transparent:true, opacity:0.55 })
+);
+scene.add(ring);
+
+const shadow = new THREE.Mesh(
+  new THREE.CircleGeometry(0.6, 32),
+  new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.35 })
+);
+shadow.rotation.x = -Math.PI/2;
+shadow.position.y = -3.49;
+scene.add(shadow);
+
+const phoneMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(0.5, 1.0, 0.08),
+  new THREE.MeshStandardMaterial({ color:0x223355, metalness:0.6, roughness:0.3 })
+);
+phoneMesh.position.set(4.5, 2, 0);
+scene.add(phoneMesh);
+const phoneEdges = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(0.5, 1.0, 0.08)),
+  new THREE.LineBasicMaterial({ color:0x4477aa })
+);
+phoneMesh.add(phoneEdges);
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ═══════════════════════════════════════════════════════
+//  參數（對應 AccelerometerBallEffect.cs ModeSettings）
+// ═══════════════════════════════════════════════════════
+const UPRIGHT = {
+  sensitivity:      0.3,
+  smoothSpeed:      10,
+  inputFilterTime:  0.05,
+  movementAxesMask: new THREE.Vector3(1, 1, 1),
+  axisFlip:         new THREE.Vector3(1, 1, -1),
+  axisDeadzone:     new THREE.Vector3(0.3, 0.3, 0.3),
+  axisScale:        new THREE.Vector3(1, 1, 1),
+  maxOffsetPerAxis: new THREE.Vector3(3, 3, 3),
+};
+
+const FLAT = {
+  sensitivity:      0.08,
+  smoothSpeed:      10,
+  inputFilterTime:  0.05,
+  movementAxesMask: new THREE.Vector3(1, 0, 1),
+  axisFlip:         new THREE.Vector3(1, 1, -1),
+  axisDeadzone:     new THREE.Vector3(0.2, 0.2, 0.2),
+  axisScale:        new THREE.Vector3(1, 1, 1),
+  maxOffsetPerAxis: new THREE.Vector3(3, 3, 3),
+};
+
+const GLOBAL = {
+  autoCalibDelay:     1.5,
+  flatThreshold:      0.70,
+  flatGravWt:         0.5,
+  debounceTime:       0.30,
+  transitionDuration: 0.5,
+  posFilterTime:      0.05,
+};
+
+// ═══════════════════════════════════════════════════════
+//  感測器狀態
+// ═══════════════════════════════════════════════════════
+const rawAcceleration             = new THREE.Vector3();
+const filteredAcc                 = new THREE.Vector3();
+const calibratedAccUpright        = new THREE.Vector3();  // 分模式 Tare 基準
+const calibratedAccFlat           = new THREE.Vector3();
+const currentOffset               = new THREE.Vector3();
+const currentVel                  = new THREE.Vector3();
+const targetOffset_v              = new THREE.Vector3();
+const smoothedPos                 = new THREE.Vector3();
+const centerPosition              = new THREE.Vector3();
+const orientation                 = new THREE.Quaternion();
+const gDevice                     = new THREE.Vector3();
+const G_VEC                       = new THREE.Vector3(0, 0, -9.81);
+
+const modeSwitchTransitionOffset  = new THREE.Vector3();
+let   modeSwitchTransitionProgress = 1.0;
+
+const gyroQuaternion = new THREE.Quaternion();
+let   hasGyroData    = false;
+
+let hasOrientationData = false;
+let hasCalibrated      = false;
+let firstDataTime      = -1;
+let phoneIsFlat        = false;
+let rawPhoneIsFlat     = false;
+let flatHoldTimer      = 0;
+let prevPhoneIsFlat    = false;
+
+// 分模式校正完成旗標
+let calibratedModes = { upright: false, flat: false };
+let axisCalibModes  = { upright: false, flat: false };
+
+// 軸向校正 wizard 狀態（null = 未執行）
+let axisCalibState   = null;
+let axisCalibForMode = null; // 'upright' | 'flat'
+
+const AXIS_CALIB_STEP_DURATION = 2.0;
+const AXIS_CALIB_STEPS = ['靜止保持當前姿勢', '向右傾斜手機', '向前傾斜手機'];
+
+// ═══════════════════════════════════════════════════════
+//  UI Tab 管理
+// ═══════════════════════════════════════════════════════
+let currentTab = 'upright';
+
+function setToggleActive(idTrue, idFalse, isTrue) {
+  document.getElementById(idTrue).classList.toggle('active', isTrue);
+  document.getElementById(idFalse).classList.toggle('active', !isTrue);
+}
+
+function syncUIFromMode() {
+  const s = currentTab === 'upright' ? UPRIGHT : FLAT;
+
+  document.getElementById('sSens').value          = s.sensitivity;
+  document.getElementById('vSens').textContent    = s.sensitivity.toFixed(2);
+  document.getElementById('sSmooth').value        = s.smoothSpeed;
+  document.getElementById('vSmooth').textContent  = s.smoothSpeed.toFixed(0);
+  document.getElementById('sInputFilter').value        = s.inputFilterTime;
+  document.getElementById('vInputFilter').textContent  = s.inputFilterTime.toFixed(2);
+
+  for (const [ax, k] of [['X','x'],['Y','y'],['Z','z']]) {
+    document.getElementById(`sDead${ax}`).value        = s.axisDeadzone[k];
+    document.getElementById(`vDead${ax}`).textContent  = s.axisDeadzone[k].toFixed(2);
+    document.getElementById(`sScale${ax}`).value       = s.axisScale[k];
+    document.getElementById(`vScale${ax}`).textContent = s.axisScale[k].toFixed(2);
+    document.getElementById(`sMax${ax}`).value         = s.maxOffsetPerAxis[k];
+    document.getElementById(`vMax${ax}`).textContent   = s.maxOffsetPerAxis[k].toFixed(1);
+
+    setToggleActive(`tFlip${ax}p`, `tFlip${ax}n`, s.axisFlip[k] >= 0);
+    setToggleActive(`tMask${ax}1`, `tMask${ax}0`, s.movementAxesMask[k] > 0.5);
+  }
+
+  makeBoundBox(
+    s.maxOffsetPerAxis.x * s.axisScale.x,
+    s.maxOffsetPerAxis.y * s.axisScale.y,
+    s.maxOffsetPerAxis.z * s.axisScale.z,
+  );
+}
+
+function setTab(mode) {
+  currentTab = mode;
+  document.getElementById('tabUpright').classList.toggle('active', mode === 'upright');
+  document.getElementById('tabFlat').classList.toggle('active', mode === 'flat');
+  syncUIFromMode();
+}
+window._setTab = setTab;
+
+// ═══════════════════════════════════════════════════════
+//  UI 綁定（含 saveSettings 呼叫）
+// ═══════════════════════════════════════════════════════
+function gSlider(id, valId, key, fmt) {
+  const el = document.getElementById(id);
+  const vl = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    GLOBAL[key] = parseFloat(el.value);
+    vl.textContent = fmt ? fmt(GLOBAL[key]) : GLOBAL[key].toFixed(2);
+    saveSettings();
+  });
+}
+gSlider('sFlat',       'vFlat',       'flatThreshold');
+gSlider('sGrav',       'vGrav',       'flatGravWt');
+gSlider('sDebounce',   'vDebounce',   'debounceTime');
+gSlider('sTransition', 'vTransition', 'transitionDuration');
+gSlider('sPosFilter',  'vPosFilter',  'posFilterTime');
+
+function mSlider(id, valId, key, fmt) {
+  const el = document.getElementById(id);
+  const vl = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    const s = currentTab === 'upright' ? UPRIGHT : FLAT;
+    s[key] = parseFloat(el.value);
+    vl.textContent = fmt ? fmt(s[key]) : s[key].toFixed(2);
+    saveSettings();
+  });
+}
+mSlider('sSens',        'vSens',        'sensitivity');
+mSlider('sSmooth',      'vSmooth',      'smoothSpeed', v => v.toFixed(0));
+mSlider('sInputFilter', 'vInputFilter', 'inputFilterTime');
+
+function axSlider(id, valId, setting, axis, fmt) {
+  const el = document.getElementById(id);
+  const vl = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    const s = currentTab === 'upright' ? UPRIGHT : FLAT;
+    s[setting][axis] = parseFloat(el.value);
+    vl.textContent = fmt ? fmt(s[setting][axis]) : s[setting][axis].toFixed(2);
+    if (setting === 'maxOffsetPerAxis' || setting === 'axisScale')
+      makeBoundBox(
+        s.maxOffsetPerAxis.x * s.axisScale.x,
+        s.maxOffsetPerAxis.y * s.axisScale.y,
+        s.maxOffsetPerAxis.z * s.axisScale.z,
+      );
+    saveSettings();
+  });
+}
+for (const [ax, axis] of [['X','x'],['Y','y'],['Z','z']]) {
+  axSlider(`sDead${ax}`,  `vDead${ax}`,  'axisDeadzone',     axis);
+  axSlider(`sScale${ax}`, `vScale${ax}`, 'axisScale',        axis, v => v.toFixed(2));
+  axSlider(`sMax${ax}`,   `vMax${ax}`,   'maxOffsetPerAxis', axis, v => v.toFixed(1));
+}
+
+for (const [ax, axis] of [['X','x'],['Y','y'],['Z','z']]) {
+  document.getElementById(`tFlip${ax}p`).addEventListener('click', () => {
+    const s = currentTab === 'upright' ? UPRIGHT : FLAT;
+    s.axisFlip[axis] = 1;
+    setToggleActive(`tFlip${ax}p`, `tFlip${ax}n`, true);
+    saveSettings();
+  });
+  document.getElementById(`tFlip${ax}n`).addEventListener('click', () => {
+    const s = currentTab === 'upright' ? UPRIGHT : FLAT;
+    s.axisFlip[axis] = -1;
+    setToggleActive(`tFlip${ax}p`, `tFlip${ax}n`, false);
+    saveSettings();
+  });
+}
+
+for (const [ax, axis] of [['X','x'],['Y','y'],['Z','z']]) {
+  document.getElementById(`tMask${ax}1`).addEventListener('click', () => {
+    const s = currentTab === 'upright' ? UPRIGHT : FLAT;
+    s.movementAxesMask[axis] = 1;
+    setToggleActive(`tMask${ax}1`, `tMask${ax}0`, true);
+    saveSettings();
+  });
+  document.getElementById(`tMask${ax}0`).addEventListener('click', () => {
+    const s = currentTab === 'upright' ? UPRIGHT : FLAT;
+    s.movementAxesMask[axis] = 0;
+    setToggleActive(`tMask${ax}1`, `tMask${ax}0`, false);
+    saveSettings();
+  });
+}
+
+// ── 校正 Tare 按鈕 ────────────────────────────────────
+const calibMsg = document.getElementById('calibMsg');
+function showCalibMsg(text) {
+  calibMsg.textContent = text;
+  calibMsg.style.opacity = '1';
+  setTimeout(() => { calibMsg.style.opacity = '0'; }, 2500);
+}
+
+document.getElementById('calibBtn').addEventListener('click', () => {
+  recalibrate();
+  showCalibMsg(`✓ ${phoneIsFlat ? '平放' : '直立'} Tare 完成`);
+});
+
+// ── 軸向校正按鈕 ─────────────────────────────────────
+document.getElementById('axisCalibBtn').addEventListener('click', () => {
+  axisCalibForMode = phoneIsFlat ? 'flat' : 'upright';
+  axisCalibState = {
+    step:    0,
+    timer:   0,
+    accum:   new THREE.Vector3(),
+    count:   0,
+    samples: [],
+  };
+  showCalibOverlay();
+  updateWizardUI();
+});
+
+// ── 重置按鈕 ─────────────────────────────────────────
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (confirm('確定要重置所有設定與校正為預設值嗎？')) resetSettings();
+});
+
+// ═══════════════════════════════════════════════════════
+//  封包處理
+// ═══════════════════════════════════════════════════════
+function handlePacket({ qx, qy, qz, qw, ax, ay, az }) {
+  const g = 9.81;
+
+  orientation.set(qx, qy, qz, qw);
+  hasOrientationData = true;
+  gDevice.copy(G_VEC).applyQuaternion(orientation.clone().invert());
+  rawPhoneIsFlat = Math.abs(gDevice.z) / g >= GLOBAL.flatThreshold;
+
+  if (!phoneIsFlat) {
+    rawAcceleration.x = gDevice.x;
+    rawAcceleration.y = gDevice.z;
+  }
+
+  const acc = new THREE.Vector3(ax, ay, az);
+  if (hasOrientationData && phoneIsFlat) {
+    const worldAcc = acc.clone().applyQuaternion(orientation);
+    rawAcceleration.set(
+      worldAcc.x + gDevice.x * GLOBAL.flatGravWt,
+      worldAcc.z,
+      worldAcc.y + gDevice.y * GLOBAL.flatGravWt
+    );
+  } else if (hasOrientationData && !phoneIsFlat) {
+    const worldAcc = acc.clone().applyQuaternion(orientation);
+    rawAcceleration.z = worldAcc.y;
+  } else {
+    rawAcceleration.copy(acc);
+  }
+
+  const mag2 = qx*qx + qy*qy + qz*qz + qw*qw;
+  if (mag2 >= 0.5) {
+    gyroQuaternion.set(qx, -qz, qy, qw);
+    hasGyroData = true;
+  }
+
+  if (!hasCalibrated && firstDataTime < 0)
+    firstDataTime = performance.now() / 1000;
+}
+
+// ═══════════════════════════════════════════════════════
+//  輔助函式
+// ═══════════════════════════════════════════════════════
+function smoothDamp(cur, tgt, vel, smoothTime, dt) {
+  const st = Math.max(0.0001, smoothTime);
+  const omega = 2 / st;
+  const x = omega * dt;
+  const e = 1 / (1 + x + 0.48*x*x + 0.235*x*x*x);
+  for (const a of ['x','y','z']) {
+    const ch  = cur[a] - tgt[a];
+    const tmp = (vel[a] + omega * ch) * dt;
+    vel[a]    = (vel[a] - omega * tmp) * e;
+    cur[a]    = tgt[a] + (ch + tmp) * e;
+  }
+}
+
+function applyDeadzonePerAxis(v, dz) {
+  return new THREE.Vector3(
+    Math.abs(v.x) < dz.x ? 0 : Math.sign(v.x) * (Math.abs(v.x) - dz.x),
+    Math.abs(v.y) < dz.y ? 0 : Math.sign(v.y) * (Math.abs(v.y) - dz.y),
+    Math.abs(v.z) < dz.z ? 0 : Math.sign(v.z) * (Math.abs(v.z) - dz.z),
+  );
+}
+
+function clampPerAxis(v, maxV) {
+  return new THREE.Vector3(
+    THREE.MathUtils.clamp(v.x, -maxV.x, maxV.x),
+    THREE.MathUtils.clamp(v.y, -maxV.y, maxV.y),
+    THREE.MathUtils.clamp(v.z, -maxV.z, maxV.z),
+  );
+}
+
+function smoothStep(t) { return t * t * (3 - 2 * t); }
+
+// ── Tare 校正（分模式）────────────────────────────────
+function recalibrate() {
+  if (phoneIsFlat) {
+    calibratedAccFlat.copy(filteredAcc);
+    calibratedModes.flat = true;
+  } else {
+    calibratedAccUpright.copy(filteredAcc);
+    calibratedModes.upright = true;
+  }
+  currentOffset.set(0, 0, 0);
+  currentVel.set(0, 0, 0);
+  targetOffset_v.set(0, 0, 0);
+  smoothedPos.set(0, 0, 0);
+  modeSwitchTransitionProgress = 1.0;
+  modeSwitchTransitionOffset.set(0, 0, 0);
+  hasCalibrated = calibratedModes.upright || calibratedModes.flat;
+  saveSettings();
+  updateCalibUI();
+}
+
+// ── 軸向校正：從三步採樣推算 axisFlip / axisScale ─────
+function applyAxisCalib(samples, mode) {
+  const s          = mode === 'flat' ? FLAT : UPRIGHT;
+  const neutral    = samples[0];
+  const rightDelta = samples[1].clone().sub(neutral);
+  const fwdDelta   = samples[2].clone().sub(neutral);
+  const TARGET     = 2.0; // 目標正規化響應 (m/s²)
+
+  // X 軸：對應「向右傾」
+  if (Math.abs(rightDelta.x) > 0.05) {
+    s.axisFlip.x  = Math.sign(rightDelta.x);
+    s.axisScale.x = THREE.MathUtils.clamp(TARGET / Math.abs(rightDelta.x), 0.1, 5.0);
+  }
+
+  // Y 或 Z：哪個對「向前傾」響應最大就設那個
+  const yAbs = Math.abs(fwdDelta.y);
+  const zAbs = Math.abs(fwdDelta.z);
+  if (yAbs > zAbs && yAbs > 0.05) {
+    s.axisFlip.y  = Math.sign(fwdDelta.y);
+    s.axisScale.y = THREE.MathUtils.clamp(TARGET / yAbs, 0.1, 5.0);
+  } else if (zAbs > 0.05) {
+    s.axisFlip.z  = Math.sign(fwdDelta.z);
+    s.axisScale.z = THREE.MathUtils.clamp(TARGET / zAbs, 0.1, 5.0);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  設定持久化
+// ═══════════════════════════════════════════════════════
+function v3o(v) { return { x:v.x, y:v.y, z:v.z }; }
+function ov3(v, o) { v.set(o.x, o.y, o.z); }
+
+function modeToObj(s) {
+  return {
+    sensitivity:      s.sensitivity,
+    smoothSpeed:      s.smoothSpeed,
+    inputFilterTime:  s.inputFilterTime,
+    movementAxesMask: v3o(s.movementAxesMask),
+    axisFlip:         v3o(s.axisFlip),
+    axisDeadzone:     v3o(s.axisDeadzone),
+    axisScale:        v3o(s.axisScale),
+    maxOffsetPerAxis: v3o(s.maxOffsetPerAxis),
+  };
+}
+
+function objToMode(s, o) {
+  if (o.sensitivity     != null) s.sensitivity    = o.sensitivity;
+  if (o.smoothSpeed     != null) s.smoothSpeed    = o.smoothSpeed;
+  if (o.inputFilterTime != null) s.inputFilterTime = o.inputFilterTime;
+  if (o.movementAxesMask) ov3(s.movementAxesMask, o.movementAxesMask);
+  if (o.axisFlip)         ov3(s.axisFlip,         o.axisFlip);
+  if (o.axisDeadzone)     ov3(s.axisDeadzone,     o.axisDeadzone);
+  if (o.axisScale)        ov3(s.axisScale,         o.axisScale);
+  if (o.maxOffsetPerAxis) ov3(s.maxOffsetPerAxis,  o.maxOffsetPerAxis);
+}
+
+let _saveTid = null;
+function saveSettings() {
+  clearTimeout(_saveTid);
+  _saveTid = setTimeout(() => {
+    try {
+      localStorage.setItem('gyro-demo-settings', JSON.stringify({
+        GLOBAL:          { ...GLOBAL },
+        UPRIGHT:         modeToObj(UPRIGHT),
+        FLAT:            modeToObj(FLAT),
+        calibUpright:    v3o(calibratedAccUpright),
+        calibFlat:       v3o(calibratedAccFlat),
+        calibratedModes: { ...calibratedModes },
+        axisCalibModes:  { ...axisCalibModes },
+      }));
+    } catch(e) {}
+  }, 200);
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem('gyro-demo-settings');
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    if (d.GLOBAL)  Object.assign(GLOBAL, d.GLOBAL);
+    if (d.UPRIGHT) objToMode(UPRIGHT, d.UPRIGHT);
+    if (d.FLAT)    objToMode(FLAT,    d.FLAT);
+    if (d.calibUpright) ov3(calibratedAccUpright, d.calibUpright);
+    if (d.calibFlat)    ov3(calibratedAccFlat,    d.calibFlat);
+    if (d.calibratedModes) {
+      calibratedModes.upright = !!d.calibratedModes.upright;
+      calibratedModes.flat    = !!d.calibratedModes.flat;
+    }
+    if (d.axisCalibModes) {
+      axisCalibModes.upright  = !!d.axisCalibModes.upright;
+      axisCalibModes.flat     = !!d.axisCalibModes.flat;
+    }
+    hasCalibrated = calibratedModes.upright || calibratedModes.flat;
+
+    // 全域滑桿 UI 同步
+    const gs = [
+      ['sFlat',       'vFlat',       GLOBAL.flatThreshold,      v => v.toFixed(2)],
+      ['sGrav',       'vGrav',       GLOBAL.flatGravWt,         v => v.toFixed(2)],
+      ['sDebounce',   'vDebounce',   GLOBAL.debounceTime,       v => v.toFixed(2)],
+      ['sTransition', 'vTransition', GLOBAL.transitionDuration, v => v.toFixed(2)],
+      ['sPosFilter',  'vPosFilter',  GLOBAL.posFilterTime,      v => v.toFixed(2)],
+    ];
+    for (const [sid, vid, val, fmt] of gs) {
+      document.getElementById(sid).value       = val;
+      document.getElementById(vid).textContent = fmt(val);
+    }
+  } catch(e) {}
+}
+
+function resetSettings() {
+  localStorage.removeItem('gyro-demo-settings');
+  location.reload();
+}
+
+// ═══════════════════════════════════════════════════════
+//  校正 UI 輔助
+// ═══════════════════════════════════════════════════════
+function updateCalibUI() {
+  const mu = calibratedModes.upright, mf = calibratedModes.flat;
+  const au = axisCalibModes.upright,  af = axisCalibModes.flat;
+  const c  = (ok, label) =>
+    `<span style="color:${ok ? '#6dffaa' : '#ff6060'}">${label}${ok ? '✓' : '✗'}</span>`;
+  document.getElementById('calibStatus').innerHTML =
+    `Tare: ${c(mu,'直立 ')} ${c(mf,'平放 ')}<br>` +
+    `軸向: ${c(au,'直立 ')} ${c(af,'平放 ')}`;
+}
+
+function updateWizardUI() {
+  const wizard = document.getElementById('axisCalibWizard');
+  if (!axisCalibState) { wizard.style.display = 'none'; return; }
+  wizard.style.display = '';
+  const step = axisCalibState.step;
+  document.getElementById('axisCalibStep').textContent =
+    `步驟 ${step + 1}/3：${AXIS_CALIB_STEPS[step]}`;
+  const pct = Math.min(axisCalibState.timer / AXIS_CALIB_STEP_DURATION * 100, 100);
+  document.getElementById('axisCalibBar').style.width = pct + '%';
+  updateCalibOverlay();
+}
+
+// ═══════════════════════════════════════════════════════
+//  軸向校正覆蓋層
+// ═══════════════════════════════════════════════════════
+const STEP_COLORS = ['#4ddba8', '#7bcfff', '#ffaa44'];
+const STEP_HINTS  = [
+  '手機保持不動，讓感測器採樣基準值 2 秒',
+  '你的右手邊往下壓約 30°，傾斜後穩住保持 2 秒',
+  '手機頂端往前推（遠離你），約 30°，穩住保持 2 秒',
+];
+
+function showCalibOverlay() {
+  document.getElementById('calibOModeLabel').textContent =
+    axisCalibForMode === 'flat' ? '平放模式' : '直立模式';
+  document.getElementById('calibOverlay').classList.add('active');
+}
+
+function hideCalibOverlay() {
+  document.getElementById('calibOverlay').classList.remove('active');
+}
+
+function updateCalibOverlay() {
+  if (!axisCalibState) return;
+  const step = axisCalibState.step;
+  const pct  = Math.min(axisCalibState.timer / AXIS_CALIB_STEP_DURATION * 100, 100);
+
+  document.getElementById('calibOStep').textContent = `步驟 ${step + 1} / 3`;
+  document.getElementById('calibODesc').textContent = AXIS_CALIB_STEPS[step];
+  document.getElementById('calibOHint').textContent = STEP_HINTS[step];
+
+  const bar = document.getElementById('calibOBar');
+  bar.style.width      = pct + '%';
+  bar.style.background = STEP_COLORS[step];
+
+  const phone      = document.getElementById('calibPhone');
+  const vizWrap    = document.getElementById('calibOVizWrap');
+  const arrowRight = document.getElementById('arrowRight');
+  const arrowFwd   = document.getElementById('arrowFwd');
+
+  phone.className = '';
+  arrowRight.setAttribute('display', 'none');
+  arrowFwd.setAttribute('display', 'none');
+
+  if (step === 0) {
+    // 靜止：手機正立 + 脈衝邊框
+    vizWrap.style.perspective = 'none';
+    phone.style.transform     = 'translate(-50%,-50%)';
+    phone.classList.add('step0');
+  } else if (step === 1) {
+    // 向右傾：振盪動畫（0° ↔ 30°），讓使用者看到「右側往下」的動作
+    vizWrap.style.perspective = 'none';
+    phone.style.transform     = '';   // 由 CSS animation 接管
+    phone.classList.add('step1anim');
+    arrowRight.setAttribute('display', '');
+  } else {
+    // 向前傾：perspective + 振盪 rotateX 動畫，頂端往螢幕外方向退遠
+    vizWrap.style.perspective = '280px';
+    phone.style.transform     = '';
+    phone.classList.add('step2anim');
+    arrowFwd.setAttribute('display', '');
+  }
+}
+
+document.getElementById('calibOCancel').addEventListener('click', () => {
+  axisCalibState = null;
+  hideCalibOverlay();
+  updateWizardUI();
+});
+
+// ═══════════════════════════════════════════════════════
+//  每幀更新（完整對應 AccelerometerBallEffect.cs Update()）
+// ═══════════════════════════════════════════════════════
+let lastT = performance.now();
+
+function update(now) {
+  const dt = Math.min((now - lastT) / 1000, 0.1);
+  lastT = now;
+
+  // ── 1. 自動初始校正（autoCalibrationDelay）──
+  if (!hasCalibrated) {
+    if (hasOrientationData) {
+      if (firstDataTime < 0) firstDataTime = performance.now() / 1000;
+      else if (performance.now() / 1000 - firstDataTime >= GLOBAL.autoCalibDelay)
+        recalibrate();
+    }
+    ball.position.set(0, 0, 0);
+    ring.position.set(0, 0, 0);
+    return;
+  }
+
+  // ── 2. 模式防抖（軸向校正 wizard 進行中鎖定模式，避免傾斜時觸發切換）──
+  if (axisCalibState === null) {
+    if (rawPhoneIsFlat !== phoneIsFlat) {
+      flatHoldTimer += dt;
+      if (flatHoldTimer >= GLOBAL.debounceTime) {
+        phoneIsFlat   = rawPhoneIsFlat;
+        flatHoldTimer = 0;
+      }
+    } else {
+      flatHoldTimer = 0;
+    }
+  }
+
+  // ── 3. 取本幀模式設定 ──
+  const s = phoneIsFlat ? FLAT : UPRIGHT;
+
+  // ── 4. 切換偵測 ──
+  const modeJustSwitched = (phoneIsFlat !== prevPhoneIsFlat);
+  if (modeJustSwitched) {
+    // 以新模式的校正基準初始化 filteredAcc，確保切換幀 debiased = 0
+    const newCalibBase = phoneIsFlat ? calibratedAccFlat : calibratedAccUpright;
+    filteredAcc.copy(newCalibBase);
+    currentOffset.set(0, 0, 0);
+    currentVel.set(0, 0, 0);
+    prevPhoneIsFlat = phoneIsFlat;
+
+  }
+
+  // ── 5. EMA 輸入濾波（切換幀跳過）──
+  if (!modeJustSwitched) {
+    const alpha = 1 - Math.exp(-dt / s.inputFilterTime);
+    filteredAcc.lerp(rawAcceleration, alpha);
+  }
+
+  // ── 6. Tare 去偏（分模式基準）──
+  const calibBase = phoneIsFlat ? calibratedAccFlat : calibratedAccUpright;
+  const debiased  = filteredAcc.clone().sub(calibBase);
+
+  // ── 7. per-axis axisFlip ──
+  const flipped = new THREE.Vector3(
+    debiased.x * s.axisFlip.x,
+    debiased.y * s.axisFlip.y,
+    debiased.z * s.axisFlip.z,
+  );
+
+  // ── 8. per-axis deadzone ──
+  const deadzoned = applyDeadzonePerAxis(flipped, s.axisDeadzone);
+
+  // ── 9. movementAxesMask + sensitivity → tgt ──
+  const tgt = new THREE.Vector3(
+    deadzoned.x * s.movementAxesMask.x,
+    deadzoned.y * s.movementAxesMask.y,
+    deadzoned.z * s.movementAxesMask.z,
+  ).multiplyScalar(s.sensitivity);
+
+  // ── 10. 有效邊界 = maxOffsetPerAxis × axisScale ──
+  const effectiveMax = new THREE.Vector3(
+    s.maxOffsetPerAxis.x * s.axisScale.x,
+    s.maxOffsetPerAxis.y * s.axisScale.y,
+    s.maxOffsetPerAxis.z * s.axisScale.z,
+  );
+  targetOffset_v.copy(clampPerAxis(tgt, effectiveMax));
+
+  // ── 11. SmoothDamp ──
+  smoothDamp(currentOffset, targetOffset_v, currentVel, 1 / s.smoothSpeed, dt);
+
+  // ── 12. proposedPosition ──
+  const proposedPosition = centerPosition.clone().add(currentOffset);
+
+  // ── 13. 切換瞬間記錄跳動量 ──
+  if (modeJustSwitched) {
+    modeSwitchTransitionOffset.copy(smoothedPos).sub(proposedPosition);
+    modeSwitchTransitionProgress = 0;
+  }
+
+  // ── 14. 過渡補償淡出 ──
+  let basePosition;
+  if (modeSwitchTransitionProgress < 1) {
+    modeSwitchTransitionProgress = Math.min(1,
+      modeSwitchTransitionProgress + dt / GLOBAL.transitionDuration);
+    const fade = 1 - smoothStep(modeSwitchTransitionProgress);
+    basePosition = proposedPosition.clone().addScaledVector(modeSwitchTransitionOffset, fade);
+  } else {
+    basePosition = proposedPosition;
+  }
+
+  // ── 15. 輸出位置 EMA ──
+  if (GLOBAL.posFilterTime > 0) {
+    const pa = 1 - Math.exp(-dt / GLOBAL.posFilterTime);
+    smoothedPos.lerp(basePosition, pa);
+  } else {
+    smoothedPos.copy(basePosition);
+  }
+
+  ball.position.copy(smoothedPos);
+  ring.position.copy(smoothedPos);
+  ring.rotation.x += dt * 0.6;
+  ring.rotation.y += dt * 1.0;
+  glow.position.copy(smoothedPos);
+  shadow.position.x = smoothedPos.x;
+  shadow.position.z = smoothedPos.z;
+
+  // ── 16. 軸向校正 wizard 採樣 ──
+  if (axisCalibState !== null && hasOrientationData) {
+    axisCalibState.timer += dt;
+    axisCalibState.accum.add(filteredAcc);
+    axisCalibState.count++;
+
+    if (axisCalibState.timer >= AXIS_CALIB_STEP_DURATION) {
+      const avg = axisCalibState.accum.clone()
+        .divideScalar(Math.max(1, axisCalibState.count));
+      axisCalibState.samples.push(avg);
+
+      if (axisCalibState.step < 2) {
+        axisCalibState.step++;
+        axisCalibState.timer = 0;
+        axisCalibState.accum.set(0, 0, 0);
+        axisCalibState.count = 0;
+      } else {
+        // 三步完成 → 計算並套用
+        applyAxisCalib(axisCalibState.samples, axisCalibForMode);
+        axisCalibModes[axisCalibForMode] = true;
+        axisCalibState = null;
+        hideCalibOverlay();
+        saveSettings();
+        setTab(axisCalibForMode);
+        updateCalibUI();
+        showCalibMsg(`✓ 軸向校正完成（${axisCalibForMode === 'flat' ? '平放' : '直立'}）`);
+      }
+    }
+    updateWizardUI();
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  WebSocket
+// ═══════════════════════════════════════════════════════
+const wsTag   = document.getElementById('wsTag');
+const modeTag = document.getElementById('modeTag');
+const hzEl    = document.getElementById('hz');
+
+let pktCnt = 0, hzTs = performance.now();
+
+function connectWS() {
+  const ws = new WebSocket(`ws://${location.host}`);
+  ws.onopen  = () => { wsTag.textContent='已連線'; wsTag.className='tag ok'; };
+  ws.onclose = () => {
+    wsTag.textContent='未連線'; wsTag.className='tag no';
+    setTimeout(connectWS, 2000);
+  };
+  ws.onmessage = e => { pktCnt++; handlePacket(JSON.parse(e.data)); };
+}
+connectWS();
+
+// ═══════════════════════════════════════════════════════
+//  渲染迴圈
+// ═══════════════════════════════════════════════════════
+function animate(now) {
+  requestAnimationFrame(animate);
+  if (now - hzTs >= 1000) {
+    hzEl.textContent = `${pktCnt} Hz`;
+    pktCnt = 0; hzTs = now;
+    modeTag.textContent = phoneIsFlat ? '平放' : '直立';
+    modeTag.className   = `tag ${phoneIsFlat ? 'flat' : 'up'}`;
+    document.getElementById('calibBtn').textContent =
+      `校正${phoneIsFlat ? '平放' : '直立'} ▸ Tare`;
+  }
+  update(now);
+
+  if (hasGyroData) phoneMesh.quaternion.copy(gyroQuaternion);
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ── 初始化 ──────────────────────────────────────────────
+loadSettings();
+syncUIFromMode();
+updateCalibUI();
+
+animate(performance.now());
+</script>
+</body>
+</html>
