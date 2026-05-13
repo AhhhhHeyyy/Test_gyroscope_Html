@@ -4,7 +4,7 @@
 - 啟動正確的伺服器與頁面
 - 在前端開始螢幕/攝影機分享
 - 在 Unity 端接收 WebRTC 影音並貼到材質
-- 了解信令/SDP/ICE 的基本原理與常見問題
+- 瞭解信令/SDP/ICE 的基本原理與常見問題
 
 
 ---
@@ -97,7 +97,7 @@ cd /d C:\Users\user\Desktop\School\Project1141
 node webrtc-server.js
 ```
 
-啟動成功後你會在主控台看到：
+啟動成功後你會在主控臺看到：
 - 靜態檔案服務: `http://localhost:8081`
 - WebSocket 端點: `ws://localhost:8081`
 - 健康檢查: `http://localhost:8081/health`
@@ -141,8 +141,8 @@ http://localhost:8081/Screen1020.html
 4) 前端在 `Screen1020.html` 點擊「分享螢幕」或「啟用攝影機」後，應能在 Unity 中看到畫面貼圖更新。
 
 注意事項：
-- 若使用 URP/HDRP，腳本已同時嘗試設定 `_BaseMap` 與 `_MainTex`，仍看不到畫面時，請檢查材質着色器屬性是否匹配。
-- 若出現黑畫面但日誌正常，嘗試更換材質/着色器或查看 Console 是否有 GPU/紋理格式提示。
+- 若使用 URP/HDRP，腳本已同時嘗試設定 `_BaseMap` 與 `_MainTex`，仍看不到畫面時，請檢查材質著色器屬性是否匹配。
+- 若出現黑畫面但日誌正常，嘗試更換材質/著色器或查看 Console 是否有 GPU/紋理格式提示。
 
 ---
 
@@ -187,8 +187,8 @@ http://localhost:8081/Screen1020.html
 - 健康檢查：`http://localhost:8081/health`
 - 詳細狀態：`http://localhost:8081/api/status`
 - 瀏覽器開發者工具 Console：觀察 `Screen1020.html` 的日誌（連線、offer/answer、candidate）
- - 伺服器主控台：可見 `offer/answer/candidate` 的轉發記錄與房間就緒提示
- - Unity Console：應顯示「收到远端视频流」，並在材质上看到畫面
+ - 伺服器主控臺：可見 `offer/answer/candidate` 的轉發記錄與房間就緒提示
+ - Unity Console：應顯示「收到遠端視頻流」，並在材質上看到畫面
 
 ---
 
