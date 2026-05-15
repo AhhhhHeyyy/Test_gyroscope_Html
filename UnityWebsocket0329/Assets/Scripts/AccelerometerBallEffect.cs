@@ -101,8 +101,8 @@ public class AccelerometerBallEffect : MonoBehaviour
     };
 
     [Header("平放模式設定")]
-    [Tooltip("平放 XZ 平推混合比例：0=純傾斜（球停在傾斜角度），1=純平推（停止推動後彈回），0.5=各半")]
-    [SerializeField] [Range(0f, 1f)] private float flatLinearBlend = 0.4f;
+    [Tooltip("平放模式推力權重：rawAcc = gDevice（傾斜）+ linearAcc × flatLinearBlend（推力）\n0=純傾斜；1=傾斜與推力等大；2~3=推力為主傾斜為輔；建議值：傾斜為主→0.5，均衡→1.0，推力為主→2.0~3.0")]
+    [SerializeField] [Range(0f, 5f)] private float flatLinearBlend = 0.4f;
     [SerializeField]
     private ModeSettings flatSettings = new()
     {
