@@ -184,8 +184,8 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Header("自動校正嚮導")]
     [Tooltip("每個收集階段的持續時間（秒）")]
     [SerializeField] [Range(1f, 5f)] private float wizardCollectDuration = 2.5f;
-    [Tooltip("嚮導靈敏度目標：在指定動作幅度下希望球偏移的距離（米）")]
-    [SerializeField] [Range(0.1f, 5f)] private float wizardTargetOffset = 3.0f;
+    [Tooltip("嚮導靈敏度目標：最大傾斜時 targetOffset（套用 axisScale 前）的目標值。axisScale 預設 5，故最終位移 ≈ wizardTargetOffset × 5")]
+    [SerializeField] [Range(0.1f, 5f)] private float wizardTargetOffset = 1.0f;
     [Tooltip("是否在 Game 視窗顯示嚮導按鈕")]
     [SerializeField] private bool showWizardButton = true;
     [Tooltip("（唯讀）目前嚮導狀態文字")]
@@ -1239,13 +1239,15 @@ public class AccelerometerBallEffect : MonoBehaviour
                 {
                     pendingUprightDeadzone    = new Vector3(dzX, pendingUprightDeadzone.y, pendingUprightDeadzone.z);
                     pendingUprightSensitivity = sensitivity;
-                    pendingUprightMaxOffset   = new Vector3(wizardTargetOffset * 1.1f, pendingUprightMaxOffset.y, pendingUprightMaxOffset.z);
+                    pendingUprightMaxOffset   = new Vector3(5f, pendingUprightMaxOffset.y, pendingUprightMaxOffset.z);
+                    pendingUprightAxisScale   = new Vector3(5f, pendingUprightAxisScale.y, pendingUprightAxisScale.z);
                 }
                 else
                 {
                     pendingFlatDeadzone    = new Vector3(dzX, pendingFlatDeadzone.y, pendingFlatDeadzone.z);
                     pendingFlatSensitivity = Mathf.Min(sensitivity, 5.0f);
-                    pendingFlatMaxOffset   = new Vector3(wizardTargetOffset * 1.1f, pendingFlatMaxOffset.y, pendingFlatMaxOffset.z);
+                    pendingFlatMaxOffset   = new Vector3(5f, 5f, pendingFlatMaxOffset.z);
+                    pendingFlatAxisScale   = new Vector3(5f, 5f, pendingFlatAxisScale.z);
                 }
                 wizardRetryCount     = 0;
                 wizardLastStepResult = $"死區={dzX:F2} 可用範圍={usableRange:F2} 靈敏度={sensitivity:F3}";
@@ -1286,29 +1288,21 @@ public class AccelerometerBallEffect : MonoBehaviour
                     wizardMinPeakMagnitude = Mathf.Min(wizardMinPeakMagnitude, wizardCurrentStrokeMax);
                 wizardInStroke = false;
 
-                // ── 最大幅度 → 校正 maxOffsetPerAxis.z ──
-                // 去基線後的峰值幅度，再扣掉死區，乘以靈敏度 × 1.1 作為上限緩衝
                 float maxDebiasedPeak = swapXZ
                     ? Mathf.Abs((mean - baseline).x)
                     : Mathf.Abs(wizardPeakZ - baseline.z);
-                float effectivePeak  = Mathf.Max(maxDebiasedPeak - noiseThr, 0.1f);
-                float sens           = isUpright ? pendingUprightSensitivity : pendingFlatSensitivity;
-                float calibMaxOffset = effectivePeak * sens * 1.1f;
-                // 確保 Z 軸有足夠的漸進移動範圍：maxOff 至少要讓信號在 deadzone 之上
-                // 還能走 noiseThr * 2 的距離才被 clamp（否則 dz ≈ maxOff → 只有 0/最大值兩態）
-                float minUsableMax = noiseThr * sens * 2f;
-                calibMaxOffset = Mathf.Max(calibMaxOffset, minUsableMax, 0.5f);
 
-                // Z 軸 axisScale：使 Z 在校正幅度下也達到 wizardTargetOffset（與 X 軸各自獨立正規化）
-                float scaleZ = effectivePeak > 0.01f
-                    ? Mathf.Clamp(wizardTargetOffset / (effectivePeak * sens), 0.1f, 5f)
-                    : 1f;
-                if (isUpright) pendingUprightAxisScale.z = scaleZ;
-                else           pendingFlatAxisScale.z    = scaleZ;
-
-                Vector3 curMaxOff = isUpright ? pendingUprightMaxOffset : pendingFlatMaxOffset;
-                if (isUpright) pendingUprightMaxOffset = new Vector3(curMaxOff.x, curMaxOff.y, calibMaxOffset);
-                else           pendingFlatMaxOffset    = new Vector3(curMaxOff.x, curMaxOff.y, calibMaxOffset);
+                // Z 軸 axisScale 與 maxOffset 固定為 5，供使用者微調
+                if (isUpright)
+                {
+                    pendingUprightAxisScale.z = 5f;
+                    pendingUprightMaxOffset   = new Vector3(pendingUprightMaxOffset.x, pendingUprightMaxOffset.y, 5f);
+                }
+                else
+                {
+                    pendingFlatAxisScale.z = 5f;
+                    pendingFlatMaxOffset   = new Vector3(pendingFlatMaxOffset.x, pendingFlatMaxOffset.y, 5f);
+                }
 
                 // ── 最小幅度 → 精修 deadzone.z ──
                 // 把 deadzone.z 設為最小有意義動作的 40%，確保小動作能通過但靜止噪聲被過濾
