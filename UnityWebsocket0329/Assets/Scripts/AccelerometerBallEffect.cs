@@ -101,14 +101,18 @@ public class AccelerometerBallEffect : MonoBehaviour
     };
 
     [Header("平放模式設定")]
-    [Tooltip("平放模式推力權重：rawAcc = gDevice（傾斜）+ linearAcc × flatLinearBlend（推力）\n0=純傾斜；1=傾斜與推力等大；2~3=推力為主傾斜為輔；建議值：傾斜為主→0.5，均衡→1.0，推力為主→2.0~3.0")]
-    [SerializeField] [Range(0f, 5f)] private float flatLinearBlend = 0.4f;
+    [Tooltip("平放 X 軸（左右）linX 混合比例。gDevice.x 已是穩定傾斜投影，加入 linX 只帶入手部晃動噪聲。建議保持 0。")]
+    [SerializeField] [Range(0f, 5f)] private float flatLinearBlendX = 0f;
+    [Tooltip("平放 Z 軸（前後）linZ 混合比例。gDevice.y 在平放時訊號弱，需要 linZ 補充推力感。建議 0.3~0.7。")]
+    [SerializeField] [Range(0f, 5f)] private float flatLinearBlendZ = 0.5f;
+    [Tooltip("linZ 上限截斷（m/s²）：防止快速甩動時尖峰暴衝。建議 6~12。")]
+    [SerializeField] [Range(2f, 20f)] private float flatLinZClamp = 8f;
     [SerializeField]
     private ModeSettings flatSettings = new()
     {
-        sensitivity      = new Vector3(0.08f, 0.08f, 0.08f),
+        sensitivity      = new Vector3(0.3f, 0.3f, 0.3f),
         smoothSpeed      = 7f,
-        inputFilterTime  = 0.12f,
+        inputFilterTime  = 0.06f,
         movementAxesMask = new Vector3(1, 0, 1),
         axisFlip         = new Vector3(1f, 1f, -1f),
         axisDeadzone     = new Vector3(0.2f, 0.2f, 0.2f),
@@ -180,7 +184,7 @@ public class AccelerometerBallEffect : MonoBehaviour
 
     [Header("平放模式重力中心補償")]
     [Tooltip("啟用後：手機平放靜止時，自動緩慢修正 XZ 漂移（四元數時間累積誤差），讓球回中心")]
-    [SerializeField] private bool enableFlatGravityCorrection = true;
+    [SerializeField] private bool enableFlatGravityCorrection = false;
     [Tooltip("XZ 漂移補償時間常數（秒）。越大越保守，越小越積極。建議 20~60；太小會吃掉慢速傾斜")]
     [SerializeField] [Range(5f, 120f)] private float flatGravityCorrectionTime = 30f;
 
@@ -222,6 +226,14 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Tooltip("HUD 方格邊長（像素）")]
     [SerializeField] [Range(60f, 200f)] private float hudSize = 100f;
 
+    [Header("軸縮放即時調整 HUD（Game 視窗）")]
+    [Tooltip("是否在 Game 視窗顯示 axisScale 即時調整面板（嚮導校正後用此微調移動距離）")]
+    [SerializeField] private bool showScaleTuner = true;
+    [Tooltip("調整面板左上角位置（像素）；預設置於偏移 HUD 右側，避免與校正按鈕重疊")]
+    [SerializeField] private Vector2 scaleTunerPosition = new Vector2(140f, 10f);
+    [Tooltip("每次按 + / − 的調整幅度；可在面板底部切換")]
+    [SerializeField] [Range(0.01f, 1f)] private float scaleTunerStep = 0.1f;
+
     [Header("軸示意線（Scene / Game 視窗）")]
     [Tooltip("是否顯示 XYZ 軸示意線（紅=X，綠=Y，藍=Z）")]
     [SerializeField] private bool showAxisGizmos = true;
@@ -244,6 +256,8 @@ public class AccelerometerBallEffect : MonoBehaviour
     private Vector3    currentVelocity     = Vector3.zero;
     private Vector3    filteredAcceleration = Vector3.zero;
     private Vector3    calibratedAcceleration = Vector3.zero; // Tare 基準：校正時記錄，下幀 debiased = filtered - calibrated ≈ 0
+    private Vector3    savedTareFlat          = Vector3.zero; // 平放模式校正基準（模式切換時恢復，不被覆寫）
+    private Vector3    savedTareUpright       = Vector3.zero; // 直立模式校正基準
     private Vector3    rawAcceleration     = Vector3.zero;
     private bool       hasOrientationData  = false;
     private Quaternion currentOrientation  = Quaternion.identity;
@@ -307,7 +321,7 @@ public class AccelerometerBallEffect : MonoBehaviour
     private Vector3 pendingUprightMinOutputStep = Vector3.zero;
     private Vector3 pendingFlatFlip             = Vector3.one;
     private Vector3 pendingFlatDeadzone         = new Vector3(0.2f, 0.2f, 0.2f);
-    private Vector3 pendingFlatSensitivity      = new Vector3(0.08f, 0.08f, 0.08f);
+    private Vector3 pendingFlatSensitivity      = new Vector3(0.3f, 0.3f, 0.3f);
     private bool    pendingFlatSwapXZ           = false;
     private Vector3 pendingFlatMinOutputStep    = Vector3.zero;
     private bool    pendingHasFlatResults       = false;
@@ -385,6 +399,10 @@ public class AccelerometerBallEffect : MonoBehaviour
         if (showOffsetHUD && hasCalibrated && wizardPhase == WizardPhase.Idle)
             DrawOffsetHUD();
 
+        // ── 軸縮放即時調整面板 ──
+        if (showScaleTuner && hasCalibrated && wizardPhase == WizardPhase.Idle)
+            DrawScaleTuner();
+
         // ── 嚮導 Overlay ──
         if (wizardPhase == WizardPhase.Idle) return;
 
@@ -392,11 +410,13 @@ public class AccelerometerBallEffect : MonoBehaviour
         float oy = 10f;
         float ow = 328f;
         // 高度依狀態動態計算
-        bool isFwdPhase = wizardPhase == WizardPhase.UprightForward || wizardPhase == WizardPhase.FlatForward;
+        bool isFwdPhase        = wizardPhase == WizardPhase.UprightForward || wizardPhase == WizardPhase.FlatForward;
+        bool isMaxGesturePhase = wizardPhase == WizardPhase.UprightMaxGesture || wizardPhase == WizardPhase.FlatMaxGesture;
         float oh = wizardPendingConfirm ? 230f
                  : !wizardReadyToCollect ? 240f
                  : wizardPhase == WizardPhase.FlatTransition ? 120f
-                 : isFwdPhase ? 210f
+                 : isFwdPhase ? 240f
+                 : isMaxGesturePhase ? 230f
                  : 190f;
         GUI.Box(new Rect(ox, oy, ow, oh), "");
 
@@ -468,15 +488,12 @@ public class AccelerometerBallEffect : MonoBehaviour
                                        ? wizardFlatBaseline : wizardUprightBaseline);
         DrawSignalBar(ix, ref iy, iw, "X 軸", liveRaw.x, baseStyle);
         DrawSignalBar(ix, ref iy, iw, "Z 軸", liveRaw.z, baseStyle);
-        // PushForward phase 額外顯示最大 / 最小幅度
+        // MaxGesture：傾斜角視覺化；Forward：推動強度視覺化
         bool showPeak = wizardPhase == WizardPhase.UprightForward || wizardPhase == WizardPhase.FlatForward;
-        if (showPeak)
-        {
-            string minStr = wizardMinPeakDisplay > 0.01f ? $"{wizardMinPeakDisplay:F2} m/s²" : "—（繼續來回移動）";
-            GUI.Label(new Rect(ix, iy, iw, 36f),
-                $"最大幅：{wizardMaxPeakDisplay:F2} m/s²  {(wizardMaxPeakDisplay >= 0.3f ? "✓" : "（再大一點）")}\n最小幅：{minStr}",
-                hintStyle);
-        }
+        if (isMaxGesturePhase)
+            DrawTiltGauge(ix, ref iy, iw, baseStyle);
+        else if (showPeak)
+            DrawPushMeter(ix, ref iy, iw, baseStyle);
         else if (wizardLastStepResult.Length > 0)
             GUI.Label(new Rect(ix, iy, iw, 18f), "✓ " + wizardLastStepResult, hintStyle);
     }
@@ -516,6 +533,94 @@ public class AccelerometerBallEffect : MonoBehaviour
         y += 20f;
     }
 
+    // 傾斜角視覺化儀表（MaxGesture phase 用）
+    private void DrawTiltGauge(float x, ref float y, float w, GUIStyle baseStyle)
+    {
+        const float minGood = 15f, maxGood = 45f, fullRange = 90f;
+        float angle   = Mathf.Abs(debugTiltAngleDeg.x);
+        bool  inRange = angle >= minGood && angle <= maxGood;
+
+        Color statusColor = inRange ? Color.green : new Color(1f, 0.55f, 0f);
+        string hint = inRange       ? "✓ 角度正確，保持不動"
+                    : angle < minGood ? $"↑ 再多傾斜一點（目標 {minGood:F0}°～{maxGood:F0}°）"
+                                      : $"↓ 傾斜太多了（目標 {minGood:F0}°～{maxGood:F0}°）";
+
+        var labelStyle = new GUIStyle(baseStyle)
+            { fontStyle = FontStyle.Bold, normal = { textColor = statusColor } };
+        GUI.Label(new Rect(x, y, w, 18f), $"傾斜角：{angle:F1}°   {hint}", labelStyle);
+        y += 22f;
+
+        // 繪製量表條
+        float barH = 11f, barW = w - 2f;
+        Color prev = GUI.color;
+
+        GUI.color = new Color(0.25f, 0.25f, 0.25f, 0.9f);
+        GUI.DrawTexture(new Rect(x, y, barW, barH), Texture2D.whiteTexture);
+
+        float goodL = (minGood / fullRange) * barW;
+        float goodR = (maxGood / fullRange) * barW;
+        GUI.color = new Color(0.15f, 0.75f, 0.15f, 0.75f);
+        GUI.DrawTexture(new Rect(x + goodL, y, goodR - goodL, barH), Texture2D.whiteTexture);
+
+        float markerX = Mathf.Clamp01(angle / fullRange) * barW;
+        GUI.color = inRange ? Color.white : new Color(1f, 0.55f, 0f);
+        GUI.DrawTexture(new Rect(x + markerX - 1.5f, y - 2f, 3f, barH + 4f), Texture2D.whiteTexture);
+
+        GUI.color = prev;
+        y += barH + 3f;
+
+        var tinyStyle = new GUIStyle(baseStyle)
+            { fontSize = 10, normal = { textColor = new Color(0.65f, 0.9f, 0.65f) } };
+        GUI.Label(new Rect(x + goodL - 4f, y, 28f, 14f), $"{minGood:F0}°", tinyStyle);
+        GUI.Label(new Rect(x + goodR - 4f, y, 28f, 14f), $"{maxGood:F0}°", tinyStyle);
+        y += 16f;
+    }
+
+    // 推動強度視覺化條（Forward phase 用）
+    private void DrawPushMeter(float x, ref float y, float w, GUIStyle baseStyle)
+    {
+        const float target = 0.3f, fullRange = 5f;
+        float cur    = wizardMaxPeakDisplay;
+        bool  isGood = cur >= target;
+
+        Color statusColor = isGood ? Color.green : new Color(1f, 0.55f, 0f);
+        string hint = isGood ? "✓ 幅度足夠" : "↑ 請加大移動幅度";
+        var labelStyle = new GUIStyle(baseStyle)
+            { fontStyle = FontStyle.Bold, normal = { textColor = statusColor } };
+        GUI.Label(new Rect(x, y, w, 18f), $"最大推動：{cur:F2} m/s²   {hint}", labelStyle);
+        y += 22f;
+
+        float barH = 11f, barW = w - 2f;
+        Color prev = GUI.color;
+
+        GUI.color = new Color(0.25f, 0.25f, 0.25f, 0.9f);
+        GUI.DrawTexture(new Rect(x, y, barW, barH), Texture2D.whiteTexture);
+
+        float fillW = Mathf.Clamp01(cur / fullRange) * barW;
+        GUI.color = isGood ? new Color(0.15f, 0.75f, 0.15f, 0.9f) : new Color(1f, 0.55f, 0f, 0.9f);
+        GUI.DrawTexture(new Rect(x, y, fillW, barH), Texture2D.whiteTexture);
+
+        float targetX = (target / fullRange) * barW;
+        GUI.color = Color.white;
+        GUI.DrawTexture(new Rect(x + targetX - 1f, y - 2f, 2f, barH + 4f), Texture2D.whiteTexture);
+
+        GUI.color = prev;
+        y += barH + 3f;
+
+        var tinyStyle = new GUIStyle(baseStyle)
+            { fontSize = 10, normal = { textColor = new Color(0.9f, 0.9f, 0.9f) } };
+        GUI.Label(new Rect(x + targetX - 6f, y, 30f, 14f), $"{target}▲", tinyStyle);
+        y += 16f;
+
+        var hintStyle2 = new GUIStyle(baseStyle)
+            { fontSize = 11, normal = { textColor = new Color(0.7f, 1f, 0.7f) } };
+        string minStr = wizardMinPeakDisplay > 0.01f
+            ? $"最小衝程：{wizardMinPeakDisplay:F2} m/s²"
+            : "—（繼續來回移動）";
+        GUI.Label(new Rect(x, y, w, 16f), minStr, hintStyle2);
+        y += 18f;
+    }
+
     /// <summary>
     /// [UDP 模式] 以四元數計算裝置座標系重力向量，判斷手機是否平放。
     ///   直立模式：用重力方向映射到 Unity 座標系。
@@ -547,10 +652,13 @@ public class AccelerometerBallEffect : MonoBehaviour
             else
             {
                 // 平放模式：傾斜分量（持續）+ 平推分量（彈回）混合
+                // X 軸用純重力投影，不混 linX 避免手部晃動噪聲汙染方向
+                // Z 軸補入限幅後的 linZ，補足平放時 gDevice.y 訊號弱的問題
                 _gravX = gDevice.x;
                 _gravZ = gDevice.y;
-                rawAcceleration.x = _gravX + _linX * flatLinearBlend;
-                rawAcceleration.z = _gravZ + _linZ * flatLinearBlend;
+                float clampedLinZ = Mathf.Clamp(_linZ, -flatLinZClamp, flatLinZClamp);
+                rawAcceleration.x = _gravX + _linX * flatLinearBlendX;
+                rawAcceleration.z = _gravZ + clampedLinZ * flatLinearBlendZ;
             }
 
             debugQx            = data.qx;
@@ -601,8 +709,9 @@ public class AccelerometerBallEffect : MonoBehaviour
             // 水平線性加速度（平推）混入 XZ
             _linX = worldAcc.x;
             _linZ = worldAcc.y;
-            rawAcceleration.x = _gravX + _linX * flatLinearBlend;
-            rawAcceleration.z = _gravZ + _linZ * flatLinearBlend;
+            float clampedLinZ = Mathf.Clamp(_linZ, -flatLinZClamp, flatLinZClamp);
+            rawAcceleration.x = _gravX + _linX * flatLinearBlendX;
+            rawAcceleration.z = _gravZ + clampedLinZ * flatLinearBlendZ;
             // 垂直方向 → Unity Y
             rawAcceleration.y = worldAcc.z;
         }
@@ -665,17 +774,22 @@ public class AccelerometerBallEffect : MonoBehaviour
         {
             if (phoneIsFlat)
             {
-                // 切入平放：以當前重力投影為 Tare 基準，讓球從中心出發不因切換姿勢跳位
-                var flatBase = new Vector3(debugGDevice.x, 0f, debugGDevice.y);
-                filteredAcceleration   = flatBase;
-                calibratedAcceleration = flatBase;
-                rawAcceleration.y      = 0f; // 清除直立模式殘留 Y 值，防止切換後 Y 軸漂移
+                // 切入平放：恢復校正時儲存的平放 Tare，保持「手機回原點=球回原點」不變
+                // 若尚未在平放模式下校正過，退回使用當前重力（避免初次進入時爆衝）
+                bool hasFlatTare = savedTareFlat != Vector3.zero || hasCalibrated;
+                var  useTare     = hasFlatTare ? savedTareFlat
+                                               : new Vector3(debugGDevice.x, 0f, debugGDevice.y);
+                filteredAcceleration   = useTare;
+                calibratedAcceleration = useTare;
+                rawAcceleration.y      = 0f;
             }
             else
             {
-                // 切回直立：用當前重力向量為初始值
-                filteredAcceleration   = rawAcceleration;
-                calibratedAcceleration = filteredAcceleration;
+                // 切回直立：恢復校正時儲存的直立 Tare
+                bool hasUprightTare = savedTareUpright != Vector3.zero || hasCalibrated;
+                var  useTare        = hasUprightTare ? savedTareUpright : rawAcceleration;
+                filteredAcceleration   = useTare;
+                calibratedAcceleration = useTare;
             }
             currentOffset   = Vector3.zero;
             currentVelocity = Vector3.zero;
@@ -789,6 +903,11 @@ public class AccelerometerBallEffect : MonoBehaviour
         Vector3 localScaledOffset = transform.parent != null
             ? transform.parent.InverseTransformDirection(scaledOffset)
             : scaledOffset;
+        // 若指定了 centerPoint 物體，每幀動態跟隨其位置，確保球始終以該物體為原點偏移
+        if (centerPoint != null)
+            centerLocalPosition = transform.parent != null
+                ? transform.parent.InverseTransformPoint(centerPoint.position)
+                : centerPoint.position;
         Vector3 proposedPosition = centerLocalPosition + localScaledOffset;
 
         // ── 切換瞬間：記錄跳動補償量，讓 proposedPosition 仍即時反應傾斜 ──
@@ -986,6 +1105,9 @@ public class AccelerometerBallEffect : MonoBehaviour
         // Tare：以當前 filteredAcceleration 為新的「靜止基準」
         // 下一幀 debiased = filteredAcceleration - calibratedAcceleration ≈ 0
         calibratedAcceleration = filteredAcceleration;
+        // 依模式保存校正基準，模式切換時恢復而非覆蓋
+        if (phoneIsFlat) savedTareFlat    = filteredAcceleration;
+        else             savedTareUpright = filteredAcceleration;
 
         // 原點鎖定：以「校正當下的實際位置」為新中心
         // 之後物件只在 maxOffsetPerAxis 範圍內移動，不會再累加漂移
@@ -1182,6 +1304,21 @@ public class AccelerometerBallEffect : MonoBehaviour
                     wizardStatusText = $"動作不夠明顯，請加大幅度後重試 ({wizardRetryCount}/3)";
                     return;
                 }
+
+                // 角度驗證：傾斜角應在 15°~45° 之間（建議 ~30°）
+                float domSig   = Mathf.Max(mx, mz);
+                float tiltDeg  = Mathf.Asin(Mathf.Clamp(domSig / 9.81f, -1f, 1f)) * Mathf.Rad2Deg;
+                if ((tiltDeg < 15f || tiltDeg > 45f) && wizardRetryCount < 3)
+                {
+                    wizardRetryCount++;
+                    wizardReadyToCollect = false;
+                    string angleHint = tiltDeg < 15f
+                        ? $"傾斜角太小（{tiltDeg:F1}°），請傾斜到 15°～45° 再試"
+                        : $"傾斜角太大（{tiltDeg:F1}°），請輕輕傾斜到 15°～45° 再試";
+                    wizardStatusText = $"{angleHint} ({wizardRetryCount}/3)";
+                    return;
+                }
+
                 bool swapXZ   = mz > mx;
                 float domMean = swapXZ ? debiased.z : debiased.x;
                 float flipX   = Mathf.Sign(domMean);
@@ -1353,7 +1490,15 @@ public class AccelerometerBallEffect : MonoBehaviour
             flatSettings.minOutputStep = pendingFlatMinOutputStep;
         }
 
-        Recalibrate(); // 以當前姿勢鎖定原點（使用者已靜止）
+        // 用 Baseline 採樣均值當 Tare，而非嚮導結束時的當前姿勢。
+        // 根本原因：Forward 步驟結束後手機角度偏離自然靜止角，以當下 filteredAcceleration
+        // 為 Tare 會造成後續「靜置 → debiased 持續非零 → 球永遠偏移」。
+        // Baseline 階段是唯一要求使用者靜止採樣的時機，均值才代表真正的靜止參考角。
+        filteredAcceleration = phoneIsFlat ? wizardFlatBaseline : wizardUprightBaseline;
+        Recalibrate(); // filteredAcceleration 已替換為 Baseline 均值，Tare 記錄正確角度
+        // 同時寫入另一個模式的 savedTare，切換時兩邊都有正確參考
+        if (phoneIsFlat) savedTareUpright = wizardUprightBaseline;
+        else             savedTareFlat    = pendingHasFlatResults ? wizardFlatBaseline : savedTareFlat;
         wizardPendingConfirm = false;
         wizardPhase          = WizardPhase.Done;
         wizardTimer          = 0f;
@@ -1457,6 +1602,97 @@ public class AccelerometerBallEffect : MonoBehaviour
         hy += 15f;
         GUI.Label(new Rect(hx, hy, totalW, 16f),
             $"Y={vy:+0.00;-0.00}  ±({emx:F1},{emy:F1},{emz:F1})", smlStyle);
+    }
+
+    private void DrawScaleTuner()
+    {
+        bool   isFlat   = phoneIsFlat;
+        string modeName = isFlat ? "平放" : "直立";
+        float  curX     = isFlat ? flatSettings.axisScale.x : uprightSettings.axisScale.x;
+        float  curY     = isFlat ? flatSettings.axisScale.y : uprightSettings.axisScale.y;
+        float  curZ     = isFlat ? flatSettings.axisScale.z : uprightSettings.axisScale.z;
+
+        const float pw = 220f, ph = 134f;
+        float px = scaleTunerPosition.x, py = scaleTunerPosition.y;
+        GUI.Box(new Rect(px, py, pw, ph), "");
+
+        float ix = px + 7f, iy = py + 5f;
+        float iw = pw - 14f;
+
+        var titleStyle = new GUIStyle(GUI.skin.label)
+            { fontSize = 12, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
+        var labelStyle = new GUIStyle(GUI.skin.label)
+            { fontSize = 12, normal = { textColor = new Color(0.85f, 0.85f, 0.85f) } };
+        var valStyle = new GUIStyle(GUI.skin.label)
+            { fontSize = 14, fontStyle = FontStyle.Bold,
+              alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.yellow } };
+        var stepLabelStyle = new GUIStyle(GUI.skin.label)
+            { fontSize = 10, normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } };
+
+        GUI.Label(new Rect(ix, iy, iw, 18f), $"axisScale  （{modeName}模式）", titleStyle);
+        iy += 22f;
+
+        // 各行佈局：[軸名] [−] [slider 可拖動] [+] [數值]
+        const float lw = 14f, bw = 24f, vw = 40f, gap = 2f;
+        float sliderW = iw - lw - bw * 2f - vw - gap * 4f;
+
+        curX = DrawScaleRow(ix, iy, lw, bw, sliderW, vw, gap, "X", curX, labelStyle, valStyle);
+        iy += 28f;
+        curY = DrawScaleRow(ix, iy, lw, bw, sliderW, vw, gap, "Y", curY, labelStyle, valStyle);
+        iy += 28f;
+        curZ = DrawScaleRow(ix, iy, lw, bw, sliderW, vw, gap, "Z", curZ, labelStyle, valStyle);
+        iy += 28f;
+
+        // 步距選擇
+        GUI.Label(new Rect(ix, iy, 28f, 16f), "步距", stepLabelStyle);
+        float[] steps = { 0.01f, 0.1f, 0.5f };
+        float sbX = ix + 30f;
+        foreach (float step in steps)
+        {
+            bool active = Mathf.Abs(scaleTunerStep - step) < 0.001f;
+            Color prev = GUI.color;
+            if (active) GUI.color = new Color(0.35f, 1f, 0.35f);
+            if (GUI.Button(new Rect(sbX, iy, 38f, 16f), step.ToString("G2")))
+                scaleTunerStep = step;
+            GUI.color = prev;
+            sbX += 41f;
+        }
+        if (GUI.Button(new Rect(ix + iw - 42f, iy, 42f, 16f), "重設 1"))
+            { curX = 1f; curY = 1f; curZ = 1f; }
+
+        if (isFlat)
+        {
+            flatSettings.axisScale.x = curX; flatSettings.axisScale.y = curY;
+            flatSettings.axisScale.z = curZ;
+        }
+        else
+        {
+            uprightSettings.axisScale.x = curX; uprightSettings.axisScale.y = curY;
+            uprightSettings.axisScale.z = curZ;
+        }
+    }
+
+    // slider 連續拖動不四捨五入（拖動平滑）；+/− 按鈕才做捨入
+    private float DrawScaleRow(float ix, float iy, float lw, float bw, float sliderW, float vw,
+                                float gap, string axisLabel, float cur,
+                                GUIStyle labelStyle, GUIStyle valStyle)
+    {
+        GUI.Label(new Rect(ix, iy, lw, 24f), axisLabel, labelStyle);
+        float bx = ix + lw + gap;
+
+        if (GUI.Button(new Rect(bx, iy, bw, 24f), "−"))
+            cur = Mathf.Max(0.1f, Mathf.Round((cur - scaleTunerStep) * 100f) / 100f);
+        bx += bw + gap;
+
+        cur = GUI.HorizontalSlider(new Rect(bx, iy + 6f, sliderW, 14f), cur, 0.1f, 5f);
+        bx += sliderW + gap;
+
+        if (GUI.Button(new Rect(bx, iy, bw, 24f), "+"))
+            cur = Mathf.Round((cur + scaleTunerStep) * 100f) / 100f;
+        bx += bw + gap;
+
+        GUI.Label(new Rect(bx, iy, vw, 24f), cur.ToString("F2"), valStyle);
+        return cur;
     }
 
     private static void ComputeMeanAndStd(List<Vector3> samples, out Vector3 mean, out Vector3 std)
