@@ -22,12 +22,14 @@ public class AccelerometerBallEffect : MonoBehaviour
     private enum WizardPhase
     {
         Idle,
-        UprightBaseline,     // 直立靜止 → tare + deadzone
-        UprightTiltRight,    // 直立向右傾 → axisFlip.x + swapXZ
+        UprightBaseline,     // 直立靜止 → tare + noise deadzone
+        UprightTiltMax,      // 直立最大傾斜 → axisFlip.x + swapXZ + 記錄最大訊號
+        UprightTiltMin,      // 直立最小傾斜 → deadzone.x + sensitivity + maxOffset.x
         UprightPushForward,  // 直立向前推 → axisFlip.z
         FlatTransition,      // 等待 phoneIsFlat = true
-        FlatBaseline,        // 平放靜止 → tare + deadzone
-        FlatPushRight,       // 平放向右推 → axisFlip.x + swapXZ
+        FlatBaseline,        // 平放靜止 → tare + noise deadzone
+        FlatTiltMax,         // 平放最大傾斜
+        FlatTiltMin,         // 平放最小傾斜
         FlatPushForward,     // 平放向前推 → axisFlip.z
         Done
     }
@@ -183,7 +185,7 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Tooltip("每個收集階段的持續時間（秒）")]
     [SerializeField] [Range(1f, 5f)] private float wizardCollectDuration = 2.5f;
     [Tooltip("嚮導靈敏度目標：在指定動作幅度下希望球偏移的距離（米）")]
-    [SerializeField] [Range(0.1f, 3f)] private float wizardTargetOffset = 0.3f;
+    [SerializeField] [Range(0.1f, 5f)] private float wizardTargetOffset = 3.0f;
     [Tooltip("是否在 Game 視窗顯示嚮導按鈕")]
     [SerializeField] private bool showWizardButton = true;
     [Tooltip("（唯讀）目前嚮導狀態文字")]
@@ -285,6 +287,8 @@ public class AccelerometerBallEffect : MonoBehaviour
     private bool    wizardReadyToCollect   = false; // 每個 phase 等使用者按「準備好了」才開始
     private float   wizardPeakZ            = 0f;   // PushForward phase：追蹤 Z 峰值方向
     private float   wizardMinPeakMagnitude = float.MaxValue; // PushForward：各次衝程最小有意義峰值
+    private float   wizardUprightMaxSignal = 0f;  // TiltMax phase：直立最大傾斜訊號
+    private float   wizardFlatMaxSignal    = 0f;  // TiltMax phase：平放最大傾斜訊號
     private float   wizardCurrentStrokeMax = 0f;             // 當前衝程最大絕對值
     private bool    wizardInStroke         = false;           // 是否正在一次有效衝程中
     private string  wizardLastStepResult   = "";
@@ -402,8 +406,8 @@ public class AccelerometerBallEffect : MonoBehaviour
         float ix = ox + 8f, iy = oy + 6f, iw = ow - 16f;
 
         // ── 標題列 ──
-        int phaseNum = wizardPhase == WizardPhase.FlatTransition ? 4 : (int)wizardPhase;
-        GUI.Label(new Rect(ix, iy, iw, 20f), $"自動校正嚮導  ({phaseNum} / 7)", boldStyle); iy += 24f;
+        int phaseNum = (int)wizardPhase;
+        GUI.Label(new Rect(ix, iy, iw, 20f), $"自動校正嚮導  ({phaseNum} / 9)", boldStyle); iy += 24f;
 
         // ── 確認摘要畫面 ──
         if (wizardPendingConfirm)
@@ -454,7 +458,9 @@ public class AccelerometerBallEffect : MonoBehaviour
         // 即時訊號條（Baseline 時顯示絕對值；方向 phase 顯示相對基準的差值）
         bool isBaseline = wizardPhase == WizardPhase.UprightBaseline || wizardPhase == WizardPhase.FlatBaseline;
         Vector3 liveRaw = isBaseline ? filteredAcceleration
-            : filteredAcceleration - (wizardPhase == WizardPhase.FlatPushRight || wizardPhase == WizardPhase.FlatPushForward
+            : filteredAcceleration - (wizardPhase == WizardPhase.FlatTiltMax ||
+                                      wizardPhase == WizardPhase.FlatTiltMin ||
+                                      wizardPhase == WizardPhase.FlatPushForward
                                        ? wizardFlatBaseline : wizardUprightBaseline);
         DrawSignalBar(ix, ref iy, iw, "X 軸", liveRaw.x, baseStyle);
         DrawSignalBar(ix, ref iy, iw, "Z 軸", liveRaw.z, baseStyle);
@@ -474,10 +480,12 @@ public class AccelerometerBallEffect : MonoBehaviour
     private string GetPhaseArrow() => wizardPhase switch
     {
         WizardPhase.UprightBaseline    => "[ 靜止不動 ]",
-        WizardPhase.UprightTiltRight   => "→  向右傾斜",
+        WizardPhase.UprightTiltMax     => "→  向右傾斜（最大）",
+        WizardPhase.UprightTiltMin     => "→  向右傾斜（最小）",
         WizardPhase.UprightPushForward => "↑↓  前後移動",
         WizardPhase.FlatBaseline       => "[ 靜止不動 ]",
-        WizardPhase.FlatPushRight      => "→  往右傾斜",
+        WizardPhase.FlatTiltMax        => "→  往右傾斜（最大）",
+        WizardPhase.FlatTiltMin        => "→  往右傾斜（最小）",
         WizardPhase.FlatPushForward    => "↑↓  前後移動",
         _                              => ""
     };
@@ -485,10 +493,12 @@ public class AccelerometerBallEffect : MonoBehaviour
     private string GetPhaseDetail() => wizardPhase switch
     {
         WizardPhase.UprightBaseline    => "手機豎直拿好\n保持靜止，不要動",
-        WizardPhase.UprightTiltRight   => "手機螢幕朝向你\n往右邊傾斜並保持不動",
+        WizardPhase.UprightTiltMax     => "手機螢幕朝向你\n往右傾斜到你【最大舒適角度】並保持\n（球能移動的最大距離由此決定）",
+        WizardPhase.UprightTiltMin     => "手機螢幕朝向你\n往右傾斜到你【剛好感覺到的最小角度】並保持\n（死區大小由此決定）",
         WizardPhase.UprightPushForward => "握著手機，往前後來回移動幾次\n（不用放手，就像在搖）",
         WizardPhase.FlatBaseline       => "手機平放（螢幕朝上）\n保持靜止，不要動",
-        WizardPhase.FlatPushRight      => "手機平放\n往右邊傾斜並保持不動\n（讓嚮導偵測方向）",
+        WizardPhase.FlatTiltMax        => "手機平放\n往右傾斜到你的【最大舒適角度】並保持",
+        WizardPhase.FlatTiltMin        => "手機平放\n往右傾斜到你的【最小可感知角度】並保持",
         WizardPhase.FlatPushForward    => "手機平放\n往前後來回推動幾次",
         _                              => ""
     };
@@ -1020,11 +1030,13 @@ public class AccelerometerBallEffect : MonoBehaviour
         wizardMinPeakMagnitude    = float.MaxValue;
         wizardCurrentStrokeMax    = 0f;
         wizardInStroke            = false;
+        wizardUprightMaxSignal    = 0f;
+        wizardFlatMaxSignal       = 0f;
         pendingUprightMaxOffset   = uprightSettings.maxOffsetPerAxis;
         pendingFlatMaxOffset      = flatSettings.maxOffsetPerAxis;
         pendingUprightAxisScale   = uprightSettings.axisScale;
-        // xy 不繼承前次值，每次從 1.0 重新校正；只有 z 由 PushForward phase 設定
-        pendingFlatAxisScale      = new Vector3(1f, 1f, 1f);
+        // xy/z 繼承舊值；z 會由 PushForward phase 重新設定
+        pendingFlatAxisScale      = flatSettings.axisScale;
         wizardMinPeakDisplay      = 0f;
         wizardMaxPeakDisplay      = 0f;
         wizardStatusText          = GetPhaseDetail();
@@ -1145,13 +1157,12 @@ public class AccelerometerBallEffect : MonoBehaviour
                 break;
             }
 
-            // ── TiltRight / PushRight：axisFlip.x + swapXZ + sensitivity ──
-            case WizardPhase.UprightTiltRight:
-            case WizardPhase.FlatPushRight:
+            // ── TiltMax：axisFlip.x + swapXZ + 記錄最大訊號 ──
+            case WizardPhase.UprightTiltMax:
+            case WizardPhase.FlatTiltMax:
             {
-                bool isUpright = (wizardPhase == WizardPhase.UprightTiltRight);
+                bool isUpright = (wizardPhase == WizardPhase.UprightTiltMax);
                 Vector3 baseline = isUpright ? wizardUprightBaseline : wizardFlatBaseline;
-                Vector3 dz       = isUpright ? pendingUprightDeadzone : pendingFlatDeadzone;
                 Vector3 debiased = mean - baseline;
                 float mx = Mathf.Abs(debiased.x), mz = Mathf.Abs(debiased.z);
 
@@ -1162,27 +1173,24 @@ public class AccelerometerBallEffect : MonoBehaviour
                     wizardStatusText = $"動作不夠明顯，請加大幅度後重試 ({wizardRetryCount}/3)";
                     return;
                 }
-                bool swapXZ      = mz > mx;
-                float domMean    = swapXZ ? debiased.z : debiased.x;
-                float domDz      = swapXZ ? dz.z : dz.x;
-                float flipX      = Mathf.Sign(domMean);
-                float effMag     = Mathf.Max(Mathf.Abs(domMean) - domDz, 0.05f);
-                float sensitivity = wizardTargetOffset / effMag;
+                bool swapXZ   = mz > mx;
+                float domMean = swapXZ ? debiased.z : debiased.x;
+                float flipX   = Mathf.Sign(domMean);
+                float maxSig  = Mathf.Abs(domMean);
 
                 if (isUpright)
                 {
-                    pendingUprightSwapXZ      = swapXZ;
-                    pendingUprightFlip.x      = flipX;
-                    pendingUprightSensitivity = sensitivity;
-                    wizardUprightFlip         = new Vector3(flipX, pendingUprightFlip.y, pendingUprightFlip.z);
+                    pendingUprightSwapXZ   = swapXZ;
+                    pendingUprightFlip.x   = flipX;
+                    wizardUprightMaxSignal = maxSig;
+                    wizardUprightFlip      = new Vector3(flipX, pendingUprightFlip.y, pendingUprightFlip.z);
                 }
                 else
                 {
-                    pendingFlatSwapXZ      = swapXZ;
-                    pendingFlatFlip.x      = flipX;
-                    // 平放模式靈敏度上限：避免採樣幅度太小時產生暴衝
-                    pendingFlatSensitivity = Mathf.Min(sensitivity, 0.5f);
-                    wizardFlatFlip         = new Vector3(flipX, pendingFlatFlip.y, pendingFlatFlip.z);
+                    pendingFlatSwapXZ   = swapXZ;
+                    pendingFlatFlip.x   = flipX;
+                    wizardFlatMaxSignal = maxSig;
+                    wizardFlatFlip      = new Vector3(flipX, pendingFlatFlip.y, pendingFlatFlip.z);
                 }
                 // swapXZ 後 X slot 存的是原 Z 訊號（噪聲特性不同），交換死區避免跨軸汙染
                 if (swapXZ)
@@ -1190,11 +1198,57 @@ public class AccelerometerBallEffect : MonoBehaviour
                     if (isUpright) pendingUprightDeadzone = new Vector3(pendingUprightDeadzone.z, pendingUprightDeadzone.y, pendingUprightDeadzone.x);
                     else           pendingFlatDeadzone    = new Vector3(pendingFlatDeadzone.z,    pendingFlatDeadzone.y,    pendingFlatDeadzone.x);
                 }
-                // X 軸 maxOffset 對齊 wizardTargetOffset，視覺範圍與 Z 軸一致
-                if (isUpright) pendingUprightMaxOffset = new Vector3(wizardTargetOffset * 1.1f, pendingUprightMaxOffset.y, pendingUprightMaxOffset.z);
-                else           pendingFlatMaxOffset    = new Vector3(wizardTargetOffset * 1.1f, pendingFlatMaxOffset.y,    pendingFlatMaxOffset.z);
                 wizardRetryCount     = 0;
-                wizardLastStepResult = $"X{(flipX > 0 ? "正向" : "翻轉")}{(swapXZ ? " | 交換XZ" : "")} 靈敏度={sensitivity:F3}";
+                wizardLastStepResult = $"X{(flipX > 0 ? "正向" : "翻轉")}{(swapXZ ? " | 交換XZ" : "")} | 最大訊號={maxSig:F2}";
+                AdvanceWizardPhase();
+                break;
+            }
+
+            // ── TiltMin：deadzone.x + sensitivity + maxOffset.x ──
+            case WizardPhase.UprightTiltMin:
+            case WizardPhase.FlatTiltMin:
+            {
+                bool isUpright = (wizardPhase == WizardPhase.UprightTiltMin);
+                Vector3 baseline = isUpright ? wizardUprightBaseline : wizardFlatBaseline;
+                bool swapXZ      = isUpright ? pendingUprightSwapXZ  : pendingFlatSwapXZ;
+                float maxSig     = isUpright ? wizardUprightMaxSignal : wizardFlatMaxSignal;
+                Vector3 debiased = mean - baseline;
+                float domMin     = Mathf.Abs(swapXZ ? debiased.z : debiased.x);
+
+                if (domMin < 0.05f && wizardRetryCount < 3)
+                {
+                    wizardRetryCount++;
+                    wizardReadyToCollect = false;
+                    wizardStatusText = $"角度太小偵測不到，請稍微大一點後重試 ({wizardRetryCount}/3)";
+                    return;
+                }
+                if (domMin >= maxSig * 0.8f && wizardRetryCount < 3)
+                {
+                    wizardRetryCount++;
+                    wizardReadyToCollect = false;
+                    wizardStatusText = $"太接近最大角度，請縮小到最小可感知角度後重試 ({wizardRetryCount}/3)";
+                    return;
+                }
+
+                // deadzone = 最小訊號 × 0.8，略低於最小有意義動作
+                float dzX         = Mathf.Clamp(domMin * 0.8f, 0.05f, maxSig * 0.4f);
+                float usableRange = Mathf.Max(maxSig - dzX, 0.05f);
+                float sensitivity = wizardTargetOffset / usableRange;
+
+                if (isUpright)
+                {
+                    pendingUprightDeadzone    = new Vector3(dzX, pendingUprightDeadzone.y, pendingUprightDeadzone.z);
+                    pendingUprightSensitivity = sensitivity;
+                    pendingUprightMaxOffset   = new Vector3(wizardTargetOffset * 1.1f, pendingUprightMaxOffset.y, pendingUprightMaxOffset.z);
+                }
+                else
+                {
+                    pendingFlatDeadzone    = new Vector3(dzX, pendingFlatDeadzone.y, pendingFlatDeadzone.z);
+                    pendingFlatSensitivity = Mathf.Min(sensitivity, 5.0f);
+                    pendingFlatMaxOffset   = new Vector3(wizardTargetOffset * 1.1f, pendingFlatMaxOffset.y, pendingFlatMaxOffset.z);
+                }
+                wizardRetryCount     = 0;
+                wizardLastStepResult = $"死區={dzX:F2} 可用範圍={usableRange:F2} 靈敏度={sensitivity:F3}";
                 AdvanceWizardPhase();
                 break;
             }
