@@ -98,6 +98,42 @@ public partial class AccelerometerBallEffect : MonoBehaviour
     [SerializeField] [Range(0f, 5f)] private float flatLinearBlendZ = 0f; // 已棄用：平放 Z 改回 worldAcc.y，不再混合 gDevice.y
     [Tooltip("平放 Z 軸線性加速截斷（m/s²）：防止快速甩動時尖峰暴衝。建議 6~12。")]
     [SerializeField] [Range(2f, 20f)] private float flatLinZClamp = 8f;
+
+    [Header("平放 Z 軸積分（抗反彈）")]
+    [Tooltip("啟用後：平放 Z 改用「速度積分（有阻尼）」模式；停止後速度指數衰減歸零，不累積位置、不反彈\n" +
+             "嚮導期間自動暫停積分，以確保 sensitivity.z 校正正確")]
+    [SerializeField] private bool flatZUseIntegration = true;
+    [Tooltip("卡爾曼過程噪聲 Q：越大 = 濾波器更信任感測器原始值、追蹤更快但輸出較嘈雜")]
+    [SerializeField] [Range(0.001f, 2f)] private float flatZKalmanQ = 0.1f;
+    [Tooltip("卡爾曼量測噪聲 R：越大 = 輸出更平滑但反應更慢；建議 0.3~1.0")]
+    [SerializeField] [Range(0.01f, 5f)]  private float flatZKalmanR = 0.5f;
+    [Tooltip("積分力度（加速度 → 速度的增益）；越大 = 推力更靈敏")]
+    [SerializeField] [Range(0.05f, 5f)]  private float flatZForceGain = 1f;
+    [Tooltip("速度阻尼（每秒指數衰減率）；越大 = 停手後球越快停住；建議 flatZOutputScale = flatZFriction / flatZForceGain 保持等比")]
+    [SerializeField] [Range(0.5f, 30f)]  private float flatZFriction = 5f;
+    [Tooltip("速度輸出縮放；建議設為 flatZFriction / flatZForceGain，使峰值速度信號與原始加速度等量，嚮導校正才正確")]
+    [SerializeField] [Range(1f, 50f)]    private float flatZOutputScale = 5f;
+
+    [Header("Z 軸衝量錨點（前後持續定位）")]
+    [Tooltip("啟用後：偵測到推力脈衝時更新錨點，停止施力球不再彈回。與傾斜軸（X）組合使用")]
+    [SerializeField] private bool zAnchorEnabled = false;
+    [Tooltip("觸發錨點更新的快速濾波閾值（m/s²）；低於此的小晃動不觸發")]
+    [SerializeField] [Range(0.2f, 8f)] private float zAnchorThreshold = 1.5f;
+    [Tooltip("觸發後冷卻時間（秒）；防止單次推力連續累積錨點")]
+    [SerializeField] [Range(0.05f, 1f)] private float zAnchorCooldownDuration = 0.2f;
+    [Tooltip("錨點靈敏度：超過閾值的加速度 × 此值 = 錨點移動量（Unity 米）；越大推一下移越遠")]
+    [SerializeField] [Range(0.01f, 2f)] private float zAnchorSensitivity = 0.3f;
+    [Tooltip("靜止時錨點每秒歸中比例；0 = 完全不歸中；0.02 ≈ 約 50 秒緩慢歸中")]
+    [SerializeField] [Range(0f, 0.5f)] private float zAnchorIdleReturn = 0.02f;
+    [Tooltip("衝量偵測快速 EMA 時間常數（秒）；越小越靈敏但雜訊越多；建議 0.02~0.05")]
+    [SerializeField] [Range(0.01f, 0.2f)] private float zAnchorFilterTime = 0.03f;
+    [HideInInspector] [Tooltip("（唯讀）目前 Z 軸錨點偏移（Unity 米）")]
+    [SerializeField] private float debugZAnchorOffset    = 0f;
+    [HideInInspector] [Tooltip("（唯讀）衝量偵測快速濾波值（m/s²）")]
+    [SerializeField] private float debugZImpulseFiltered = 0f;
+    [HideInInspector] [Tooltip("（唯讀）衝量冷卻剩餘時間（秒）")]
+    [SerializeField] private float debugZAnchorRemain    = 0f;
+
     [SerializeField]
     private ModeSettings flatSettings = new()
     {
@@ -109,7 +145,7 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         axisDeadzone       = new Vector3(0.2f, 0.2f, 0.2f),
         axisScale          = new Vector3(1f, 1f, 1f),
         maxOffsetPerAxis   = new Vector3(3f, 3f, 3f),
-        idleReturnStrength = new Vector3(0.02f, 1f, 1f) // X 重力持續量→緩慢歸中；Z 線性瞬時量→快速彈回
+        idleReturnStrength = new Vector3(0.02f, 1f, 0.3f) // X 重力持續量→緩慢歸中；Z 線性瞬時量→適度緩慢歸中
     };
 
     [HideInInspector] [Tooltip("裝置座標系重力向量 gDevice = Inverse(q)*(0,0,-g)；直立時 z≈0，平放時 z≈±9.81")]
@@ -242,6 +278,15 @@ public partial class AccelerometerBallEffect : MonoBehaviour
     private float   _statJitterSum   = 0f;
     private int     _statJitterCount = 0;
     private Vector3 _statPrevPos     = Vector3.zero;
+
+    // 平放 Z 軸速度積分 & 卡爾曼濾波狀態（Update 幀間持續）
+    private float _flatZVelInt  = 0f;  // 速度積分值（含阻尼，無位置累積）
+    private float _kalmanZState = 0f;
+    private float _kalmanZCov   = 1f;
+
+    private float _zAnchorOffset    = 0f; // Z 軸持續錨點（Unity 米）
+    private float _zAnchorCooldown  = 0f; // 衝量冷卻計時（秒）
+    private float _zImpulseFiltered = 0f; // 衝量偵測快速 EMA
 
     private void Start()
     {
@@ -447,10 +492,62 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             currentOffset   = Vector3.zero;
             currentVelocity = Vector3.zero;
             prevPhoneIsFlat = phoneIsFlat;
+            // 積分狀態重設；切入平放時以當前 rawZ 初始化卡爾曼，避免首幀大誤差
+            _flatZVelInt  = 0f;
+            _kalmanZState = phoneIsFlat ? rawAcceleration.z : 0f;
+            _kalmanZCov   = 1f;
+            _zAnchorOffset    = 0f;
+            _zAnchorCooldown  = 0f;
+            _zImpulseFiltered = 0f;
+            // 積分模式下 Z 從 0 起算，Tare.z 必須同步歸零，否則 debiased.z 帶常數偏移
+            if (phoneIsFlat && flatZUseIntegration)
+                calibratedAcceleration.z = 0f;
         }
 
         float alpha = 1f - Mathf.Exp(-Time.deltaTime / s.inputFilterTime);
-        filteredAcceleration = Vector3.Lerp(filteredAcceleration, rawAcceleration, alpha);
+        Vector3 emaTarget = rawAcceleration;
+        // 嚮導進行中跳過積分：讓嚮導直接量測原始加速度，sensitivity.z 校正才準確
+        bool runIntegration = phoneIsFlat && flatZUseIntegration &&
+            (wizardPhase == WizardPhase.Idle || wizardPhase == WizardPhase.Done);
+        if (runIntegration)
+        {
+            // 卡爾曼預濾波：消除高頻雜訊再積分，避免噪聲累積成系統性漂移
+            _kalmanZCov   += flatZKalmanQ;
+            float kGain    = _kalmanZCov / (_kalmanZCov + flatZKalmanR);
+            _kalmanZState += kGain * (rawAcceleration.z - _kalmanZState);
+            _kalmanZCov   *= 1f - kGain;
+            // 純速度積分（有阻尼）：停手後速度指數衰減歸零，不累積位置，不會漂移
+            // 建議：flatZOutputScale = flatZFriction / flatZForceGain，使峰值信號≈原始加速度
+            _flatZVelInt += _kalmanZState * flatZForceGain * Time.deltaTime;
+            _flatZVelInt *= Mathf.Exp(-flatZFriction * Time.deltaTime);
+            emaTarget.z   = Mathf.Clamp(_flatZVelInt * flatZOutputScale, -flatLinZClamp, flatLinZClamp);
+        }
+        filteredAcceleration = Vector3.Lerp(filteredAcceleration, emaTarget, alpha);
+
+        // ── Z 軸衝量錨點更新 ──────────────────────────────────────────────────
+        if (zAnchorEnabled && wizardPhase is WizardPhase.Idle or WizardPhase.Done)
+        {
+            float impAlpha    = 1f - Mathf.Exp(-Time.deltaTime / zAnchorFilterTime);
+            _zImpulseFiltered = Mathf.Lerp(_zImpulseFiltered, rawAcceleration.z, impAlpha);
+            _zAnchorCooldown -= Time.deltaTime;
+
+            float absImp = Mathf.Abs(_zImpulseFiltered);
+            if (_zAnchorCooldown <= 0f && absImp > zAnchorThreshold)
+            {
+                float step      = (absImp - zAnchorThreshold) * zAnchorSensitivity;
+                _zAnchorOffset += Mathf.Sign(_zImpulseFiltered) * step;
+                _zAnchorOffset  = Mathf.Clamp(_zAnchorOffset, -s.maxOffsetPerAxis.z, s.maxOffsetPerAxis.z);
+                _zAnchorCooldown = zAnchorCooldownDuration;
+            }
+            else if (_zAnchorCooldown <= 0f && absImp < zAnchorThreshold * 0.3f && zAnchorIdleReturn > 0f)
+            {
+                _zAnchorOffset = Mathf.Lerp(_zAnchorOffset, 0f, zAnchorIdleReturn * Time.deltaTime);
+            }
+
+            debugZAnchorOffset    = _zAnchorOffset;
+            debugZImpulseFiltered = _zImpulseFiltered;
+            debugZAnchorRemain    = Mathf.Max(0f, _zAnchorCooldown);
+        }
 
         // ── 嚮導校正進行中：凍結小球 ──
         if (wizardPhase != WizardPhase.Idle && wizardPhase != WizardPhase.Done)
@@ -481,9 +578,12 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         if (phoneIsFlat && enableFlatGravityCorrection &&
             wizardPhase is WizardPhase.Idle or WizardPhase.Done)
         {
-            float halfDz   = (s.axisDeadzone.x + s.axisDeadzone.z) * 0.5f;
-            float idleRatio = 1f - Mathf.Clamp01(
-                (Mathf.Abs(debiased.x) + Mathf.Abs(debiased.z)) / Mathf.Max(halfDz * 2f, 0.01f));
+            // 逐軸獨立判斷：任一軸訊號超過其自身死區時，重力補償立即停止
+            // 舊實作以 halfDz*2 為門檻，導致訊號明顯超過死區時補償仍有 40~75% 活躍，
+            // 使 tare 緩慢追蹤傾斜位置，令球被「吸回中心」
+            float normX = Mathf.Abs(debiased.x) / Mathf.Max(s.axisDeadzone.x, 0.01f);
+            float normZ = Mathf.Abs(debiased.z) / Mathf.Max(s.axisDeadzone.z, 0.01f);
+            float idleRatio = 1f - Mathf.Clamp01(Mathf.Max(normX, normZ));
             _dbIdleRatio = idleRatio;
             float corrAlpha = (1f - Mathf.Exp(-Time.deltaTime / flatGravityCorrectionTime)) * idleRatio;
             calibratedAcceleration.x += (filteredAcceleration.x - calibratedAcceleration.x) * corrAlpha;
@@ -525,6 +625,10 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             Mathf.Clamp(targetOffset.y, -s.maxOffsetPerAxis.y, s.maxOffsetPerAxis.y),
             Mathf.Clamp(targetOffset.z, -s.maxOffsetPerAxis.z, s.maxOffsetPerAxis.z)
         );
+
+        // Z 軸錨點覆蓋：用持續錨點取代彈回的線性加速度映射
+        if (zAnchorEnabled && wizardPhase is WizardPhase.Idle or WizardPhase.Done)
+            targetOffset.z = _zAnchorOffset;
 
         if (phoneIsFlat)
         {
@@ -784,8 +888,14 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         // 下一幀 debiased = filteredAcceleration - calibratedAcceleration ≈ 0
         calibratedAcceleration = filteredAcceleration;
         // 依模式保存校正基準，模式切換時恢復而非覆蓋
-        if (phoneIsFlat) savedTareFlat    = filteredAcceleration;
-        else             savedTareUpright = filteredAcceleration;
+        if (phoneIsFlat)
+        {
+            savedTareFlat = filteredAcceleration;
+            // 積分模式：Z 從 0 起算，Tare.z 必須同步歸零，否則 debiased.z 帶常數偏移
+            if (flatZUseIntegration) { calibratedAcceleration.z = 0f; savedTareFlat.z = 0f; }
+        }
+        else
+            savedTareUpright = filteredAcceleration;
 
         // 原點鎖定：以「校正當下的實際位置」為新中心
         // 之後物件只在 maxOffsetPerAxis 範圍內移動，不會再累加漂移
@@ -807,6 +917,12 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         debugMaxFrameJump            = 0f;
         debugTransitionRemaining     = 0f;
         debugTimeSinceLastSwitch     = -1f;
+        _flatZVelInt  = 0f;
+        _kalmanZState = 0f;
+        _kalmanZCov   = 1f;
+        _zAnchorOffset    = 0f;
+        _zAnchorCooldown  = 0f;
+        _zImpulseFiltered = 0f;
         calibrationMsgPosition = centerLocalPosition;
         calibrationMsgTimer    = 3f;
         Debug.Log($"[AccelerometerBallEffect] 已校正 | Tare 基準: {calibratedAcceleration:F3} | 原點鎖定: {centerLocalPosition}");

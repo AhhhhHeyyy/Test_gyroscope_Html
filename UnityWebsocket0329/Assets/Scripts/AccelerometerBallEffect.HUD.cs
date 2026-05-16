@@ -26,6 +26,9 @@ public partial class AccelerometerBallEffect
     [Tooltip("每次按 + / − 的調整幅度；可在面板底部切換")]
     [SerializeField] [Range(0.01f, 1f)] private float scaleTunerStep = 0.1f;
 
+    // 面板手動鎖定的模式（不跟隨手機方向，讓使用者自由選擇要調哪個模式）
+    private bool _scaleTunerForFlat = false;
+
     private void OnGUI()
     {
         // ── 校正按鈕 ──
@@ -370,13 +373,13 @@ public partial class AccelerometerBallEffect
 
     private void DrawScaleTuner()
     {
-        bool   isFlat   = phoneIsFlat;
+        bool   isFlat   = _scaleTunerForFlat;
         string modeName = isFlat ? "平放" : "直立";
         float  curX     = isFlat ? flatSettings.axisScale.x : uprightSettings.axisScale.x;
         float  curY     = isFlat ? flatSettings.axisScale.y : uprightSettings.axisScale.y;
         float  curZ     = isFlat ? flatSettings.axisScale.z : uprightSettings.axisScale.z;
 
-        const float pw = 220f, ph = 134f;
+        const float pw = 220f, ph = 158f;
         float px = scaleTunerPosition.x, py = scaleTunerPosition.y;
         GUI.Box(new Rect(px, py, pw, ph), "");
 
@@ -394,6 +397,18 @@ public partial class AccelerometerBallEffect
             { fontSize = 10, normal = { textColor = new Color(0.6f, 0.6f, 0.6f) } };
 
         GUI.Label(new Rect(ix, iy, iw, 18f), $"axisScale  （{modeName}模式）", titleStyle);
+        iy += 22f;
+
+        // ── 模式切換按鈕（獨立於手機方向，可手動選擇調哪個模式）──
+        float btnW = (iw - 4f) * 0.5f;
+        Color prevColor = GUI.color;
+        GUI.color = !isFlat ? new Color(0.35f, 1f, 0.35f) : Color.white;
+        if (GUI.Button(new Rect(ix, iy, btnW, 18f), "直立"))
+            _scaleTunerForFlat = false;
+        GUI.color = isFlat ? new Color(0.35f, 1f, 0.35f) : Color.white;
+        if (GUI.Button(new Rect(ix + btnW + 4f, iy, btnW, 18f), "平放"))
+            _scaleTunerForFlat = true;
+        GUI.color = prevColor;
         iy += 22f;
 
         // 各行佈局：[軸名] [−] [slider 可拖動] [+] [數值]
