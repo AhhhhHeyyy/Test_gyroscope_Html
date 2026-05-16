@@ -1,6 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
-// update: 2026-05-12
+// update: 2026-05-16
 /// <summary>
 /// 重現「加速度儀校準 App」紅球效果（UDP 四元數模式）：
 /// 手機往哪個方向推，物件就往那個方向移動；
@@ -10,9 +10,9 @@ using System.Collections.Generic;
 ///   Android 世界系 Z 朝上；重力 = (0,0,-g)
 ///   gDevice = Inverse(q) * (0,0,-g) → 本體座標系重力
 ///   Unity X（直立） = gDevice.x     （左右傾斜，重力投影；持續量）
-///   Unity Z（直立） = worldAcc.y    （前後位移，線性加速度；瞬時量）
+///   Unity Z（直立） = worldAcc.y    （前後推力，線性加速度；瞬時量）
 ///   Unity X（平放） = gDevice.x     （左右傾斜，重力投影；持續量）
-///   Unity Z（平放） = gDevice.y     （前後傾斜，重力投影；持續量）
+///   Unity Z（平放） = worldAcc.y    （前後推力，線性加速度；瞬時量）
 ///
 /// 直立與平放模式參數完全分離，各自獨立微調。
 /// 自動校正嚮導可一鍵偵測 axisFlip、axisDeadzone、sensitivity 與軸交換（swapXZ）。
@@ -62,6 +62,10 @@ public class AccelerometerBallEffect : MonoBehaviour
         [Tooltip("輸出端最小有效位移（Unity 單位）：scaledOffset 低於此值歸零，消除微小抖動。由嚮導自動計算")]
         public Vector3 minOutputStep;
 
+        [Tooltip("各軸靜止（輸入落入死區）時的歸中拉力比例（0=保持位置不彈回；1=正常速度彈回中心）。\n" +
+                 "X 建議保持 1；Y/Z 設 0.01~0.05 可防止手機停止後球自動彈回，同時透過極慢速漂移避免感測器長期偏移累積。")]
+        public Vector3 idleReturnStrength;
+
         [Tooltip("交換 X 與 Z 軸的輸入來源（嚮導偵測到手機旋轉 90° 時自動設定）")]
         public bool swapXZ;
     }
@@ -90,96 +94,95 @@ public class AccelerometerBallEffect : MonoBehaviour
     [SerializeField]
     private ModeSettings uprightSettings = new()
     {
-        sensitivity      = new Vector3(0.3f, 0.3f, 0.3f),
-        smoothSpeed      = 10f,
-        inputFilterTime  = 0.05f,
-        movementAxesMask = new Vector3(1, 1, 1),
-        axisFlip         = new Vector3(1f, 1f, -1f),
-        axisDeadzone     = new Vector3(0.3f, 0.3f, 0.3f),
-        axisScale        = new Vector3(1f, 1f, 1f),
-        maxOffsetPerAxis = new Vector3(3f, 3f, 3f)
+        sensitivity        = new Vector3(0.3f, 0.3f, 0.3f),
+        smoothSpeed        = 10f,
+        inputFilterTime    = 0.05f,
+        movementAxesMask   = new Vector3(1, 1, 1),
+        axisFlip           = new Vector3(1f, 1f, -1f),
+        axisDeadzone       = new Vector3(0.3f, 0.3f, 0.3f),
+        axisScale          = new Vector3(1f, 1f, 1f),
+        maxOffsetPerAxis   = new Vector3(3f, 3f, 3f),
+        idleReturnStrength = new Vector3(1f, 0.02f, 0.15f)
     };
 
     [Header("平放模式設定")]
     [Tooltip("平放 X 軸（左右）linX 混合比例。gDevice.x 已是穩定傾斜投影，加入 linX 只帶入手部晃動噪聲。建議保持 0。")]
     [SerializeField] [Range(0f, 5f)] private float flatLinearBlendX = 0f;
-    [Tooltip("平放 Z 軸（前後）linZ 混合比例。gDevice.y 在平放時訊號弱，需要 linZ 補充推力感。建議 0.3~0.7。")]
-    [SerializeField] [Range(0f, 5f)] private float flatLinearBlendZ = 0.5f;
-    [Tooltip("linZ 上限截斷（m/s²）：防止快速甩動時尖峰暴衝。建議 6~12。")]
+    [HideInInspector]
+    [SerializeField] [Range(0f, 5f)] private float flatLinearBlendZ = 0f; // 已棄用：平放 Z 改回 worldAcc.y，不再混合 gDevice.y
+    [Tooltip("平放 Z 軸線性加速截斷（m/s²）：防止快速甩動時尖峰暴衝。建議 6~12。")]
     [SerializeField] [Range(2f, 20f)] private float flatLinZClamp = 8f;
     [SerializeField]
     private ModeSettings flatSettings = new()
     {
-        sensitivity      = new Vector3(0.3f, 0.3f, 0.3f),
-        smoothSpeed      = 7f,
-        inputFilterTime  = 0.06f,
-        movementAxesMask = new Vector3(1, 0, 1),
-        axisFlip         = new Vector3(1f, 1f, -1f),
-        axisDeadzone     = new Vector3(0.2f, 0.2f, 0.2f),
-        axisScale        = new Vector3(1f, 1f, 1f),
-        maxOffsetPerAxis = new Vector3(3f, 3f, 3f)
+        sensitivity        = new Vector3(0.3f, 0.3f, 0.3f),
+        smoothSpeed        = 7f,
+        inputFilterTime    = 0.06f,
+        movementAxesMask   = new Vector3(1, 0, 1),
+        axisFlip           = new Vector3(1f, 1f, -1f),
+        axisDeadzone       = new Vector3(0.2f, 0.2f, 0.2f),
+        axisScale          = new Vector3(1f, 1f, 1f),
+        maxOffsetPerAxis   = new Vector3(3f, 3f, 3f),
+        idleReturnStrength = new Vector3(0.02f, 1f, 1f) // X 重力持續量→緩慢歸中；Z 線性瞬時量→快速彈回
     };
 
-    [Header("陀螺儀原始輸入（Debug）")]
-    [Tooltip("裝置座標系重力向量 gDevice = Inverse(q)*(0,0,-g)；直立時 z≈0，平放時 z≈±9.81")]
+    [HideInInspector] [Tooltip("裝置座標系重力向量 gDevice = Inverse(q)*(0,0,-g)；直立時 z≈0，平放時 z≈±9.81")]
     [SerializeField] private Vector3 debugGDevice         = Vector3.zero;
-    [Tooltip("|gDevice.z|/g；超過 Flatness Threshold 判定為平放")]
+    [HideInInspector] [Tooltip("|gDevice.z|/g；超過 Flatness Threshold 判定為平放")]
     [SerializeField] private float   debugFlatnessRatio   = 0f;
-    [Tooltip("四元數（Android GAME_ROTATION_VECTOR）")]
+    [HideInInspector] [Tooltip("四元數（Android GAME_ROTATION_VECTOR）")]
     [SerializeField] private float   debugQx = 0f;
-    [SerializeField] private float   debugQy = 0f;
-    [SerializeField] private float   debugQz = 0f;
-    [SerializeField] private float   debugQw = 1f;
-    [Tooltip("HandleAcceleration 收到的線性加速度（已去重力）；平放模式的位移來源")]
+    [HideInInspector] [SerializeField] private float   debugQy = 0f;
+    [HideInInspector] [SerializeField] private float   debugQz = 0f;
+    [HideInInspector] [SerializeField] private float   debugQw = 1f;
+    [HideInInspector] [Tooltip("HandleAcceleration 收到的線性加速度（已去重力）；平放模式的位移來源")]
     [SerializeField] private Vector3 debugLinearAccInput  = Vector3.zero;
-    [Header("調試")]
-    [SerializeField] private Vector3 debugRawAcceleration        = Vector3.zero;
-    [SerializeField] private Vector3 debugFilteredAcceleration   = Vector3.zero;
-    [SerializeField] private Vector3 debugCalibratedAcceleration = Vector3.zero;
-    [SerializeField] private Vector3 debugDebiasedAcceleration   = Vector3.zero;
-    [SerializeField] private Vector3 debugTargetOffset           = Vector3.zero;
-    [SerializeField] private Vector3 debugCurrentOffset          = Vector3.zero;
-    [SerializeField] private float   debugTransitionProgress     = 1f;
-    [SerializeField] private Vector3 debugActualPosition         = Vector3.zero;
-    [Tooltip("scaledOffset 套用 minOutputStep 前（原始縮放後位移）")]
+    [HideInInspector] [SerializeField] private Vector3 debugRawAcceleration        = Vector3.zero;
+    [HideInInspector] [SerializeField] private Vector3 debugFilteredAcceleration   = Vector3.zero;
+    [HideInInspector] [SerializeField] private Vector3 debugCalibratedAcceleration = Vector3.zero;
+    [HideInInspector] [SerializeField] private Vector3 debugDebiasedAcceleration   = Vector3.zero;
+    [HideInInspector] [SerializeField] private Vector3 debugTargetOffset           = Vector3.zero;
+    [HideInInspector] [SerializeField] private Vector3 debugCurrentOffset          = Vector3.zero;
+    [HideInInspector] [SerializeField] private float   debugTransitionProgress     = 1f;
+    [HideInInspector] [SerializeField] private Vector3 debugActualPosition         = Vector3.zero;
+    [HideInInspector] [Tooltip("scaledOffset 套用 minOutputStep 前（原始縮放後位移）")]
     [SerializeField] private Vector3 debugScaledBeforeFilter     = Vector3.zero;
-    [Tooltip("scaledOffset 套用 minOutputStep 後（實際驅動位置的值）")]
+    [HideInInspector] [Tooltip("scaledOffset 套用 minOutputStep 後（實際驅動位置的值）")]
     [SerializeField] private Vector3 debugScaledAfterFilter      = Vector3.zero;
-    [Tooltip("目前模式的 minOutputStep（輸出端死區閾值）")]
+    [HideInInspector] [Tooltip("目前模式的 minOutputStep（輸出端死區閾值）")]
     [SerializeField] private Vector3 debugMinOutputStep          = Vector3.zero;
 
     [Header("平放 XZ 管線（調試：來回移動時觀察）")]
     [Tooltip("Console 輸出間隔（秒）；0 = 關閉定時輸出")]
     [SerializeField] [Range(0f, 5f)] private float pipeLogInterval = 0.5f;
-    [Tooltip("rawAcceleration.x/z — 輸入濾波前 (gDevice.x / gDevice.y)")]
+    [HideInInspector] [Tooltip("rawAcceleration.x/z — 輸入濾波前 (gDevice.x / gDevice.y)")]
     [SerializeField] private Vector2 dbPipe_raw        = Vector2.zero;
-    [Tooltip("filteredAcceleration.x/z — 感測器 EMA 濾波後")]
+    [HideInInspector] [Tooltip("filteredAcceleration.x/z — 感測器 EMA 濾波後")]
     [SerializeField] private Vector2 dbPipe_filtered   = Vector2.zero;
-    [Tooltip("calibratedAcceleration.x/z — Tare 參考點（重力補償會緩慢移動此值！）")]
+    [HideInInspector] [Tooltip("calibratedAcceleration.x/z — Tare 參考點（重力補償會緩慢移動此值！）")]
     [SerializeField] private Vector2 dbPipe_tare       = Vector2.zero;
-    [Tooltip("debiased x/z（swap 前）= filtered − tare")]
+    [HideInInspector] [Tooltip("debiased x/z（swap 前）= filtered − tare")]
     [SerializeField] private Vector2 dbPipe_preSwap    = Vector2.zero;
-    [Tooltip("debiased x/z（swap 後）= 實際驅動 Unity XZ 的訊號")]
+    [HideInInspector] [Tooltip("debiased x/z（swap 後）= 實際驅動 Unity XZ 的訊號")]
     [SerializeField] private Vector2 dbPipe_postSwap   = Vector2.zero;
-    [Tooltip("flip + 死區後 x/z（0 = 在死區內未驅動球）")]
+    [HideInInspector] [Tooltip("flip + 死區後 x/z（0 = 在死區內未驅動球）")]
     [SerializeField] private Vector2 dbPipe_afterDz    = Vector2.zero;
-    [Tooltip("targetOffset x/z — 球的目標位置（EMA 前）")]
+    [HideInInspector] [Tooltip("targetOffset x/z — 球的目標位置（EMA 前）")]
     [SerializeField] private Vector2 dbPipe_target     = Vector2.zero;
-    [Tooltip("EMA alpha — 每幀追蹤速率（smoothSpeed=7 @ 60fps ≈ 0.10）")]
+    [HideInInspector] [Tooltip("EMA alpha — 每幀追蹤速率（smoothSpeed=7 @ 60fps ≈ 0.10）")]
     [SerializeField] private float   dbPipe_emaAlpha   = 0f;
-    [Tooltip("重力補償活躍度：1=Tare 正在向 filteredAcc 靠（會把球拉回中心）；0=已暫停")]
+    [HideInInspector] [Tooltip("重力補償活躍度：1=Tare 正在向 filteredAcc 靠（會把球拉回中心）；0=已暫停")]
     [SerializeField] private float   dbPipe_idleRatio  = 0f;
 
-    [Header("切換事件記錄")]
-    [Tooltip("最後一次切換方向")]
+    [HideInInspector] [Tooltip("最後一次切換方向")]
     [SerializeField] private string debugLastSwitchDir       = "—";
-    [Tooltip("距上次切換經過秒數（-1 = 尚未切換）")]
+    [HideInInspector] [Tooltip("距上次切換經過秒數（-1 = 尚未切換）")]
     [SerializeField] private float  debugTimeSinceLastSwitch = -1f;
-    [Tooltip("切換瞬間起點與終點的距離（m）")]
+    [HideInInspector] [Tooltip("切換瞬間起點與終點的距離（m）")]
     [SerializeField] private float  debugSwitchStartDist     = 0f;
-    [Tooltip("過渡期間最大單幀位置跳動（m）；越小越平滑")]
+    [HideInInspector] [Tooltip("過渡期間最大單幀位置跳動（m）；越小越平滑")]
     [SerializeField] private float  debugMaxFrameJump        = 0f;
-    [Tooltip("過渡剩餘比例（1=剛切換，0=完成）")]
+    [HideInInspector] [Tooltip("過渡剩餘比例（1=剛切換，0=完成）")]
     [SerializeField] private float  debugTransitionRemaining = 0f;
 
     [Header("平放模式重力中心補償")]
@@ -195,19 +198,19 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Header("自動校正嚮導")]
     [Tooltip("每個收集階段的持續時間（秒）")]
     [SerializeField] [Range(1f, 5f)] private float wizardCollectDuration = 2.5f;
-    [Tooltip("（唯讀）目前傾斜角度：X=左右傾斜、Z=前後傾斜（度）。校正時觀察舒適角度用")]
+    [HideInInspector] [Tooltip("（唯讀）目前傾斜角度：X=左右傾斜、Z=前後傾斜（度）。校正時觀察舒適角度用")]
     [SerializeField] private Vector2 debugTiltAngleDeg = Vector2.zero;
     [Tooltip("是否在 Game 視窗顯示嚮導按鈕")]
     [SerializeField] private bool showWizardButton = true;
-    [Tooltip("（唯讀）目前嚮導狀態文字")]
+    [HideInInspector] [Tooltip("（唯讀）目前嚮導狀態文字")]
     [SerializeField] private string wizardStatusText = "等待啟動";
-    [Tooltip("（唯讀）嚮導偵測到的直立模式 axisFlip 結果")]
+    [HideInInspector] [Tooltip("（唯讀）嚮導偵測到的直立模式 axisFlip 結果")]
     [SerializeField] private Vector3 wizardUprightFlip = Vector3.one;
-    [Tooltip("（唯讀）嚮導偵測到的平放模式 axisFlip 結果")]
+    [HideInInspector] [Tooltip("（唯讀）嚮導偵測到的平放模式 axisFlip 結果")]
     [SerializeField] private Vector3 wizardFlatFlip = Vector3.one;
-    [Tooltip("（唯讀）PushForward 偵測到的最小有意義動作幅度（Z 軸，已去基線，m/s²）")]
+    [HideInInspector] [Tooltip("（唯讀）PushForward 偵測到的最小有意義動作幅度（Z 軸，已去基線，m/s²）")]
     [SerializeField] private float wizardMinPeakDisplay = 0f;
-    [Tooltip("（唯讀）PushForward 偵測到的最大動作幅度（Z 軸，已去基線，m/s²）")]
+    [HideInInspector] [Tooltip("（唯讀）PushForward 偵測到的最大動作幅度（Z 軸，已去基線，m/s²）")]
     [SerializeField] private float wizardMaxPeakDisplay = 0f;
 
     [Header("校正按鈕（Game 視窗）")]
@@ -240,14 +243,13 @@ public class AccelerometerBallEffect : MonoBehaviour
     [Tooltip("軸示意線長度（米）")]
     [SerializeField] [Range(0.1f, 5f)] private float axisGizmoLength = 1f;
 
-    [Header("水平儀數值（濾波後）")]
-    [Tooltip("X 軸加速度：左右傾斜（負=左, 正=右）")]
+    [HideInInspector] [Tooltip("X 軸加速度：左右傾斜（負=左, 正=右）")]
     [SerializeField] private float levelAxisX = 0f;
-    [Tooltip("Y 軸加速度：前後傾斜（負=前, 正=後）")]
+    [HideInInspector] [Tooltip("Y 軸加速度：前後傾斜（負=前, 正=後）")]
     [SerializeField] private float levelAxisY = 0f;
-    [Tooltip("Roll 角（繞 Z 軸，左右傾斜角度）")]
+    [HideInInspector] [Tooltip("Roll 角（繞 Z 軸，左右傾斜角度）")]
     [SerializeField] private float rollDeg  = 0f;
-    [Tooltip("Pitch 角（繞 X 軸，前後傾斜角度）")]
+    [HideInInspector] [Tooltip("Pitch 角（繞 X 軸，前後傾斜角度）")]
     [SerializeField] private float pitchDeg = 0f;
 
     private Vector3    centerLocalPosition;
@@ -274,9 +276,9 @@ public class AccelerometerBallEffect : MonoBehaviour
     private float      calibrationMsgTimer       = 0f;
     private Vector3    calibrationMsgPosition    = Vector3.zero;
 
-    // 平放模式混合輸入暫存（傾斜 + 平推）
-    private float _gravX = 0f, _gravZ = 0f; // gDevice 傾斜分量
-    private float _linX  = 0f, _linZ  = 0f; // 水平線性加速度分量
+    // 平放模式混合輸入暫存
+    private float _gravX = 0f; // gDevice.x 傾斜分量（平放 X 軸用）
+    private float _linX  = 0f; // worldAcc.x 線性分量（平放 X 軸可選混入）
 
     // 平放管線調試暫存（不序列化，僅在 Update 內部傳遞到 Inspector 欄位）
     private float   _dbIdleRatio     = 0f;
@@ -651,14 +653,10 @@ public class AccelerometerBallEffect : MonoBehaviour
             }
             else
             {
-                // 平放模式：傾斜分量（持續）+ 平推分量（彈回）混合
-                // X 軸用純重力投影，不混 linX 避免手部晃動噪聲汙染方向
-                // Z 軸補入限幅後的 linZ，補足平放時 gDevice.y 訊號弱的問題
+                // 平放模式：X 用重力投影（持續量，穩定），Z 由 HandleAcceleration 填入線性加速（瞬時量）
                 _gravX = gDevice.x;
-                _gravZ = gDevice.y;
-                float clampedLinZ = Mathf.Clamp(_linZ, -flatLinZClamp, flatLinZClamp);
                 rawAcceleration.x = _gravX + _linX * flatLinearBlendX;
-                rawAcceleration.z = _gravZ + clampedLinZ * flatLinearBlendZ;
+                // rawAcceleration.z → HandleAcceleration 用 worldAcc.y 填入
             }
 
             debugQx            = data.qx;
@@ -689,9 +687,9 @@ public class AccelerometerBallEffect : MonoBehaviour
 
     /// <summary>
     /// 接收 Android TYPE_LINEAR_ACCELERATION（已去重力）。
-    /// 直立模式：僅更新 Z 軸（前後推力）；X/Y 由 HandleGyroscopeData 的 gDevice 負責。
+    /// 直立模式：更新 Z 軸（前後推力）；X 由 HandleGyroscopeData 的 gDevice.x 負責。
     ///   worldAcc.y（Android 水平前後）→ rawAcceleration.z（Unity Z）
-    /// 平放模式：X/Z 由 HandleGyroscopeData 的 gDevice 負責，此處不覆寫。
+    /// 平放模式：X = gDevice.x（HandleGyroscopeData）+ 可選 linX 混入；Z = worldAcc.y（線性推力）。
     /// </summary>
     private void HandleAcceleration(Vector3 acc)
     {
@@ -706,13 +704,12 @@ public class AccelerometerBallEffect : MonoBehaviour
         else if (hasOrientationData && phoneIsFlat)
         {
             Vector3 worldAcc = currentOrientation * acc;
-            // 水平線性加速度（平推）混入 XZ
+            // X：重力傾斜（持續量）+ 可選線性混入
             _linX = worldAcc.x;
-            _linZ = worldAcc.y;
-            float clampedLinZ = Mathf.Clamp(_linZ, -flatLinZClamp, flatLinZClamp);
             rawAcceleration.x = _gravX + _linX * flatLinearBlendX;
-            rawAcceleration.z = _gravZ + clampedLinZ * flatLinearBlendZ;
-            // 垂直方向 → Unity Y
+            // Z：前後線性加速（瞬時量），與直立 Z 同語義；限幅防止甩動暴衝
+            rawAcceleration.z = Mathf.Clamp(worldAcc.y, -flatLinZClamp, flatLinZClamp);
+            // Y：垂直方向線性加速（上下晃動）
             rawAcceleration.y = worldAcc.z;
         }
         else if (!hasOrientationData)
@@ -876,16 +873,31 @@ public class AccelerometerBallEffect : MonoBehaviour
         if (phoneIsFlat)
         {
             // 平放 X/Z 來自重力投影（位置信號），EMA 追蹤不累積速度，不過衝
+            // 各軸靜止時（deadzoned ≈ 0）以 idleReturnStrength 縮小歸中拉力，防止手機停止後球彈回
             float flatAlpha = 1f - Mathf.Exp(-Time.deltaTime * s.smoothSpeed);
-            _dbEmaAlpha     = flatAlpha;
-            currentOffset   = Vector3.Lerp(currentOffset, targetOffset, flatAlpha);
+            _dbEmaAlpha = flatAlpha;
+            float axX = flatAlpha * (Mathf.Abs(deadzoned.x) > 0.001f ? 1f : s.idleReturnStrength.x);
+            float axY = flatAlpha * (Mathf.Abs(deadzoned.y) > 0.001f ? 1f : s.idleReturnStrength.y);
+            float axZ = flatAlpha * (Mathf.Abs(deadzoned.z) > 0.001f ? 1f : s.idleReturnStrength.z);
+            currentOffset.x = Mathf.Lerp(currentOffset.x, targetOffset.x, axX);
+            currentOffset.y = Mathf.Lerp(currentOffset.y, targetOffset.y, axY);
+            currentOffset.z = Mathf.Lerp(currentOffset.z, targetOffset.z, axZ);
             currentVelocity = Vector3.zero;
         }
         else
         {
+            // 直立模式：靜止時同樣縮小歸中拉力（對 Z 軸線性加速停止後的彈回尤其明顯）
             _dbEmaAlpha = 0f;
             float smoothTime = 1f / s.smoothSpeed;
-            currentOffset = Vector3.SmoothDamp(currentOffset, targetOffset, ref currentVelocity, smoothTime);
+            Vector3 effectiveTarget = new Vector3(
+                Mathf.Abs(deadzoned.x) > 0.001f ? targetOffset.x
+                    : Mathf.Lerp(currentOffset.x, targetOffset.x, s.idleReturnStrength.x),
+                Mathf.Abs(deadzoned.y) > 0.001f ? targetOffset.y
+                    : Mathf.Lerp(currentOffset.y, targetOffset.y, s.idleReturnStrength.y),
+                Mathf.Abs(deadzoned.z) > 0.001f ? targetOffset.z
+                    : Mathf.Lerp(currentOffset.z, targetOffset.z, s.idleReturnStrength.z)
+            );
+            currentOffset = Vector3.SmoothDamp(currentOffset, effectiveTarget, ref currentVelocity, smoothTime);
         }
 
         Vector3 scaledOffset = new Vector3(
@@ -1278,8 +1290,8 @@ public class AccelerometerBallEffect : MonoBehaviour
                 }
                 Vector3 dz = new Vector3(
                     Mathf.Clamp(3f * std.x, 0.1f, 1f),
-                    Mathf.Clamp(3f * std.y, 0.1f, 1f),
-                    Mathf.Clamp(3f * std.z, 0.1f, 1f));
+                    Mathf.Clamp(3f * std.y, 0.1f, 0.5f), // Y (gDevice.z) 噪聲不應超過 0.5
+                    Mathf.Clamp(3f * std.z, 0.1f, 0.5f)); // Z (線性加速基線) 噪聲不應超過 0.5
                 if (isUpright) { wizardUprightBaseline  = mean; pendingUprightDeadzone = dz; }
                 else           { wizardFlatBaseline     = mean; pendingFlatDeadzone    = dz; }
                 wizardLastStepResult = $"死區偵測完成 ({dz.x:F2}, {dz.y:F2}, {dz.z:F2})";
@@ -1365,10 +1377,12 @@ public class AccelerometerBallEffect : MonoBehaviour
 
                 wizardRetryCount     = 0;
                 wizardLastStepResult = $"X{(flipX > 0 ? "正向" : "翻轉")}{(swapXZ ? " | 交換XZ" : "")} | 最大訊號={maxSig:F2} 死區={dzX:F2} → sensitivity.x={sensX:F3}";
+                float sensY_mg = isUpright ? pendingUprightSensitivity.y : pendingFlatSensitivity.y;
                 Debug.Log($"[嚮導 MaxGesture {(isUpright ? "直立" : "平放")}]\n" +
                           $"  最大訊號={maxSig:F3}  死區={dzX:F3}  可用範圍={usableX:F3}\n" +
                           $"  maxOffsetPerAxis.x={maxOff:F3}\n" +
                           $"  → sensitivity.x={sensX:F3}  minOutputStep.x={minStepX:F3}\n" +
+                          $"  sensitivity.y={sensY_mg:F3}（保留設定值，嚮導未計算）\n" +
                           $"  驗算：{usableX:F3} × {sensX:F3} = {usableX * sensX:F3}（應≈{maxOff:F1}）\n" +
                           $"  傾斜角度：{debugTiltAngleDeg.x:F1}°");
                 AdvanceWizardPhase();
@@ -1418,6 +1432,7 @@ public class AccelerometerBallEffect : MonoBehaviour
                 {
                     float noiseFloor = noiseThr / 3f;
                     float refinedDz  = Mathf.Clamp(wizardMinPeakMagnitude * 0.4f, noiseFloor, wizardMinPeakMagnitude * 0.7f);
+                    refinedDz = Mathf.Min(refinedDz, 1.5f); // 上限 1.5m/s²，避免死區過大導致 Z 軸無響應
                     if (isUpright) pendingUprightDeadzone.z = refinedDz;
                     else           pendingFlatDeadzone.z    = refinedDz;
                     noiseThr = refinedDz; // 後續計算使用精修後的死區
@@ -1474,6 +1489,18 @@ public class AccelerometerBallEffect : MonoBehaviour
 
     private void ApplyWizardResults()
     {
+        // 套用前快照，供後續比對 log 使用
+        Vector3 oldUSens   = uprightSettings.sensitivity;
+        Vector3 oldUDz     = uprightSettings.axisDeadzone;
+        Vector3 oldUFlip   = uprightSettings.axisFlip;
+        Vector3 oldUStep   = uprightSettings.minOutputStep;
+        bool    oldUSwap   = uprightSettings.swapXZ;
+        Vector3 oldFSens   = flatSettings.sensitivity;
+        Vector3 oldFDz     = flatSettings.axisDeadzone;
+        Vector3 oldFFlip   = flatSettings.axisFlip;
+        Vector3 oldFStep   = flatSettings.minOutputStep;
+        bool    oldFSwap   = flatSettings.swapXZ;
+
         // 嚮導只寫入它負責計算的欄位；maxOffsetPerAxis 和 axisScale 保留使用者設定值
         uprightSettings.axisFlip      = pendingUprightFlip;
         uprightSettings.axisDeadzone  = pendingUprightDeadzone;
@@ -1507,7 +1534,20 @@ public class AccelerometerBallEffect : MonoBehaviour
                   $"  直立 flip={pendingUprightFlip} dz={pendingUprightDeadzone} sens=({pendingUprightSensitivity.x:F3},{pendingUprightSensitivity.y:F3},{pendingUprightSensitivity.z:F3}) swapXZ={pendingUprightSwapXZ} minStep={pendingUprightMinOutputStep}\n" +
                   $"  直立 maxOff={uprightSettings.maxOffsetPerAxis} axisScale={uprightSettings.axisScale} (使用者設定，未修改)\n" +
                   $"  平放 flip={pendingFlatFlip} dz={pendingFlatDeadzone} sens=({pendingFlatSensitivity.x:F3},{pendingFlatSensitivity.y:F3},{pendingFlatSensitivity.z:F3}) swapXZ={pendingFlatSwapXZ} minStep={pendingFlatMinOutputStep}\n" +
-                  $"  平放 maxOff={flatSettings.maxOffsetPerAxis} axisScale={flatSettings.axisScale} (使用者設定，未修改) (有結果={pendingHasFlatResults})");
+                  $"  平放 maxOff={flatSettings.maxOffsetPerAxis} axisScale={flatSettings.axisScale} (使用者設定，未修改) (有結果={pendingHasFlatResults})\n" +
+                  $"── 套用前後比對 ──\n" +
+                  $"  [直立] sens  : ({oldUSens.x:F3},{oldUSens.y:F3},{oldUSens.z:F3}) → ({pendingUprightSensitivity.x:F3},{pendingUprightSensitivity.y:F3},{pendingUprightSensitivity.z:F3})\n" +
+                  $"  [直立] dz    : ({oldUDz.x:F3},{oldUDz.y:F3},{oldUDz.z:F3}) → ({pendingUprightDeadzone.x:F3},{pendingUprightDeadzone.y:F3},{pendingUprightDeadzone.z:F3})\n" +
+                  $"  [直立] flip  : ({oldUFlip.x:F1},{oldUFlip.y:F1},{oldUFlip.z:F1}) → ({pendingUprightFlip.x:F1},{pendingUprightFlip.y:F1},{pendingUprightFlip.z:F1})\n" +
+                  $"  [直立] step  : ({oldUStep.x:F3},{oldUStep.y:F3},{oldUStep.z:F3}) → ({pendingUprightMinOutputStep.x:F3},{pendingUprightMinOutputStep.y:F3},{pendingUprightMinOutputStep.z:F3})\n" +
+                  $"  [直立] swapXZ: {oldUSwap} → {pendingUprightSwapXZ}\n" +
+                  (pendingHasFlatResults
+                      ? $"  [平放] sens  : ({oldFSens.x:F3},{oldFSens.y:F3},{oldFSens.z:F3}) → ({pendingFlatSensitivity.x:F3},{pendingFlatSensitivity.y:F3},{pendingFlatSensitivity.z:F3})\n" +
+                        $"  [平放] dz    : ({oldFDz.x:F3},{oldFDz.y:F3},{oldFDz.z:F3}) → ({pendingFlatDeadzone.x:F3},{pendingFlatDeadzone.y:F3},{pendingFlatDeadzone.z:F3})\n" +
+                        $"  [平放] flip  : ({oldFFlip.x:F1},{oldFFlip.y:F1},{oldFFlip.z:F1}) → ({pendingFlatFlip.x:F1},{pendingFlatFlip.y:F1},{pendingFlatFlip.z:F1})\n" +
+                        $"  [平放] step  : ({oldFStep.x:F3},{oldFStep.y:F3},{oldFStep.z:F3}) → ({pendingFlatMinOutputStep.x:F3},{pendingFlatMinOutputStep.y:F3},{pendingFlatMinOutputStep.z:F3})\n" +
+                        $"  [平放] swapXZ: {oldFSwap} → {pendingFlatSwapXZ}"
+                      : "  [平放] 跳過（無結果）"));
     }
 
     private void OnDrawGizmos()
