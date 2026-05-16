@@ -315,6 +315,7 @@ public class AccelerometerBallEffect : MonoBehaviour
     private float   wizardCurrentStrokeMax = 0f;             // 當前衝程最大絕對值
     private bool    wizardInStroke         = false;           // 是否正在一次有效衝程中
     private string  wizardLastStepResult   = "";
+    private bool    phaseCompletePending   = false; // 延遲一幀執行 ProcessPhaseComplete，讓進度條先顯示 100%
     // 暫存結果，確認後才寫入 settings
     private Vector3 pendingUprightFlip          = Vector3.one;
     private Vector3 pendingUprightDeadzone      = new Vector3(0.3f, 0.3f, 0.3f);
@@ -886,18 +887,28 @@ public class AccelerometerBallEffect : MonoBehaviour
         }
         else
         {
-            // 直立模式：靜止時同樣縮小歸中拉力（對 Z 軸線性加速停止後的彈回尤其明顯）
+            // 直立模式：idle 軸直接 EMA 緩慢歸中；active 軸保持 SmoothDamp 彈性追蹤。
+            // idle 軸完全繞過 SmoothDamp，避免殘留速度持續加速回彈。
             _dbEmaAlpha = 0f;
-            float smoothTime = 1f / s.smoothSpeed;
-            Vector3 effectiveTarget = new Vector3(
-                Mathf.Abs(deadzoned.x) > 0.001f ? targetOffset.x
-                    : Mathf.Lerp(currentOffset.x, targetOffset.x, s.idleReturnStrength.x),
-                Mathf.Abs(deadzoned.y) > 0.001f ? targetOffset.y
-                    : Mathf.Lerp(currentOffset.y, targetOffset.y, s.idleReturnStrength.y),
-                Mathf.Abs(deadzoned.z) > 0.001f ? targetOffset.z
-                    : Mathf.Lerp(currentOffset.z, targetOffset.z, s.idleReturnStrength.z)
+            float smoothTime  = 1f / s.smoothSpeed;
+            float smoothAlpha = 1f - Mathf.Exp(-Time.deltaTime * s.smoothSpeed);
+
+            bool xIdle = Mathf.Abs(deadzoned.x) <= 0.001f;
+            bool yIdle = Mathf.Abs(deadzoned.y) <= 0.001f;
+            bool zIdle = Mathf.Abs(deadzoned.z) <= 0.001f;
+
+            // idle 軸：清速度 + 直接 EMA（每幀移動量 = smoothAlpha × idleReturnStrength，完全 frame-rate independent）
+            if (xIdle) { currentVelocity.x = 0f; currentOffset.x = Mathf.Lerp(currentOffset.x, targetOffset.x, smoothAlpha * s.idleReturnStrength.x); }
+            if (yIdle) { currentVelocity.y = 0f; currentOffset.y = Mathf.Lerp(currentOffset.y, targetOffset.y, smoothAlpha * s.idleReturnStrength.y); }
+            if (zIdle) { currentVelocity.z = 0f; currentOffset.z = Mathf.Lerp(currentOffset.z, targetOffset.z, smoothAlpha * s.idleReturnStrength.z); }
+
+            // active 軸用 SmoothDamp；idle 軸 target = currentOffset → SmoothDamp 對它無作用
+            Vector3 sdTarget = new Vector3(
+                xIdle ? currentOffset.x : targetOffset.x,
+                yIdle ? currentOffset.y : targetOffset.y,
+                zIdle ? currentOffset.z : targetOffset.z
             );
-            currentOffset = Vector3.SmoothDamp(currentOffset, effectiveTarget, ref currentVelocity, smoothTime);
+            currentOffset = Vector3.SmoothDamp(currentOffset, sdTarget, ref currentVelocity, smoothTime);
         }
 
         Vector3 scaledOffset = new Vector3(
@@ -1156,6 +1167,7 @@ public class AccelerometerBallEffect : MonoBehaviour
         wizardTimer          = 0f;
         wizardRetryCount     = 0;
         wizardPendingConfirm = false;
+        phaseCompletePending = false;
         wizardLastStepResult = "";
         wizardSamples.Clear();
         pendingHasFlatResults = false;
@@ -1247,15 +1259,24 @@ public class AccelerometerBallEffect : MonoBehaviour
             wizardMinPeakDisplay = wizardMinPeakMagnitude < float.MaxValue * 0.5f ? wizardMinPeakMagnitude : 0f;
         }
 
-        if (wizardTimer >= wizardCollectDuration)
+        if (!phaseCompletePending && wizardTimer >= wizardCollectDuration)
+        {
+            wizardTimer = wizardCollectDuration; // 鎖在 100%，讓本幀 OnGUI 顯示滿格
+            phaseCompletePending = true;
+        }
+        else if (phaseCompletePending)
+        {
+            phaseCompletePending = false;
             ProcessPhaseComplete();
+        }
     }
 
     private void AdvanceWizardPhase()
     {
         wizardSamples.Clear();
-        wizardTimer      = 0f;
-        wizardRetryCount = 0;
+        wizardTimer          = 0f;
+        wizardRetryCount     = 0;
+        phaseCompletePending = false;
         wizardPhase      = (WizardPhase)((int)wizardPhase + 1);
         // FlatTransition 與 Done 不需要使用者按鍵；其餘 phase 顯示說明等待確認
         wizardReadyToCollect = (wizardPhase == WizardPhase.FlatTransition || wizardPhase == WizardPhase.Done);
@@ -1431,8 +1452,8 @@ public class AccelerometerBallEffect : MonoBehaviour
                 if (wizardMinPeakMagnitude < float.MaxValue * 0.5f && wizardMinPeakMagnitude > noiseThr * 0.5f)
                 {
                     float noiseFloor = noiseThr / 3f;
-                    float refinedDz  = Mathf.Clamp(wizardMinPeakMagnitude * 0.4f, noiseFloor, wizardMinPeakMagnitude * 0.7f);
-                    refinedDz = Mathf.Min(refinedDz, 1.5f); // 上限 1.5m/s²，避免死區過大導致 Z 軸無響應
+                    float refinedDz  = Mathf.Clamp(wizardMinPeakMagnitude * 0.3f, noiseFloor, wizardMinPeakMagnitude * 0.5f);
+                    refinedDz = Mathf.Min(refinedDz, 0.7f); // 上限 0.7m/s²，避免死區過大導致 Z 軸移動不明顯
                     if (isUpright) pendingUprightDeadzone.z = refinedDz;
                     else           pendingFlatDeadzone.z    = refinedDz;
                     noiseThr = refinedDz; // 後續計算使用精修後的死區
