@@ -115,24 +115,33 @@ public partial class AccelerometerBallEffect : MonoBehaviour
     [SerializeField] [Range(1f, 50f)]    private float flatZOutputScale = 5f;
 
     [Header("Z 軸衝量錨點（前後持續定位）")]
-    [Tooltip("啟用後：偵測到推力脈衝時更新錨點，停止施力球不再彈回。與傾斜軸（X）組合使用")]
+    [Tooltip("啟用後：超過閾值的推力持續推動錨點，放手後錨點鎖定；停止施力球不再彈回。與傾斜軸（X）組合使用")]
     [SerializeField] private bool zAnchorEnabled = false;
-    [Tooltip("觸發錨點更新的快速濾波閾值（m/s²）；低於此的小晃動不觸發")]
+    [Tooltip("觸發錨點移動的快速濾波閾值（m/s²）；低於此的靜止雜訊被過濾，超過此才推動錨點")]
     [SerializeField] [Range(0.2f, 8f)] private float zAnchorThreshold = 1.5f;
-    [Tooltip("觸發後冷卻時間（秒）；防止單次推力連續累積錨點")]
-    [SerializeField] [Range(0.05f, 1f)] private float zAnchorCooldownDuration = 0.2f;
-    [Tooltip("錨點靈敏度：超過閾值的加速度 × 此值 = 錨點移動量（Unity 米）；越大推一下移越遠")]
-    [SerializeField] [Range(0.01f, 2f)] private float zAnchorSensitivity = 0.3f;
+    [Tooltip("錨點推進速率（Unity 米/秒 per 超出閾值 m/s²）；推動 1 秒移動量 = (加速度 − 閾值) × 此值；建議 1~4")]
+    [SerializeField] [Range(0.1f, 10f)] private float zAnchorSensitivity = 2f;
     [Tooltip("靜止時錨點每秒歸中比例；0 = 完全不歸中；0.02 ≈ 約 50 秒緩慢歸中")]
     [SerializeField] [Range(0f, 0.5f)] private float zAnchorIdleReturn = 0.02f;
     [Tooltip("衝量偵測快速 EMA 時間常數（秒）；越小越靈敏但雜訊越多；建議 0.02~0.05")]
     [SerializeField] [Range(0.01f, 0.2f)] private float zAnchorFilterTime = 0.03f;
+    [Tooltip("推力結束後封鎖反向輸入的時間（秒）；防止手臂回彈把錨點拉回來；建議 0.15~0.35")]
+    [SerializeField] [Range(0.05f, 0.8f)] private float zAnchorLockDuration = 0.25f;
     [HideInInspector] [Tooltip("（唯讀）目前 Z 軸錨點偏移（Unity 米）")]
     [SerializeField] private float debugZAnchorOffset    = 0f;
     [HideInInspector] [Tooltip("（唯讀）衝量偵測快速濾波值（m/s²）")]
     [SerializeField] private float debugZImpulseFiltered = 0f;
-    [HideInInspector] [Tooltip("（唯讀）衝量冷卻剩餘時間（秒）")]
-    [SerializeField] private float debugZAnchorRemain    = 0f;
+    [HideInInspector] [Tooltip("（唯讀）方向鎖定冷卻剩餘秒數；> 0 = 反方向被封鎖")]
+    [SerializeField] private float debugZAnchorCooldown  = 0f;
+
+    [Header("Z 軸姿態輔助（傾斜補強）")]
+    [Tooltip("啟用後：在推力 / 錨點算出的 targetOffset.z 之上疊加傾斜分量，讓推出去的位置更穩定。\n" +
+             "直立模式用 gDevice.z（俯仰傾斜）；平放模式用 gDevice.y（前後傾斜，最乾淨）。\n" +
+             "Tare 校正自動扣除靜止基準，只有偏離校正角度時才有貢獻。")]
+    [SerializeField] private bool zPitchAssistEnabled = false;
+    [Tooltip("傾斜訊號混入比例（m/s² per m/s²）。建議從 0.3 開始試；\n" +
+             "直立模式因 gDevice.z 同時驅動 Y 軸，建議 ≤ 0.4 以降低 Y/Z 耦合")]
+    [SerializeField] [Range(0f, 1.5f)] private float zPitchAssistScale = 0.3f;
 
     [SerializeField]
     private ModeSettings flatSettings = new()
@@ -285,8 +294,14 @@ public partial class AccelerometerBallEffect : MonoBehaviour
     private float _kalmanZCov   = 1f;
 
     private float _zAnchorOffset    = 0f; // Z 軸持續錨點（Unity 米）
-    private float _zAnchorCooldown  = 0f; // 衝量冷卻計時（秒）
     private float _zImpulseFiltered = 0f; // 衝量偵測快速 EMA
+    private float _zAnchorCooldown   = 0f; // 方向鎖定冷卻剩餘時間
+    private int   _zAnchorLockedSign = 0;  // 0=未鎖, ±1=鎖定方向
+    private bool  _zInPush           = false; // 目前是否在推力期
+    private float _gDevicePitchZ     = 0f; // 直立模式：gDevice.z（俯仰傾斜），Z 姿態輔助用
+    private float _gDevicePitchY     = 0f; // 平放模式：gDevice.y（前後傾斜），Z 姿態輔助用
+    private float _tiltTareUpright   = 0f; // 直立模式姿態輔助校正基準
+    private float _tiltTareFlat      = 0f; // 平放模式姿態輔助校正基準
 
     private void Start()
     {
@@ -366,6 +381,8 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             debugQw            = data.qw;
             debugGDevice       = gDevice;
             debugFlatnessRatio = Mathf.Abs(gDevice.z) / g;
+            _gDevicePitchZ     = gDevice.z; // 直立 Z 姿態輔助
+            _gDevicePitchY     = gDevice.y; // 平放 Z 姿態輔助
             debugTiltAngleDeg  = new Vector2(
                 Mathf.Asin(Mathf.Clamp(gDevice.x / g, -1f, 1f)) * Mathf.Rad2Deg,
                 Mathf.Asin(Mathf.Clamp(gDevice.y / g, -1f, 1f)) * Mathf.Rad2Deg);
@@ -497,8 +514,10 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             _kalmanZState = phoneIsFlat ? rawAcceleration.z : 0f;
             _kalmanZCov   = 1f;
             _zAnchorOffset    = 0f;
-            _zAnchorCooldown  = 0f;
             _zImpulseFiltered = 0f;
+            _zAnchorCooldown   = 0f;
+            _zAnchorLockedSign = 0;
+            _zInPush           = false;
             // 積分模式下 Z 從 0 起算，Tare.z 必須同步歸零，否則 debiased.z 帶常數偏移
             if (phoneIsFlat && flatZUseIntegration)
                 calibratedAcceleration.z = 0f;
@@ -524,29 +543,46 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         }
         filteredAcceleration = Vector3.Lerp(filteredAcceleration, emaTarget, alpha);
 
-        // ── Z 軸衝量錨點更新 ──────────────────────────────────────────────────
+        // ── Z 軸衝量錨點更新（方向鎖定 + 冷卻封鎖）────────────────────────────
+        // 原理：推力結束後啟動 zAnchorLockDuration 秒冷卻，期間封鎖反方向累積，
+        //       防止手臂自然回彈的加速度被誤讀為刻意反推，消除回彈與單向漂移。
         if (zAnchorEnabled && wizardPhase is WizardPhase.Idle or WizardPhase.Done)
         {
             float impAlpha    = 1f - Mathf.Exp(-Time.deltaTime / zAnchorFilterTime);
             _zImpulseFiltered = Mathf.Lerp(_zImpulseFiltered, rawAcceleration.z, impAlpha);
-            _zAnchorCooldown -= Time.deltaTime;
 
-            float absImp = Mathf.Abs(_zImpulseFiltered);
-            if (_zAnchorCooldown <= 0f && absImp > zAnchorThreshold)
+            float absImp  = Mathf.Abs(_zImpulseFiltered);
+            int   curSign = _zImpulseFiltered >= 0f ? 1 : -1;
+
+            if (_zAnchorCooldown > 0f) _zAnchorCooldown -= Time.deltaTime;
+
+            if (absImp > zAnchorThreshold)
             {
-                float step      = (absImp - zAnchorThreshold) * zAnchorSensitivity;
-                _zAnchorOffset += Mathf.Sign(_zImpulseFiltered) * step;
-                _zAnchorOffset  = Mathf.Clamp(_zAnchorOffset, -s.maxOffsetPerAxis.z, s.maxOffsetPerAxis.z);
-                _zAnchorCooldown = zAnchorCooldownDuration;
+                bool inCooldown = _zAnchorCooldown > 0f;
+                bool isOpposite = _zAnchorLockedSign != 0 && curSign != _zAnchorLockedSign;
+
+                if (!(inCooldown && isOpposite))
+                {
+                    // 允許累積：同方向、或冷卻已結束
+                    if (!_zInPush) { _zInPush = true; _zAnchorLockedSign = curSign; }
+                    float excess    = absImp - zAnchorThreshold;
+                    _zAnchorOffset += curSign * excess * zAnchorSensitivity * Time.deltaTime;
+                    _zAnchorOffset  = Mathf.Clamp(_zAnchorOffset, -s.maxOffsetPerAxis.z, s.maxOffsetPerAxis.z);
+                }
+                // else: 冷卻期間反向輸入 → 忽略，不修改錨點
             }
-            else if (_zAnchorCooldown <= 0f && absImp < zAnchorThreshold * 0.3f && zAnchorIdleReturn > 0f)
+            else
             {
-                _zAnchorOffset = Mathf.Lerp(_zAnchorOffset, 0f, zAnchorIdleReturn * Time.deltaTime);
+                if (_zInPush) { _zAnchorCooldown = zAnchorLockDuration; _zInPush = false; }
+                if (_zAnchorCooldown <= 0f) _zAnchorLockedSign = 0;
+
+                if (absImp < zAnchorThreshold * 0.3f && zAnchorIdleReturn > 0f)
+                    _zAnchorOffset = Mathf.Lerp(_zAnchorOffset, 0f, zAnchorIdleReturn * Time.deltaTime);
             }
 
             debugZAnchorOffset    = _zAnchorOffset;
             debugZImpulseFiltered = _zImpulseFiltered;
-            debugZAnchorRemain    = Mathf.Max(0f, _zAnchorCooldown);
+            debugZAnchorCooldown  = _zAnchorCooldown;
         }
 
         // ── 嚮導校正進行中：凍結小球 ──
@@ -630,6 +666,18 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         if (zAnchorEnabled && wizardPhase is WizardPhase.Idle or WizardPhase.Done)
             targetOffset.z = _zAnchorOffset;
 
+        // Z 軸姿態輔助：以傾斜分量（持續量，不回彈）疊加在 targetOffset.z 上
+        // 直立：gDevice.z（俯仰傾斜）；平放：gDevice.y（前後傾斜，最乾淨無耦合）
+        // 校正基準在 Recalibrate() 設定，靜止時貢獻為 0
+        if (zPitchAssistEnabled && wizardPhase is WizardPhase.Idle or WizardPhase.Done)
+        {
+            float rawTilt  = phoneIsFlat ? _gDevicePitchY : _gDevicePitchZ;
+            float tiltTare = phoneIsFlat ? _tiltTareFlat  : _tiltTareUpright;
+            float tiltZ    = (rawTilt - tiltTare) * zPitchAssistScale;
+            targetOffset.z = Mathf.Clamp(targetOffset.z + tiltZ,
+                                         -s.maxOffsetPerAxis.z, s.maxOffsetPerAxis.z);
+        }
+
         if (phoneIsFlat)
         {
             // 平放 X/Z 來自重力投影（位置信號），EMA 追蹤不累積速度，不過衝
@@ -638,7 +686,11 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             _dbEmaAlpha = flatAlpha;
             float axX = flatAlpha * (Mathf.Abs(deadzoned.x) > 0.001f ? 1f : s.idleReturnStrength.x);
             float axY = flatAlpha * (Mathf.Abs(deadzoned.y) > 0.001f ? 1f : s.idleReturnStrength.y);
-            float axZ = flatAlpha * (Mathf.Abs(deadzoned.z) > 0.001f ? 1f : s.idleReturnStrength.z);
+            // 錨點或姿態輔助有非零目標時全速追蹤，消除 idleReturnStrength 造成的緩慢漸近感
+            bool zHasTarget = zAnchorEnabled || (zPitchAssistEnabled && Mathf.Abs(targetOffset.z) > 0.001f);
+            float axZ = zHasTarget
+                ? flatAlpha
+                : flatAlpha * (Mathf.Abs(deadzoned.z) > 0.001f ? 1f : s.idleReturnStrength.z);
             currentOffset.x = Mathf.Lerp(currentOffset.x, targetOffset.x, axX);
             currentOffset.y = Mathf.Lerp(currentOffset.y, targetOffset.y, axY);
             currentOffset.z = Mathf.Lerp(currentOffset.z, targetOffset.z, axZ);
@@ -654,7 +706,9 @@ public partial class AccelerometerBallEffect : MonoBehaviour
 
             bool xIdle = Mathf.Abs(deadzoned.x) <= 0.001f;
             bool yIdle = Mathf.Abs(deadzoned.y) <= 0.001f;
-            bool zIdle = Mathf.Abs(deadzoned.z) <= 0.001f;
+            // 錨點或姿態輔助有非零目標時強制 SmoothDamp，不走 idle EMA（避免緩慢漸近）
+            bool zTiltTarget = zPitchAssistEnabled && Mathf.Abs(targetOffset.z) > 0.001f;
+            bool zIdle = !zAnchorEnabled && !zTiltTarget && Mathf.Abs(deadzoned.z) <= 0.001f;
 
             // idle 軸：清速度 + 直接 EMA（每幀移動量 = smoothAlpha × idleReturnStrength，完全 frame-rate independent）
             if (xIdle) { currentVelocity.x = 0f; currentOffset.x = Mathf.Lerp(currentOffset.x, targetOffset.x, smoothAlpha * s.idleReturnStrength.x); }
@@ -921,8 +975,12 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         _kalmanZState = 0f;
         _kalmanZCov   = 1f;
         _zAnchorOffset    = 0f;
-        _zAnchorCooldown  = 0f;
         _zImpulseFiltered = 0f;
+        _zAnchorCooldown   = 0f;
+        _zAnchorLockedSign = 0;
+        _zInPush           = false;
+        if (phoneIsFlat) _tiltTareFlat    = _gDevicePitchY;
+        else             _tiltTareUpright = _gDevicePitchZ;
         calibrationMsgPosition = centerLocalPosition;
         calibrationMsgTimer    = 3f;
         Debug.Log($"[AccelerometerBallEffect] 已校正 | Tare 基準: {calibratedAcceleration:F3} | 原點鎖定: {centerLocalPosition}");

@@ -7,12 +7,13 @@ public partial class AccelerometerBallEffect
     {
         Idle,
         UprightBaseline,     // 直立靜止 → tare + 噪聲死區
-        UprightMaxGesture,   // 直立最大舒適幅度 → axisFlip + 自動算 axisScale
-        UprightForward,      // 直立前後推 → axisFlip.z + Z axisScale
+        UprightMaxGesture,   // 直立最大舒適幅度 → axisFlip.x + sensitivity.x
+        UprightPitchGesture, // 直立前後俯仰 → axisFlip.y + sensitivity.y + minOutputStep.y
+        UprightForward,      // 直立前後推 → axisFlip.z + sensitivity.z + idleReturnStrength.z
         FlatTransition,      // 等待 phoneIsFlat = true
         FlatBaseline,        // 平放靜止 → tare + 噪聲死區
-        FlatMaxGesture,      // 平放最大舒適幅度 → axisFlip + axisScale
-        FlatForward,         // 平放前後推 → axisFlip.z + Z axisScale
+        FlatMaxGesture,      // 平放最大舒適幅度 → axisFlip.x + sensitivity.x
+        FlatForward,         // 平放前後推 → axisFlip.z + sensitivity.z + idleReturnStrength.z + flatLinZClamp
         Done
     }
 
@@ -33,6 +34,10 @@ public partial class AccelerometerBallEffect
     [SerializeField] private float wizardMinPeakDisplay = 0f;
     [HideInInspector] [Tooltip("（唯讀）PushForward 偵測到的最大動作幅度（Z 軸，已去基線，m/s²）")]
     [SerializeField] private float wizardMaxPeakDisplay = 0f;
+    [HideInInspector] [Tooltip("（唯讀）直立 Forward 偵測到的最大幅（m/s²）；供確認畫面推力對比用")]
+    [SerializeField] private float wizardUprightForwardPeak = 0f;
+    [HideInInspector] [Tooltip("（唯讀）平放 Forward 偵測到的最大幅（m/s²）；供確認畫面推力對比用")]
+    [SerializeField] private float wizardFlatForwardPeak    = 0f;
 
     // ── 嚮導私有狀態 ────────────────────────────────────────────
     private WizardPhase wizardPhase      = WizardPhase.Idle;
@@ -63,6 +68,9 @@ public partial class AccelerometerBallEffect
     private bool    pendingFlatSwapXZ           = false;
     private Vector3 pendingFlatMinOutputStep    = Vector3.zero;
     private bool    pendingHasFlatResults       = false;
+    private float   pendingFlatLinZClamp        = 8f;
+    private float   pendingUprightIdleReturnZ   = 0.15f;
+    private float   pendingFlatIdleReturnZ      = 0.3f;
 
     // ══════════════════════════════════════════════════════════════
     //  自動校正嚮導
@@ -89,6 +97,9 @@ public partial class AccelerometerBallEffect
         pendingFlatSensitivity      = flatSettings.sensitivity;
         pendingFlatSwapXZ           = false;
         pendingFlatMinOutputStep    = Vector3.zero;
+        pendingFlatLinZClamp        = flatLinZClamp;
+        pendingUprightIdleReturnZ   = uprightSettings.idleReturnStrength.z;
+        pendingFlatIdleReturnZ      = flatSettings.idleReturnStrength.z;
         // maxOffsetPerAxis 和 axisScale 由使用者自行設定，嚮導不修改
         wizardUprightFlip         = Vector3.one;
         wizardFlatFlip            = Vector3.one;
@@ -101,6 +112,8 @@ public partial class AccelerometerBallEffect
         wizardFlatMaxSignal       = 0f;
         wizardMinPeakDisplay      = 0f;
         wizardMaxPeakDisplay      = 0f;
+        wizardUprightForwardPeak  = 0f;
+        wizardFlatForwardPeak     = 0f;
         wizardStatusText          = GetPhaseDetail();
     }
 
@@ -317,6 +330,47 @@ public partial class AccelerometerBallEffect
                 break;
             }
 
+            // ── PitchGesture：axisFlip.y + sensitivity.y + minOutputStep.y ──
+            case WizardPhase.UprightPitchGesture:
+            {
+                Vector3 debiased = mean - wizardUprightBaseline;
+                float my = Mathf.Abs(debiased.y);
+
+                float tiltDeg = Mathf.Asin(Mathf.Clamp(my / 9.81f, -1f, 1f)) * Mathf.Rad2Deg;
+                if ((tiltDeg < 15f || tiltDeg > 45f) && wizardRetryCount < 3)
+                {
+                    wizardRetryCount++;
+                    wizardReadyToCollect = false;
+                    string angleHint = tiltDeg < 15f
+                        ? $"傾斜角太小（{tiltDeg:F1}°），請傾斜到 15°～45° 再試"
+                        : $"傾斜角太大（{tiltDeg:F1}°），請輕輕傾斜到 15°～45° 再試";
+                    wizardStatusText = $"{angleHint} ({wizardRetryCount}/3)";
+                    return;
+                }
+
+                float flipY    = debiased.y >= 0f ? 1f : -1f;
+                float dzY      = pendingUprightDeadzone.y;
+                float usableY  = Mathf.Max(my - dzY, 0.05f);
+                float maxOffY  = uprightSettings.maxOffsetPerAxis.y;
+                float sensY    = maxOffY / usableY;
+                float minStepY = (dzY / 3f) * sensY;
+
+                pendingUprightFlip.y          = flipY;
+                pendingUprightSensitivity.y   = sensY;
+                pendingUprightMinOutputStep.y  = minStepY;
+
+                wizardRetryCount     = 0;
+                wizardLastStepResult = $"Y{(flipY > 0f ? "正向" : "翻轉")} | 最大訊號={my:F2} 死區={dzY:F2} → sensitivity.y={sensY:F3}";
+                Debug.Log($"[嚮導 PitchGesture 直立]\n" +
+                          $"  最大訊號={my:F3}  死區={dzY:F3}  可用範圍={usableY:F3}\n" +
+                          $"  maxOffsetPerAxis.y={maxOffY:F3}\n" +
+                          $"  → sensitivity.y={sensY:F3}  minOutputStep.y={minStepY:F3}  flip.y={flipY:F1}\n" +
+                          $"  驗算：{usableY:F3} × {sensY:F3} = {usableY * sensY:F3}（應≈{maxOffY:F1}）\n" +
+                          $"  傾斜角度：{tiltDeg:F1}°");
+                AdvanceWizardPhase();
+                break;
+            }
+
             // ── Forward：axisFlip.z + 自動計算 Z axisScale / minOutputStep ──
             case WizardPhase.UprightForward:
             case WizardPhase.FlatForward:
@@ -386,6 +440,8 @@ public partial class AccelerometerBallEffect
 
                 wizardMinPeakDisplay = wizardMinPeakMagnitude < float.MaxValue * 0.5f ? wizardMinPeakMagnitude : 0f;
                 wizardMaxPeakDisplay = maxDebiasedPeak;
+                if (isUpright) wizardUprightForwardPeak = maxDebiasedPeak;
+                else           wizardFlatForwardPeak    = maxDebiasedPeak;
 
                 Debug.Log($"[嚮導 Forward {(isUpright ? "直立" : "平放")}]\n" +
                           $"  最大幅={maxDebiasedPeak:F3}  死區={noiseThr:F3}  可用範圍={usableZ:F3}\n" +
@@ -398,6 +454,11 @@ public partial class AccelerometerBallEffect
                     wizardUprightFlip    = pendingUprightFlip;
                     wizardRetryCount     = 0;
                     wizardLastStepResult = $"Z{(flipZ > 0 ? "正向" : "翻轉")} | 最大幅={maxDebiasedPeak:F2} → sensitivity.z={sensZ:F3} 最小步進={minStepZ:F2}";
+                    // idleReturnStrength.z：最小衝程幅度越大→彈回越快；小動作場景→更保守
+                    float refPeakU = wizardMinPeakMagnitude < float.MaxValue * 0.5f ? wizardMinPeakMagnitude : maxDebiasedPeak * 0.5f;
+                    pendingUprightIdleReturnZ = Mathf.Clamp(refPeakU * 0.04f, 0.02f, 0.25f);
+                    // 以直立峰值預設 flatLinZClamp，確保平放測量不被過早截斷
+                    pendingFlatLinZClamp = Mathf.Max(maxDebiasedPeak * 2f, 8f);
                     AdvanceWizardPhase(); // → FlatTransition
                 }
                 else
@@ -407,6 +468,11 @@ public partial class AccelerometerBallEffect
                     pendingHasFlatResults = true;
                     wizardRetryCount      = 0;
                     wizardLastStepResult  = $"Z{(flipZ > 0 ? "正向" : "翻轉")} | 最大幅={maxDebiasedPeak:F2} → sensitivity.z={sensZ:F3} 最小步進={minStepZ:F2}";
+                    // idleReturnStrength.z：依平放實測最小衝程幅度推算
+                    float refPeakF = wizardMinPeakMagnitude < float.MaxValue * 0.5f ? wizardMinPeakMagnitude : maxDebiasedPeak * 0.5f;
+                    pendingFlatIdleReturnZ = Mathf.Clamp(refPeakF * 0.04f, 0.02f, 0.25f);
+                    // flatLinZClamp：用平放實測峰值精修（取直立預估與平放實測較大者 × 1.5，下限 6）
+                    pendingFlatLinZClamp = Mathf.Max(Mathf.Max(maxDebiasedPeak * 1.5f, pendingFlatLinZClamp * 0.7f), 6f);
                     wizardStatusText      = "嚮導完成！\n請確認後按「確認套用」";
                     wizardPendingConfirm  = true;
                 }
@@ -435,6 +501,10 @@ public partial class AccelerometerBallEffect
         uprightSettings.sensitivity   = pendingUprightSensitivity;
         uprightSettings.swapXZ        = pendingUprightSwapXZ;
         uprightSettings.minOutputStep = pendingUprightMinOutputStep;
+        // idleReturnStrength.z：只改 z，保留使用者設定的 x、y
+        var uIRS = uprightSettings.idleReturnStrength;
+        uIRS.z = pendingUprightIdleReturnZ;
+        uprightSettings.idleReturnStrength = uIRS;
 
         if (pendingHasFlatResults)
         {
@@ -443,7 +513,12 @@ public partial class AccelerometerBallEffect
             flatSettings.sensitivity   = pendingFlatSensitivity;
             flatSettings.swapXZ        = pendingFlatSwapXZ;
             flatSettings.minOutputStep = pendingFlatMinOutputStep;
+            var fIRS = flatSettings.idleReturnStrength;
+            fIRS.z = pendingFlatIdleReturnZ;
+            flatSettings.idleReturnStrength = fIRS;
         }
+        // flatLinZClamp：直立時已由峰值預設，平放完成後精修；即使跳過平放也用直立推算值
+        flatLinZClamp = pendingFlatLinZClamp;
 
         // 用 Baseline 採樣均值當 Tare，而非嚮導結束時的當前姿勢。
         // 根本原因：Forward 步驟結束後手機角度偏離自然靜止角，以當下 filteredAcceleration

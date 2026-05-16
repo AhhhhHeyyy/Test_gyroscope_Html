@@ -79,11 +79,13 @@ public partial class AccelerometerBallEffect
         float ow = 328f;
         // 高度依狀態動態計算
         bool isFwdPhase        = wizardPhase == WizardPhase.UprightForward || wizardPhase == WizardPhase.FlatForward;
-        bool isMaxGesturePhase = wizardPhase == WizardPhase.UprightMaxGesture || wizardPhase == WizardPhase.FlatMaxGesture;
-        float oh = wizardPendingConfirm ? 230f
+        bool isMaxGesturePhase = wizardPhase == WizardPhase.UprightMaxGesture || wizardPhase == WizardPhase.FlatMaxGesture
+                                || wizardPhase == WizardPhase.UprightPitchGesture;
+        bool showZCompare = wizardPendingConfirm && pendingHasFlatResults && wizardUprightForwardPeak > 0f;
+        float oh = wizardPendingConfirm ? (showZCompare ? 320f : 230f)
                  : !wizardReadyToCollect ? 240f
                  : wizardPhase == WizardPhase.FlatTransition ? 120f
-                 : isFwdPhase ? 240f
+                 : isFwdPhase ? 270f
                  : isMaxGesturePhase ? 230f
                  : 190f;
         GUI.Box(new Rect(ox, oy, ow, oh), "");
@@ -100,7 +102,7 @@ public partial class AccelerometerBallEffect
 
         // ── 標題列 ──
         int phaseNum = (int)wizardPhase;
-        GUI.Label(new Rect(ix, iy, iw, 20f), $"自動校正嚮導  ({phaseNum} / 7)", boldStyle); iy += 24f;
+        GUI.Label(new Rect(ix, iy, iw, 20f), $"自動校正嚮導  ({phaseNum} / 8)", boldStyle); iy += 24f;
 
         // ── 確認摘要畫面 ──
         if (wizardPendingConfirm)
@@ -108,6 +110,35 @@ public partial class AccelerometerBallEffect
             GUI.Label(new Rect(ix, iy, iw, 70f), wizardStatusText, baseStyle); iy += 74f;
             if (wizardLastStepResult.Length > 0)
             { GUI.Label(new Rect(ix, iy, iw, 18f), "最後偵測：" + wizardLastStepResult, hintStyle); iy += 22f; }
+
+            // ── Z 軸推力對比（兩模式都完成 Forward 校正時顯示）──
+            if (showZCompare)
+            {
+                iy += 4f;
+                float sensRatio = pendingFlatSensitivity.z / Mathf.Max(pendingUprightSensitivity.z, 0.001f);
+                bool  balanced  = sensRatio >= 0.6f && sensRatio <= 1.7f;
+                var cmpStyle  = new GUIStyle(baseStyle) { fontSize = 12 };
+                var okStyle   = new GUIStyle(baseStyle) { fontSize = 11, normal = { textColor = new Color(0.4f, 0.9f, 0.4f) } };
+                var warnStyle = new GUIStyle(baseStyle) { fontSize = 11, wordWrap = true, normal = { textColor = new Color(1f, 0.75f, 0.2f) } };
+
+                GUI.Label(new Rect(ix, iy, iw, 16f), "── Z 軸推力對比 ──", cmpStyle); iy += 18f;
+                GUI.Label(new Rect(ix, iy, iw, 16f),
+                    $"直立  峰值 {wizardUprightForwardPeak:F2} m/s²　sens.z = {pendingUprightSensitivity.z:F3}", cmpStyle); iy += 18f;
+                GUI.Label(new Rect(ix, iy, iw, 16f),
+                    $"平放  峰值 {wizardFlatForwardPeak:F2} m/s²　sens.z = {pendingFlatSensitivity.z:F3}", cmpStyle); iy += 18f;
+                if (balanced)
+                {
+                    GUI.Label(new Rect(ix, iy, iw, 16f), "✓ 兩模式推力相近，靈敏度平衡", okStyle); iy += 20f;
+                }
+                else
+                {
+                    string side = sensRatio > 1.7f ? "平放推力偏小（平放 Z 較靈敏）" : "直立推力偏小（直立 Z 較靈敏）";
+                    GUI.Label(new Rect(ix, iy, iw, 30f),
+                        $"⚠ {side}\n建議以相近力道重新校正以求一致手感", warnStyle); iy += 34f;
+                }
+                iy += 2f;
+            }
+
             if (GUI.Button(new Rect(ix, iy, iw, 38f), "確認套用")) ApplyWizardResults();
             iy += 42f;
             if (GUI.Button(new Rect(ix, iy, iw, 30f), "取消"))
@@ -155,37 +186,48 @@ public partial class AccelerometerBallEffect
                                       wizardPhase == WizardPhase.FlatForward
                                        ? wizardFlatBaseline : wizardUprightBaseline);
         DrawSignalBar(ix, ref iy, iw, "X 軸", liveRaw.x, baseStyle);
-        DrawSignalBar(ix, ref iy, iw, "Z 軸", liveRaw.z, baseStyle);
-        // MaxGesture：傾斜角視覺化；Forward：推動強度視覺化
+        // PitchGesture 量 Y 軸（俯仰），其餘顯示 Z 軸
+        if (wizardPhase == WizardPhase.UprightPitchGesture)
+            DrawSignalBar(ix, ref iy, iw, "Y 軸", liveRaw.y, baseStyle);
+        else
+            DrawSignalBar(ix, ref iy, iw, "Z 軸", liveRaw.z, baseStyle);
+        // MaxGesture / PitchGesture：傾斜角視覺化；Forward：推動強度視覺化
         bool showPeak = wizardPhase == WizardPhase.UprightForward || wizardPhase == WizardPhase.FlatForward;
-        if (isMaxGesturePhase)
-            DrawTiltGauge(ix, ref iy, iw, baseStyle);
+        if (wizardPhase == WizardPhase.UprightPitchGesture)
+        {
+            float pitchAngle = Mathf.Asin(Mathf.Clamp(Mathf.Abs(liveRaw.y) / 9.81f, -1f, 1f)) * Mathf.Rad2Deg;
+            DrawTiltGauge(ix, ref iy, iw, baseStyle, pitchAngle);
+        }
+        else if (isMaxGesturePhase)
+            DrawTiltGauge(ix, ref iy, iw, baseStyle, debugTiltAngleDeg.x);
         else if (showPeak)
-            DrawPushMeter(ix, ref iy, iw, baseStyle);
+            DrawPushMeter(ix, ref iy, iw, baseStyle, liveRaw.z);
         else if (wizardLastStepResult.Length > 0)
             GUI.Label(new Rect(ix, iy, iw, 18f), "✓ " + wizardLastStepResult, hintStyle);
     }
 
     private string GetPhaseArrow() => wizardPhase switch
     {
-        WizardPhase.UprightBaseline   => "[ 靜止不動 ]",
-        WizardPhase.UprightMaxGesture => "→  向右傾斜（最大舒適）",
-        WizardPhase.UprightForward    => "↑↓  前後移動",
-        WizardPhase.FlatBaseline      => "[ 靜止不動 ]",
-        WizardPhase.FlatMaxGesture    => "→  往右傾斜（最大舒適）",
-        WizardPhase.FlatForward       => "↑↓  前後移動",
-        _                             => ""
+        WizardPhase.UprightBaseline     => "[ 靜止不動 ]",
+        WizardPhase.UprightMaxGesture   => "→  向右傾斜（最大舒適）",
+        WizardPhase.UprightPitchGesture => "↑  往前傾斜（最大舒適）",
+        WizardPhase.UprightForward      => "↑↓  前後移動",
+        WizardPhase.FlatBaseline        => "[ 靜止不動 ]",
+        WizardPhase.FlatMaxGesture      => "→  往右傾斜（最大舒適）",
+        WizardPhase.FlatForward         => "↑↓  前後移動",
+        _                               => ""
     };
 
     private string GetPhaseDetail() => wizardPhase switch
     {
-        WizardPhase.UprightBaseline   => "手機豎直拿好\n保持靜止，不要動",
-        WizardPhase.UprightMaxGesture => $"手機螢幕朝向你\n往右傾斜到你的【最大舒適角度】並保持\n最大位移由 Inspector 的 Max Offset Per Axis.x（目前={uprightSettings.maxOffsetPerAxis.x:F1}）決定",
-        WizardPhase.UprightForward    => "握著手機，往前後來回移動幾次\n用你自然舒適的幅度",
-        WizardPhase.FlatBaseline      => "手機平放（螢幕朝上）\n保持靜止，不要動",
-        WizardPhase.FlatMaxGesture    => $"手機平放\n往右傾斜到你的【最大舒適角度】並保持\n最大位移由 Max Offset Per Axis.x（目前={flatSettings.maxOffsetPerAxis.x:F1}）決定",
-        WizardPhase.FlatForward       => "手機平放\n往前後來回推動幾次，用舒適的自然幅度",
-        _                             => ""
+        WizardPhase.UprightBaseline     => "手機豎直拿好\n保持靜止，不要動",
+        WizardPhase.UprightMaxGesture   => $"手機螢幕朝向你\n往右傾斜到你的【最大舒適角度】並保持\n最大位移由 Inspector 的 Max Offset Per Axis.x（目前={uprightSettings.maxOffsetPerAxis.x:F1}）決定",
+        WizardPhase.UprightPitchGesture => $"手機螢幕朝向你\n往前傾斜（遠離自己）到你的【最大舒適角度】並保持\n最大位移由 Max Offset Per Axis.y（目前={uprightSettings.maxOffsetPerAxis.y:F1}）決定",
+        WizardPhase.UprightForward      => "握著手機，往前後來回移動幾次\n用你自然舒適的幅度",
+        WizardPhase.FlatBaseline        => "手機平放（螢幕朝上）\n保持靜止，不要動",
+        WizardPhase.FlatMaxGesture      => $"手機平放\n往右傾斜到你的【最大舒適角度】並保持\n最大位移由 Max Offset Per Axis.x（目前={flatSettings.maxOffsetPerAxis.x:F1}）決定",
+        WizardPhase.FlatForward         => "手機平放\n往前後來回推動幾次，用舒適的自然幅度",
+        _                               => ""
     };
 
     private void DrawSignalBar(float x, ref float y, float w, string label, float value, GUIStyle style)
@@ -201,11 +243,11 @@ public partial class AccelerometerBallEffect
         y += 20f;
     }
 
-    // 傾斜角視覺化儀表（MaxGesture phase 用）
-    private void DrawTiltGauge(float x, ref float y, float w, GUIStyle baseStyle)
+    // 傾斜角視覺化儀表（MaxGesture / PitchGesture phase 用，angle 由呼叫端傳入）
+    private void DrawTiltGauge(float x, ref float y, float w, GUIStyle baseStyle, float angle)
     {
         const float minGood = 15f, maxGood = 45f, fullRange = 90f;
-        float angle   = Mathf.Abs(debugTiltAngleDeg.x);
+        angle = Mathf.Abs(angle);
         bool  inRange = angle >= minGood && angle <= maxGood;
 
         Color statusColor = inRange ? Color.green : new Color(1f, 0.55f, 0f);
@@ -245,40 +287,62 @@ public partial class AccelerometerBallEffect
     }
 
     // 推動強度視覺化條（Forward phase 用）
-    private void DrawPushMeter(float x, ref float y, float w, GUIStyle baseStyle)
+    // liveZ：即時 Z 軸訊號（已去基線），供即時力度顯示
+    private void DrawPushMeter(float x, ref float y, float w, GUIStyle baseStyle, float liveZ)
     {
-        const float target = 0.3f, fullRange = 5f;
+        const float fullRange = 8f;
+        float thr    = zAnchorEnabled ? zAnchorThreshold : 0.5f; // 錨點觸發閾值作為參考線
         float cur    = wizardMaxPeakDisplay;
-        bool  isGood = cur >= target;
+        bool  isGood = cur >= thr;
+        float liveAbs = Mathf.Abs(liveZ);
 
         Color statusColor = isGood ? Color.green : new Color(1f, 0.55f, 0f);
-        string hint = isGood ? "✓ 幅度足夠" : "↑ 請加大移動幅度";
+        string hint = isGood ? "✓ 幅度足夠" : $"↑ 請用力推（目標 > {thr:F1} m/s²）";
         var labelStyle = new GUIStyle(baseStyle)
             { fontStyle = FontStyle.Bold, normal = { textColor = statusColor } };
         GUI.Label(new Rect(x, y, w, 18f), $"最大推動：{cur:F2} m/s²   {hint}", labelStyle);
         y += 22f;
 
-        float barH = 11f, barW = w - 2f;
+        float barH = 14f, barW = w - 2f;
         Color prev = GUI.color;
 
+        // 背景
         GUI.color = new Color(0.25f, 0.25f, 0.25f, 0.9f);
         GUI.DrawTexture(new Rect(x, y, barW, barH), Texture2D.whiteTexture);
 
+        // 建議施力區間（閾值 ~ 閾值×3），深綠色提示合適範圍
+        float thrX  = (thr / fullRange) * barW;
+        float thrX3 = Mathf.Min((thr * 3f / fullRange) * barW, barW);
+        GUI.color = new Color(0.1f, 0.38f, 0.13f, 0.75f);
+        GUI.DrawTexture(new Rect(x + thrX, y, thrX3 - thrX, barH), Texture2D.whiteTexture);
+
+        // 歷史最大（半透明，依達標與否變色）
         float fillW = Mathf.Clamp01(cur / fullRange) * barW;
-        GUI.color = isGood ? new Color(0.15f, 0.75f, 0.15f, 0.9f) : new Color(1f, 0.55f, 0f, 0.9f);
+        GUI.color = isGood ? new Color(0.15f, 0.75f, 0.15f, 0.45f) : new Color(1f, 0.55f, 0f, 0.45f);
         GUI.DrawTexture(new Rect(x, y, fillW, barH), Texture2D.whiteTexture);
 
-        float targetX = (target / fullRange) * barW;
+        // 即時推力（亮黃，最顯眼，置中高度）
+        float liveW = Mathf.Clamp01(liveAbs / fullRange) * barW;
+        GUI.color = new Color(1f, 1f, 0.3f, 0.95f);
+        GUI.DrawTexture(new Rect(x, y + 3f, liveW, barH - 6f), Texture2D.whiteTexture);
+
+        // 閾值標線（白色垂直線）
         GUI.color = Color.white;
-        GUI.DrawTexture(new Rect(x + targetX - 1f, y - 2f, 2f, barH + 4f), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(x + thrX - 1f, y - 2f, 2f, barH + 4f), Texture2D.whiteTexture);
 
         GUI.color = prev;
         y += barH + 3f;
 
         var tinyStyle = new GUIStyle(baseStyle)
             { fontSize = 10, normal = { textColor = new Color(0.9f, 0.9f, 0.9f) } };
-        GUI.Label(new Rect(x + targetX - 6f, y, 30f, 14f), $"{target}▲", tinyStyle);
-        y += 16f;
+        GUI.Label(new Rect(x + thrX - 6f, y, 50f, 14f), $"{thr:F1}▲", tinyStyle);
+        y += 15f;
+
+        // 即時推力數值（黃色，實時反映當前施力）
+        var liveStyle = new GUIStyle(baseStyle)
+            { fontSize = 11, normal = { textColor = new Color(1f, 1f, 0.4f) } };
+        GUI.Label(new Rect(x, y, w, 16f), $"即時推力：{liveZ:+0.00;-0.00} m/s²", liveStyle);
+        y += 18f;
 
         var hintStyle2 = new GUIStyle(baseStyle)
             { fontSize = 11, normal = { textColor = new Color(0.7f, 1f, 0.7f) } };
