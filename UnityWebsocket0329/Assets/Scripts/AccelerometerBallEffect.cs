@@ -260,6 +260,7 @@ public partial class AccelerometerBallEffect : MonoBehaviour
     private Vector3    prevFramePosition            = Vector3.zero;
     private float      switchTimer               = -1f;
     private bool       switchLoggedComplete      = false;
+    private float      _effectiveTransitionDuration = 0.5f; // 自適應：實際使用的過渡時長（≤ modeSwitchTransitionDuration）
     private float      firstDataTime             = -1f; // 第一筆感測器資料到達的時間戳
     private Vector3    smoothedPosition          = Vector3.zero; // 輸出位置 EMA（抗抖動）
     private float      calibrationMsgTimer       = 0f;
@@ -363,9 +364,11 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             {
                 // 直立模式：X=左右傾斜（gDevice.x），Y=前後傾斜（gDevice.z）；持續量不彈回
                 // Z 由 HandleAcceleration 的線性加速度負責（推力感）
-                // rawPhoneIsFlat=true 表示手機正在往平放傾倒（防抖中），凍結 Y 避免球在過渡期飛出
+                // rawPhoneIsFlat=true（防抖中）時保持上一幀的 rawAcceleration.y，
+                // 避免 EMA 在防抖期間被拉向 0 造成切換前提前位移（卡頓感）
                 rawAcceleration.x = gDevice.x;
-                rawAcceleration.y = rawPhoneIsFlat ? 0f : gDevice.z;
+                if (!rawPhoneIsFlat)
+                    rawAcceleration.y = gDevice.z;
             }
             else
             {
@@ -537,11 +540,26 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             _kalmanZCov   *= 1f - kGain;
             // 純速度積分（有阻尼）：停手後速度指數衰減歸零，不累積位置，不會漂移
             // 建議：flatZOutputScale = flatZFriction / flatZForceGain，使峰值信號≈原始加速度
-            _flatZVelInt += _kalmanZState * flatZForceGain * Time.deltaTime;
+            // 積分前先套死區：過濾手臂回彈的小反向脈衝（< axisDeadzone.z），
+            // 避免停止推力時加速度計的反向噪聲被積分成負速度，造成球過衝反彈。
+            float _integDz   = s.axisDeadzone.z;
+            float _integInput = Mathf.Abs(_kalmanZState) > _integDz
+                ? Mathf.Sign(_kalmanZState) * (Mathf.Abs(_kalmanZState) - _integDz)
+                : 0f;
+            _flatZVelInt += _integInput * flatZForceGain * Time.deltaTime;
             _flatZVelInt *= Mathf.Exp(-flatZFriction * Time.deltaTime);
             emaTarget.z   = Mathf.Clamp(_flatZVelInt * flatZOutputScale, -flatLinZClamp, flatLinZClamp);
         }
         filteredAcceleration = Vector3.Lerp(filteredAcceleration, emaTarget, alpha);
+
+        // 直立 Z（前後推力）用更快的獨立 EMA：
+        // 死區套用在 EMA 下游，若濾波太慢，訊號要等很久才超過死區閾值，造成「卡頓感」。
+        // 用 inputFilterTime × 0.35 讓 Z 軸響應更即時，X/Y 維持原時間常數不變。
+        if (!phoneIsFlat && !runIntegration)
+        {
+            float zFastAlpha = 1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(s.inputFilterTime * 0.35f, 0.005f));
+            filteredAcceleration.z = Mathf.Lerp(filteredAcceleration.z, rawAcceleration.z, zFastAlpha);
+        }
 
         // ── Z 軸衝量錨點更新（方向鎖定 + 冷卻封鎖）────────────────────────────
         // 原理：推力結束後啟動 zAnchorLockDuration 秒冷卻，期間封鎖反方向累積，
@@ -686,8 +704,12 @@ public partial class AccelerometerBallEffect : MonoBehaviour
             _dbEmaAlpha = flatAlpha;
             float axX = flatAlpha * (Mathf.Abs(deadzoned.x) > 0.001f ? 1f : s.idleReturnStrength.x);
             float axY = flatAlpha * (Mathf.Abs(deadzoned.y) > 0.001f ? 1f : s.idleReturnStrength.y);
-            // 錨點或姿態輔助有非零目標時全速追蹤，消除 idleReturnStrength 造成的緩慢漸近感
-            bool zHasTarget = zAnchorEnabled || (zPitchAssistEnabled && Mathf.Abs(targetOffset.z) > 0.001f);
+            // 錨點或姿態輔助有非零目標時全速追蹤，消除 idleReturnStrength 造成的緩慢漸近感。
+            // 積分模式（flatZUseIntegration）時也永遠全速追蹤：停止推力後 _flatZVelInt 因摩擦衰減，
+            // targetOffset.z 在 ~0.35s 內自然歸零；currentOffset.z 全速跟追，
+            // 避免 idleReturnStrength 讓球在 2-3 秒內被緩慢拉回原點（使用者感知為「硬拉」）。
+            bool zHasTarget = zAnchorEnabled || (zPitchAssistEnabled && Mathf.Abs(targetOffset.z) > 0.001f)
+                || (flatZUseIntegration && runIntegration);
             float axZ = zHasTarget
                 ? flatAlpha
                 : flatAlpha * (Mathf.Abs(deadzoned.z) > 0.001f ? 1f : s.idleReturnStrength.z);
@@ -751,19 +773,41 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         if (modeJustSwitched)
         {
             // offset = 舊位置 - 新模式預測位置；之後隨時間淡出至 0
-            modeSwitchTransitionOffset   = smoothedPosition - proposedPosition;
-            modeSwitchTransitionProgress = 0f;
+            modeSwitchTransitionOffset = smoothedPosition - proposedPosition;
+            // 平放模式 Y 軸遮罩為 0（targetOffset.y 永遠為 0），Y 過渡補償只會讓球緩慢
+            // 「彈回 0」，視覺上像在原點彈回，直接清零讓 Y 立即歸位。
+            if (phoneIsFlat) modeSwitchTransitionOffset.y = 0f;
+
+            float jumpMag = modeSwitchTransitionOffset.magnitude;
+            // 自適應過渡時間：固定最大視覺移動速度（kMaxSwitchSpeed m/s）。
+            // 跳動 < modeSwitchTransitionDuration × kMaxSwitchSpeed → 按比例縮短時長（保持視覺速度恆定）。
+            // 跳動 ≥ 閾值（快速甩手） → 瞬間跳到新位置（teleport），完全避免長距離拖影。
+            const float kMaxSwitchSpeed = 6f; // m/s；調高 = 更傾向瞬間切換
+            float minDuration = jumpMag / kMaxSwitchSpeed;
+            if (minDuration >= modeSwitchTransitionDuration)
+            {
+                // 跳動太大：直接 teleport，不做視覺過渡
+                modeSwitchTransitionOffset   = Vector3.zero;
+                modeSwitchTransitionProgress = 1f;
+                _effectiveTransitionDuration = 0f;
+            }
+            else
+            {
+                modeSwitchTransitionProgress = 0f;
+                _effectiveTransitionDuration = Mathf.Max(minDuration, 0.05f);
+            }
 
             string dir = phoneIsFlat ? "直立 → 平放" : "平放 → 直立";
             debugLastSwitchDir   = dir;
-            debugSwitchStartDist = modeSwitchTransitionOffset.magnitude;
+            debugSwitchStartDist = jumpMag;
             debugMaxFrameJump    = 0f;
             switchTimer          = 0f;
             switchLoggedComplete = false;
             Debug.Log($"[模式切換] {dir}\n" +
                       $"  切換前位置 : {smoothedPosition:F3}\n" +
                       $"  新模式預測 : {proposedPosition:F3}\n" +
-                      $"  補償跳動量 : {debugSwitchStartDist:F2}m  時長={modeSwitchTransitionDuration:F2}s");
+                      $"  跳動距離={jumpMag:F2}m  " +
+                      $"{(_effectiveTransitionDuration <= 0f ? "→ 瞬間切換（距離超過閾值）" : $"→ 過渡時長={_effectiveTransitionDuration:F2}s")}");
         }
 
         // 補償淡出：SmoothStep 在 transitionDuration 秒內把跳動 offset 降到 0
@@ -772,7 +816,7 @@ public partial class AccelerometerBallEffect : MonoBehaviour
         if (modeSwitchTransitionProgress < 1f)
         {
             modeSwitchTransitionProgress = Mathf.Clamp01(
-                modeSwitchTransitionProgress + Time.deltaTime / modeSwitchTransitionDuration);
+                modeSwitchTransitionProgress + Time.deltaTime / _effectiveTransitionDuration);
             float fade   = 1f - Mathf.SmoothStep(0f, 1f, modeSwitchTransitionProgress);
             basePosition = proposedPosition + modeSwitchTransitionOffset * fade;
         }

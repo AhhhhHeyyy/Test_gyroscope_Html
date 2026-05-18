@@ -116,7 +116,9 @@ public partial class AccelerometerBallEffect
             {
                 iy += 4f;
                 float sensRatio = pendingFlatSensitivity.z / Mathf.Max(pendingUprightSensitivity.z, 0.001f);
-                bool  balanced  = sensRatio >= 0.6f && sensRatio <= 1.7f;
+                // 不同姿態（直立/平放）的物理推力方向不同，信號幅度差異 3-4x 屬正常；
+                // 舊閾值 1.7 在直立瞬間加速過大時會誤報，放寬至 4.0 減少干擾
+                bool  balanced  = sensRatio >= 0.25f && sensRatio <= 4.0f;
                 var cmpStyle  = new GUIStyle(baseStyle) { fontSize = 12 };
                 var okStyle   = new GUIStyle(baseStyle) { fontSize = 11, normal = { textColor = new Color(0.4f, 0.9f, 0.4f) } };
                 var warnStyle = new GUIStyle(baseStyle) { fontSize = 11, wordWrap = true, normal = { textColor = new Color(1f, 0.75f, 0.2f) } };
